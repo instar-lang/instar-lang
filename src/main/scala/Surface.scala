@@ -35,7 +35,7 @@ enum Expr:
 
   case EApp(e1: Expr, e2: Expr) // t1 t2
   case ESApp(e: Expr, s: Stage) // t[s]
-  case EFix(f: String, e: Expr) // fix t
+  case EFix(f: String, ty: Ty, e: Expr) // fix t
 
   case EIfz(cond: Expr, thn: Expr, els: Expr) // ifz t1 t2 t3
   case EIf(cond: Expr, thn: Expr, els: Expr) // if t1 t2 t3
