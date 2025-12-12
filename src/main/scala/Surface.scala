@@ -15,33 +15,35 @@ enum Ty:
   // This definition is copied from the draft.
   case TUnit(stage: Stage)
   case TNat(stage: Stage)
-  case TArrow(from: Ty, stage: Stage, to: Ty)
+  case TBool(stage: Stage)
+  case TArrow(arg: Ty, stage: Stage, ret: Ty)
   case TRef(stage: Stage, inner: Ty)
-  case TForAll(a: StageVar, body: Ty)
+  case TForAllS(s: StageVar, body: Ty)
 
 enum Expr:
   case EUnit // ()
   case ENatV(n: Int) // n
   case EVar(x: String) // x
 
-  case ELam(x: String, tpe: Ty, body: Expr) // λx:τ.t
-  case ESLam(a: StageVar, body: Expr) // Λα.t
+  case ELam(x: String, ty: Ty, body: Expr) // λx:τ.t
+  case ESLam(s: StageVar, body: Expr) // Λα.t
 
   case ELet(x: String, rhs: Expr, body: Expr) // let x = t1 in t2
 
-  case ELift(t: Expr) // lift t
-  case ERun(t: Expr) // run t
+  case ELift(e: Expr) // lift t
+  case ERun(e: Expr) // run t
 
-  case EApp(fun: Expr, arg: Expr) // t1 t2
-  case ESApp(t: Expr, s: Stage) // t[s]
-  case EFix(t: Expr) // fix t
+  case EApp(e1: Expr, e2: Expr) // t1 t2
+  case ESApp(e: Expr, s: Stage) // t[s]
+  case EFix(f: String, e: Expr) // fix t
 
   case EIfz(cond: Expr, thn: Expr, els: Expr) // ifz t1 t2 t3
+  case EIf(cond: Expr, thn: Expr, els: Expr) // if t1 t2 t3
 
   case EBin(op: BinOp, left: Expr, right: Expr) // t1 ⊕ t2
 
-  case EAlloc(t: Expr) // alloc t
-  case EGet(t: Expr) // get t
-  case EPut(loc: Expr, value: Expr) // put t1 t2
+  case EAlloc(e: Expr) // alloc t
+  case EGet(e: Expr) // get t
+  case EPut(e1: Expr, e2: Expr) // put t1 t2
 
-  case EAscribe(t: Expr, tpe: Ty) // (t : τ)
+  case EAscribe(e: Expr, ty: Ty) // (t : τ)
