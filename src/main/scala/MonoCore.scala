@@ -36,7 +36,7 @@ enum Expr:
   case ECond(e1: Expr, e2: Expr, e3: Expr, st: Stage)
   case EBinOp(op: String, e1: Expr, e2: Expr, st: Stage)
   case EUnaryOp(op: String, e: Expr, st: Stage)
-  // TODO: move this into witType?
+  // TODO: move this into withType?
   case EAscribe(e: Expr, asTy: Type)
 
 val Sta = Stage.SNum(0)
