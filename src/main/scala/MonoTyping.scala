@@ -5,7 +5,9 @@ import spmp.surf.mono as surf
 
 /* TODO: type checking for fully annotated core language.
 1. add effect labels to track code generation side effect.
-2. add two mutually typing judgements, top-level judgment Γ ⊢ e : τ | ϵ and binding-time sensitive judgment Γ ⊢ˢ e : τ | ϵ.
+2. add two mutually typing judgements,
+   top-level judgment Γ ⊢ e : τ | ϵ and
+   binding-time sensitive judgment Γ ⊢ˢ e : τ | ϵ.
 3. add binding-time wellformedness restrictions.
 */
 
@@ -33,7 +35,9 @@ import spmp.surf.mono as surf
   - in top-level judgment Γ; Σ ⊢ e : τ | ϵ, the answer type τ must be a rep type when ϵ = ⊤.
   - how can we ensure this when τ and ϵ may depend on some free or bound stage variables?
 
-3. or alternative: only extend `lift` with stage polymorphism, other constructors must be annotated with literal stage.
+3. or alternative: remove the effect system,
+   but the top-level program is well-formed only under the rep type,
+   which means that our two-level programs always generate code.
 */
 object Tyck:
   type Env = Map[String, (core.Stage, core.Type)]
