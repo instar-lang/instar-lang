@@ -2,6 +2,11 @@ package spmp.surf.mono
 
 import spmp.core.mono as core
 
+enum Type:
+  case TUnit, TInt, TBool
+  case TFun(t1: Type, t2: Type)
+  case TCode(t: Type)
+
 enum Expr:
   case EUnit
   case ENum(i: Int)

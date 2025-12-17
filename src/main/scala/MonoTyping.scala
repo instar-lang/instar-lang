@@ -1,7 +1,7 @@
 package spmp.tyck.mono
 
 import spmp.core.mono as core
-import spmp.surf.mono.*
+import spmp.surf.mono as surf
 /*
 TODO: type checking for fully annotated core language.
 1. add effect labels to track code generation side effect.
@@ -33,6 +33,8 @@ TODO: extend MonoCore with stage polymorphism.
   - an interpretation for effect label `ϵˢ` where ϵ¹ = ⊥ and ϵ² = ⊤.
   - in top-level judgment Γ; Σ ⊢ e : τ | ϵ, the answer type τ must be a rep type when ϵ = ⊤.
   - how can we ensure this when τ and ϵ may depend on some free or bound stage variables?
+
+3. or alternative: only extend `lift` with stage polymorphism, other constructors must be annotated with literal stage.
 */
 object Tyck:
   type Env = Map[String, (core.Stage, core.Type)]
@@ -47,8 +49,8 @@ TODO: bidirectional type checking and elaboration for surface language.
 object Elab:
   type Env = Map[String, core.Type]
 
-  def infer(env: Env, stage: core.Stage, expr: Expr): core.Expr =
+  def infer(env: Env, stage: core.Stage, expr: surf.Expr): core.Expr =
     ???
 
-  def check(env: Env, stage: core.Stage, expr: Expr, expected: core.Type): core.Expr =
+  def check(env: Env, stage: core.Stage, expr: surf.Expr, expected: core.Type): core.Expr =
     ???
