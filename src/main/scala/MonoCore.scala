@@ -15,13 +15,13 @@ enum Type:
   // case TAt(t: Type, s: Stage)
   // case TCode(t: Type)
   case TFrag(t: Type)
-  /*
-  Note: the terms with rep type are only constructed by:
+
+  /* Note: the terms with rep type are only constructed by:
   1. λ|2|'s administrative typing rules, such as lam𝕔, code and lets𝕔.
   2. λ|2|'s T-REP typing rules, lift the frag type into rep type.
+  */
 
-  Note: the terms with rep type are only used in λ|2|'s ifz² typing rules：
-
+  /* Note: the terms with rep type are only used in λ|2|'s ifz² typing rules：
   Γ ⊢ e₁ : frag nat | ϵ₁
   Γ ⊢ e₂ : rep τ | ϵ₂
   Γ ⊢ e₃ : rep τ | ϵ₃
@@ -84,3 +84,24 @@ type Ans = Value
 
 type Cont = (Value, MCont) => Value
 type MCont = Value => Value
+
+def reflect(e: Expr, k: Cont, γ: MCont): Value =
+  e match
+    // Note: here we decide what needs to be let-inserted based on syntactic form.
+    // We could also avoid let-inserting for λ-terms and fix as they are pure.
+    case EUnit | ENum(_) | EBool(_) => k(VCode(e), γ)
+    case _ =>
+      val x = fresh()
+      // In reduction semantics, we have the let-insertion rule
+      // P[E[reflect e]] -> P[let x = e in E[x]].
+      // Here, the continuation k is the E context, and γ is the P context.
+      k(VCode(EVar(x)), { case VCode(t) =>
+        // Note: our type system must ensure that γ has type rep τ₀ → τ₁,
+        // otherwise the pattern matching would fail.
+        γ(VCode(ELet(x, e, t)))
+      })
+
+def reify(e: Expr, ρ: Env, γ: MCont): Value =
+  eval(e, ρ, (x, γ1) => γ1(x), γ)
+
+def eval(e: Expr, ρ: Env, k: Cont, γ: MCont): Value = ???

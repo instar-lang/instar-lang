@@ -2,15 +2,14 @@ package spmp.tyck.mono
 
 import spmp.core.mono as core
 import spmp.surf.mono as surf
-/*
-TODO: type checking for fully annotated core language.
+
+/* TODO: type checking for fully annotated core language.
 1. add effect labels to track code generation side effect.
 2. add two mutually typing judgements, top-level judgment Γ ⊢ e : τ | ϵ and binding-time sensitive judgment Γ ⊢ˢ e : τ | ϵ.
 3. add binding-time wellformedness restrictions.
 */
 
-/*
-TODO: extend MonoCore with stage polymorphism.
+/* TODO: extend MonoCore with stage polymorphism.
 1. if we extend all constructor of MonoCore with stage polymorphism, some typing rules may become ambiguous.
 
   when s = 1
@@ -42,8 +41,8 @@ object Tyck:
   def check(expr: core.Expr): Unit =
     ???
 
-/*
-TODO: bidirectional type checking and elaboration for surface language.
+
+/* TODO: bidirectional type checking and elaboration for surface language.
 1. use a simpler type definition? Because we don't need to distinguish code fragment and code anymore in the surface language.
 */
 object Elab:
