@@ -17,14 +17,16 @@ enum Type:
   case TFrag(t: Type)
   /*
   Note: the terms with rep type are only constructed by:
-  * λ|2|'s administrative typing rules, such as lam𝕔, code and lets𝕔.
-  * λ|2|'s T-REP typing rules, lift the frag type into rep type.
+  1. λ|2|'s administrative typing rules, such as lam𝕔, code and lets𝕔.
+  2. λ|2|'s T-REP typing rules, lift the frag type into rep type.
+
   Note: the terms with rep type are only used in λ|2|'s ifz² typing rules：
+
   Γ ⊢ e₁ : frag nat | ϵ₁
-  Γ ⊢ e₂ : rep nat | ϵ₂
-  Γ ⊢ e₃ : rep nat | ϵ₃
-  —————————————————————————————————
-  Γ ⊢ ifz² e₁ e₂ e₃ : frag nat | ⊤
+  Γ ⊢ e₂ : rep τ | ϵ₂
+  Γ ⊢ e₃ : rep τ | ϵ₃
+  ———————————————————————————————
+  Γ ⊢ ifz² e₁ e₂ e₃ : frag τ | ⊤
   */
   case TRep(t : Type)
 
