@@ -39,7 +39,9 @@ enum Expr:
   case EVar(name: String)
   // case ESLam(x: String, body: Expr)
   // case ESApp(e: Expr, st: Stage)
-  case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
+  // Note: are argTy and retTy still necessary here? They could be found in Expr.ty.
+  // case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
+  case ELam(x: String, body: Expr)
   case EApp(e1: Expr, e2: Expr, st: Stage)
   // Note: they can only lift terms to the dyn stage.
   // case ELift(t: Expr, to: Stage)
@@ -49,7 +51,7 @@ enum Expr:
   case ECond(e1: Expr, e2: Expr, e3: Expr, st: Stage)
   case EBinOp(op: String, e1: Expr, e2: Expr, st: Stage)
   case EUnaryOp(op: String, e: Expr, st: Stage)
-  // TODO: move this into withType?
+  // TODO: move this into Expr.ty?
   case EAscribe(e: Expr, asTy: Type)
 
 val Sta = Stage.SNum(0)
@@ -70,7 +72,7 @@ enum Value:
   case VBool(b: Boolean)
   // case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   // case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
-  case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env)
+  case VClo(x: String, body: Expr, ρ: Env)
   case VCode(e: Expr) // XXX: could extend to open code value with environment?
 
 import Stage.*
@@ -104,4 +106,100 @@ def reflect(e: Expr, k: Cont, γ: MCont): Value =
 def reify(e: Expr, ρ: Env, γ: MCont): Value =
   eval(e, ρ, (x, γ1) => γ1(x), γ)
 
-def eval(e: Expr, ρ: Env, k: Cont, γ: MCont): Value = ???
+def lift(k: Cont)(v: Value, γ: MCont): Value =
+  v match
+    case VUnit => reflect(EUnit, k, γ)
+    case VNum(i) => reflect(ENum(i), k, γ)
+    case VBool(b) => reflect(EBool(b), k, γ)
+    case VClo(x, body, ρf) =>
+      val y = fresh()
+      reify(body, ρf + (x -> VCode(EVar(y))), { case VCode(t) =>
+        reflect(ELam(y, t), k, γ)
+      })
+
+def evalPrim(op: String, v1: Value, v2: Value): Value =
+  (op, v1, v2) match
+    case ("+", VNum(i1), VNum(i2)) => VNum(i1 + i2)
+    case ("-", VNum(i1), VNum(i2)) => VNum(i1 - i2)
+    case ("*", VNum(i1), VNum(i2)) => VNum(i1 * i2)
+    case ("/", VNum(i1), VNum(i2)) => VNum(i1 / i2)
+    case ("<=", VNum(i1), VNum(i2)) => VBool(i1 <= i2)
+    case (">=", VNum(i1), VNum(i2)) => VBool(i1 >= i2)
+    case ("<", VNum(i1), VNum(i2)) => VBool(i1 < i2)
+    case (">", VNum(i1), VNum(i2)) => VBool(i1 > i2)
+    case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
+    case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
+
+def evalPrimUnary(op: String, v: Value): Value =
+  (op, v) match
+    case ("-", VNum(i)) => VNum(-i)
+
+def eval(e: Expr, ρ: Env, k: Cont, γ: MCont): Value =
+  e match
+    case EUnit =>
+      k(VUnit, γ)
+    case ENum(i) =>
+      k(VNum(i), γ)
+    case EBool(b) =>
+      k(VBool(b), γ)
+    case EVar(x) =>
+      k(ρ(x), γ)
+    case ELam(x, e) =>
+      k(VClo(x, e, ρ), γ)
+    case EApp(e1, e2, s) if s == Sta =>
+      eval(e1, ρ, { case (VClo(x, body, ρf), γ1) =>
+        eval(e2, ρ, (v2, γ2) =>
+          eval(body, ρf + (x -> v2), k, γ2), γ1)
+      }, γ)
+    case EApp(e1, e2, s) if s == Dyn =>
+      eval(e1, ρ, { case (VCode(x1), γ1) =>
+        eval(e2, ρ, { case (VCode(x2), γ2) =>
+          reflect(EApp1(x1, x2), k, γ2)
+        }, γ1)
+      }, γ)
+    case ELift(e) =>
+      eval(e, ρ, lift(k), γ)
+    case ERun(e) =>
+      eval(e, ρ, { case (VCode(t), γ1) =>
+        eval(t, ρ, k, γ1)
+      }, γ)
+    case ELet(x, rhs, e) =>
+      eval(rhs, ρ, (v, γ1) => eval(e, ρ + (x -> v), k, γ1), γ)
+    case ECond(e1, e2, e3, s) if s == Sta =>
+      eval(e1, ρ, { case (VBool(b), γ1) =>
+        if b then eval(e2, ρ, k, γ1)
+        else eval(e3, ρ, k, γ1)
+      }, γ)
+    case ECond(e1, e2, e3, s) if s == Dyn =>
+      eval(e1, ρ, { case (VCode(x1), γ1) =>
+        reify(e2, ρ, { case VCode(x2) =>
+          reify(e3, ρ, { case VCode(x3) =>
+            reflect(ECond1(x1, x2, x3), k, γ1)
+          })
+        })
+      }, γ)
+    case EBinOp(op, e1, e2, s) if s == Sta =>
+      eval(e1, ρ, { case (v1, γ1) =>
+        eval(e2, ρ, { case (v2, γ2) =>
+          k(evalPrim(op, v1, v2), γ2)
+        }, γ1)
+      }, γ)
+    case EBinOp(op, e1, e2, s) if s == Dyn =>
+      eval(e1, ρ, { case (VCode(x1), γ1) =>
+        eval(e2, ρ, { case (VCode(x2), γ2) =>
+          reflect(EBinOp1(op, x1, x2), k, γ2)
+        }, γ1)
+      }, γ)
+    case EUnaryOp(op, e, s) if s == Sta =>
+      eval(e, ρ, { case (v, γ1) =>
+        k(evalPrimUnary(op, v), γ1)
+      }, γ)
+    case EUnaryOp(op, e, s) if s == Dyn =>
+      eval(e, ρ, { case (VCode(x), γ1) =>
+        reflect(EUnaryOp1(op, x), k, γ1)
+      }, γ)
+    case EAscribe(e, _) => eval(e, ρ, k, γ)
+
+def eval(e: Expr): Ans =
+  reset
+  eval(e, Map(), (x, γ) => γ(x), x => x)

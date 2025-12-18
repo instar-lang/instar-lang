@@ -21,10 +21,13 @@ def check(expr: Expr, env: TypeEnv): Unit = {
     case Expr.ENum(i)    => assert(expr.ty.get == Type.TInt)
     case Expr.EBool(b)   => assert(expr.ty.get == Type.TBool)
     case Expr.EVar(name) => assert(env(name) == expr.ty.get)
-    case Expr.ELam(x, argTy, body, retTy) =>
+    // case Expr.ELam(x, argTy, body, retTy) =>
+    //   val Type.TFun(expectedArgTy, expectedRetTy) = expr.ty.get
+    //   argTy.foreach(t => assert(t == expectedArgTy))
+    //   assert(body.ty.get == expectedRetTy)
+    //   check(body, env + (x -> expectedArgTy))
+    case Expr.ELam(x, body) =>
       val Type.TFun(expectedArgTy, expectedRetTy) = expr.ty.get
-      argTy.foreach(t => assert(t == expectedArgTy))
-      assert(body.ty.get == expectedRetTy)
       check(body, env + (x -> expectedArgTy))
     case Expr.EApp(e1, e2, st) =>
       // check the annotations are consistent
