@@ -4,6 +4,43 @@ import spmp.core.mono.*
 
 type TypeEnv = Map[String, Type]
 
+object SubTyping:
+  extension (t1: Type)
+    // Subtyping relation: t1 <: t2
+    def subtype(t2: Type): Boolean = (t1, t2) match
+      case (Type.TFun(arg1, ret1), Type.TFun(arg2, ret2)) =>
+        // contravariant in argument, covariant in return
+        arg2.subtype(arg1) && ret1.subtype(ret2)
+      case (Type.TCode(t1), Type.TCode(t2)) => // Rep[t1] <: Rep[t2]
+        // Q: What is Rep[t1]?
+        // A: A first stage value with type Rep[t1] represents second stage computation that returns t1.
+        // Q: When a value of Rep[t1] be used as Rep[t2], so we can have Rep[t1] <: Rep[t2]?
+        // A: I (DZ) think it depends on what our type system wants to guarantee for the user. But at least t1 <: t2.
+        if !t1.subtype(t2) then false
+        else {
+          // Q: When we cannot say Rep[t1] <: Rep[t2], even if we have t1 <: t2?
+          // A: I (DZ) cannot find out a case for now.
+          true
+        }
+      case (a, Type.TCode(b)) => // t1 <: Rep[t2]
+        // Q: When a value of t1 can replace every usage of another value of Rep[t2]?
+        // A: Anytime if t1 <: t2. Because we can always apply operator `lift` on a value of t1 to get Rep[t1].
+        a.subtype(b)
+      case (Type.TCode(a), b) =>
+        // Q: Can we say Rep[t1] <: t2?
+        // A: No, and it's not similar as previous case.
+        //    The only way to bring a value of Rep[t1] to a first stage value of t1 is to `run` it.
+        //    But I (DZ) think inserting `lift` when needed is natural, but inserting `run` is weird.
+        false
+      case (a, b) if a == b =>
+        // reflexivity, we must put this case after TCode cases, because TCode(TUnit).subtype(TCode(TUnit)) is false
+        true
+      case _ => false
+
+    def isPure: Boolean =
+      // I (DZ) don't now how to detect impurity in current setting, so let's conservatively say computation with any type could be impure.
+      false
+
 def isFirstStage(t: Type): Boolean = t match
   case Type.TUnit => true
   case Type.TInt  => true
@@ -13,6 +50,7 @@ def isFirstStage(t: Type): Boolean = t match
   case Type.TCode(_) => false
 
 def check(expr: Expr, env: TypeEnv): Unit = {
+  import SubTyping.*
   // We assume that all expressions are already fully annotated with types in
   // its `ty` field. This function just checks the consistency of these annotations.
   expr match
@@ -31,7 +69,7 @@ def check(expr: Expr, env: TypeEnv): Unit = {
     case Expr.EApp(e1, e2, st) =>
       // check the annotations are consistent
       val Type.TFun(argTy, retTy) = e1.ty.get
-      assert(e2.ty.get == argTy)
+      assert(e2.ty.get.subtype(argTy))
       assert(expr.ty.get == retTy)
       check(e1, env)
       check(e2, env)
@@ -67,12 +105,12 @@ def check(expr: Expr, env: TypeEnv): Unit = {
           assert(e1.ty.get == Type.TInt)
           assert(e2.ty.get == Type.TInt)
           assert(expr.ty.get == Type.TBool)
-    case Expr.EUnaryOp(op, e, st)    =>
+    case Expr.EUnaryOp(op, e, st) =>
       op match
         case "-" =>
           assert(e.ty.get == Type.TInt)
           assert(expr.ty.get == Type.TInt)
-    case Expr.EAscribe(e, _)         =>
+    case Expr.EAscribe(e, _) =>
       // todo: remove this case later
       check(e, env)
       assert(e.ty.get == expr.ty.get)
