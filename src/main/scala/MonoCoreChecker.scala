@@ -5,13 +5,12 @@ import spmp.core.mono.*
 type TypeEnv = Map[String, Type]
 
 def isFirstStage(t: Type): Boolean = t match
-  case Type.TUnit         => true
-  case Type.TInt          => true
-  case Type.TBool         => true
+  case Type.TUnit => true
+  case Type.TInt  => true
+  case Type.TBool => true
   case Type.TFun(arg, ret) =>
     isFirstStage(arg) && isFirstStage(ret)
-  case Type.TFrag(_) => false
-  case Type.TRep(_)  => false
+  case Type.TCode(_) => false
 
 def check(expr: Expr, env: TypeEnv): Unit = {
   // We assume that all expressions are already fully annotated with types in
@@ -41,17 +40,13 @@ def check(expr: Expr, env: TypeEnv): Unit = {
       val ty = t.ty.get
       // ty must be a first stage type
       assert(isFirstStage(ty))
-      val expectedTy = Type.TRep(ty)
+      val expectedTy = Type.TCode(ty)
       assert(expr.ty.get == expectedTy)
     case Expr.ERun(t) =>
       check(t, env)
-      val ty = t.ty.get
-      // ty must be a TRep or TFrag type
-      ty match
-        case Type.TRep(inner) =>
-          assert(expr.ty.get == inner)
-        case Type.TFrag(inner) =>
-          assert(expr.ty.get == inner)
+      val Type.TCode(ty) = t.ty.get
+      // ty must be a TCode or TFrag type
+      assert(expr.ty.get == ty)
     case Expr.ELet(x, rhs, body) =>
       check(rhs, env)
       check(body, env + (x -> rhs.ty.get))

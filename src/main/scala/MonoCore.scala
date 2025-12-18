@@ -13,8 +13,8 @@ enum Type:
   case TFun(t1: Type, t2: Type)
   // case TForallSt(s: String, t: Type)
   // case TAt(t: Type, s: Stage)
-  // case TCode(t: Type)
-  case TFrag(t: Type)
+  case TCode(t: Type)
+  // case TFrag(t: Type)
 
   /* Note: the terms with rep type are only constructed by:
   1. λ|2|'s administrative typing rules, such as lam𝕔, code and lets𝕔.
@@ -28,7 +28,7 @@ enum Type:
   ———————————————————————————————
   Γ ⊢ ifz² e₁ e₂ e₃ : frag τ | ⊤
   */
-  case TRep(t : Type)
+  // case TRep(t : Type)
 
 enum Expr:
   var ty: Option[Type] = None
