@@ -115,3 +115,68 @@ def check(expr: Expr, env: TypeEnv): Unit = {
       check(e, env)
       assert(e.ty.get == expr.ty.get)
 }
+
+// We can derive infer function for the cases where above check function directly asserts
+// the ty field of expr. Becase that field holds the type information we want to fill in during type checking.
+def infer(expr: Expr, env: TypeEnv): Expr = {
+  import SubTyping.*
+  expr match
+    case Expr.EUnit                       => expr.withType(Type.TUnit)
+    case Expr.ENum(i)                     => expr.withType(Type.TInt)
+    case Expr.EBool(b)                    => expr.withType(Type.TBool)
+    case Expr.EVar(name)                  => expr.withType(env(name))
+    case Expr.ELam(x, body) =>
+      // we cannot infer the argument and return types without argument type annotation
+      ???
+    case Expr.EApp(e1, e2, st) =>
+      val e1Typed = infer(e1, env)
+      val e2Typed = infer(e2, env)
+      val Type.TFun(argTy, retTy) = e1Typed.ty.get
+      assert(e2Typed.ty.get.subtype(argTy))
+      Expr.EApp(e1Typed, e2Typed, st).withType(retTy)
+    case Expr.ELift(t) =>
+      val tTyped = infer(t, env)
+      val ty = tTyped.ty.get
+      // ty must be a first stage type
+      assert(isFirstStage(ty))
+      val expectedTy = Type.TCode(ty)
+      Expr.ELift(tTyped).withType(expectedTy)
+    case Expr.ERun(t) =>
+      val tTyped = infer(t, env)
+      val Type.TCode(ty) = tTyped.ty.get
+      Expr.ERun(tTyped).withType(ty)
+    case Expr.ELet(x, rhs, body) =>
+      val rhsTyped = infer(rhs, env)
+      infer(body, env + (x -> rhsTyped.ty.get))
+    case Expr.ECond(e1, e2, e3, st) =>
+      val e1Tyed = infer(e1, env)
+      assert(e1Tyed.ty.get == Type.TBool)
+      val e2Typed = infer(e2, env)
+      val e3Typed = infer(e3, env)
+      assert(e2Typed.ty.get == e3Typed)
+      e2Typed
+    case Expr.EBinOp(op, e1, e2, st) =>
+      op match
+        case "+" | "-" | "*" | "/" =>
+          val e1Typed = infer(e1, env)
+          val e2Typed = infer(e2, env)
+          assert(e1Typed.ty.get == Type.TInt)
+          assert(e2Typed.ty.get == Type.TInt)
+          Expr.EBinOp(op, e1Typed, e2Typed, st).withType(Type.TInt)
+        case "==" | "!=" | "<" | "<=" | ">" | ">=" =>
+          val e1Typed = infer(e1, env)
+          val e2Typed = infer(e2, env)
+          assert(e1Typed.ty.get == Type.TInt)
+          assert(e2Typed.ty.get == Type.TInt)
+          Expr.EBinOp(op, e1Typed, e2Typed, st).withType(Type.TBool)
+    case Expr.EUnaryOp(op, e, st) =>
+      op match
+        case "-" =>
+          val eTyped = infer(e, env)
+          assert(eTyped.ty.get == Type.TInt)
+          Expr.EUnaryOp(op, eTyped, st).withType(Type.TInt)
+    case Expr.EAscribe(e, asTy) =>
+      val eTyped = infer(e, env)
+      assert(eTyped.ty.get == asTy)
+      Expr.EAscribe(eTyped, asTy).withType(asTy)
+}
