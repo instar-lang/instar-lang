@@ -58,14 +58,14 @@ def check(expr: Expr, env: TypeEnv): Unit = {
     case Expr.ENum(i)    => assert(expr.ty.get == Type.TInt)
     case Expr.EBool(b)   => assert(expr.ty.get == Type.TBool)
     case Expr.EVar(name) => assert(env(name) == expr.ty.get)
-    // case Expr.ELam(x, argTy, body, retTy) =>
-    //   val Type.TFun(expectedArgTy, expectedRetTy) = expr.ty.get
-    //   argTy.foreach(t => assert(t == expectedArgTy))
-    //   assert(body.ty.get == expectedRetTy)
-    //   check(body, env + (x -> expectedArgTy))
-    case Expr.ELam(x, body) =>
+    case Expr.ELam(x, argTy, body, retTy) =>
       val Type.TFun(expectedArgTy, expectedRetTy) = expr.ty.get
+      argTy.foreach(t => assert(t == expectedArgTy))
+      assert(body.ty.get == expectedRetTy)
       check(body, env + (x -> expectedArgTy))
+    // case Expr.ELam(x, body) =>
+    //   val Type.TFun(expectedArgTy, expectedRetTy) = expr.ty.get
+    //   check(body, env + (x -> expectedArgTy))
     case Expr.EApp(e1, e2, st) =>
       // check the annotations are consistent
       val Type.TFun(argTy, retTy) = e1.ty.get
@@ -125,9 +125,19 @@ def infer(expr: Expr, env: TypeEnv): Expr = {
     case Expr.ENum(i)                     => expr.withType(Type.TInt)
     case Expr.EBool(b)                    => expr.withType(Type.TBool)
     case Expr.EVar(name)                  => expr.withType(env(name))
-    case Expr.ELam(x, body) =>
+    case Expr.ELam(x, argTy, body, retTy) =>
       // we cannot infer the argument and return types without argument type annotation
-      ???
+      argTy match {
+        case None =>
+          // If no argument type annotation, we cannot infer the type of a lambda
+          ???
+        case Some(argTy) =>
+          val bodyTyped = infer(body, env + (x -> argTy))
+          retTy.foreach(t => assert(t == bodyTyped.ty.get))
+          val expectedTy = Type.TFun(argTy, bodyTyped.ty.get)
+          assert(expr.ty.get == expectedTy)
+          Expr.ELam(x, Some(argTy), bodyTyped, bodyTyped.ty).withType(expectedTy)
+      }
     case Expr.EApp(e1, e2, st) =>
       val e1Typed = infer(e1, env)
       val e2Typed = infer(e2, env)

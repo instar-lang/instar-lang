@@ -40,8 +40,8 @@ enum Expr:
   // case ESLam(x: String, body: Expr)
   // case ESApp(e: Expr, st: Stage)
   // Note: are argTy and retTy still necessary here? They could be found in Expr.ty.
-  // case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
-  case ELam(x: String, body: Expr)
+  case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
+  // case ELam(x: String, body: Expr)
   case EApp(e1: Expr, e2: Expr, st: Stage)
   // Note: they can only lift terms to the dyn stage.
   // case ELift(t: Expr, to: Stage)
@@ -114,7 +114,7 @@ def lift(k: Cont)(v: Value, γ: MCont): Value =
     case VClo(x, body, ρf) =>
       val y = fresh()
       reify(body, ρf + (x -> VCode(EVar(y))), { case VCode(t) =>
-        reflect(ELam(y, t), k, γ)
+        reflect(ELam(y, None, t, None), k, γ)
       })
 
 def evalPrim(op: String, v1: Value, v2: Value): Value =
@@ -144,7 +144,7 @@ def eval(e: Expr, ρ: Env, k: Cont, γ: MCont): Value =
       k(VBool(b), γ)
     case EVar(x) =>
       k(ρ(x), γ)
-    case ELam(x, e) =>
+    case ELam(x, artTy, e, retTy) =>
       k(VClo(x, e, ρ), γ)
     case EApp(e1, e2, s) if s == Sta =>
       eval(e1, ρ, { case (VClo(x, body, ρf), γ1) =>
