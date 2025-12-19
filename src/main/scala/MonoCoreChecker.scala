@@ -8,8 +8,9 @@ object SubTyping:
   extension (t1: Type)
     // Subtyping relation: t1 <: t2
     def subtype(t2: Type): Boolean = (t1, t2) match
-      case (Type.TFun(arg1, ret1), Type.TFun(arg2, ret2)) =>
+      case (Type.TFun(arg1, ret1, _), Type.TFun(arg2, ret2, _)) =>
         // contravariant in argument, covariant in return
+        // FIXME: relation between the latent effects?
         arg2.subtype(arg1) && ret1.subtype(ret2)
       case (Type.TCode(t1), Type.TCode(t2)) => // Rep[t1] <: Rep[t2]
         // Q: What is Rep[t1]?
@@ -45,7 +46,7 @@ def isFirstStage(t: Type): Boolean = t match
   case Type.TUnit => true
   case Type.TInt  => true
   case Type.TBool => true
-  case Type.TFun(arg, ret) =>
+  case Type.TFun(arg, ret, _) =>
     isFirstStage(arg) && isFirstStage(ret)
   case Type.TCode(_) => false
 
@@ -58,17 +59,15 @@ def check(expr: Expr, env: TypeEnv): Unit = {
     case Expr.ENum(i)    => assert(expr.ty.get == Type.TInt)
     case Expr.EBool(b)   => assert(expr.ty.get == Type.TBool)
     case Expr.EVar(name) => assert(env(name) == expr.ty.get)
-    case Expr.ELam(x, argTy, body, retTy) =>
-      val Type.TFun(expectedArgTy, expectedRetTy) = expr.ty.get
-      argTy.foreach(t => assert(t == expectedArgTy))
-      assert(body.ty.get == expectedRetTy)
+    case Expr.ELam(x, body) =>
+      val Type.TFun(expectedArgTy, expectedRetTy, _) = expr.ty.get
       check(body, env + (x -> expectedArgTy))
     // case Expr.ELam(x, body) =>
     //   val Type.TFun(expectedArgTy, expectedRetTy) = expr.ty.get
     //   check(body, env + (x -> expectedArgTy))
     case Expr.EApp(e1, e2, st) =>
       // check the annotations are consistent
-      val Type.TFun(argTy, retTy) = e1.ty.get
+      val Type.TFun(argTy, retTy, _) = e1.ty.get
       assert(e2.ty.get.subtype(argTy))
       assert(expr.ty.get == retTy)
       check(e1, env)
@@ -110,10 +109,6 @@ def check(expr: Expr, env: TypeEnv): Unit = {
         case "-" =>
           assert(e.ty.get == Type.TInt)
           assert(expr.ty.get == Type.TInt)
-    case Expr.EAscribe(e, _) =>
-      // todo: remove this case later
-      check(e, env)
-      assert(e.ty.get == expr.ty.get)
 }
 
 // We can derive infer function for the cases where above check function directly asserts
@@ -125,23 +120,24 @@ def infer(expr: Expr, env: TypeEnv): Expr = {
     case Expr.ENum(i)                     => expr.withType(Type.TInt)
     case Expr.EBool(b)                    => expr.withType(Type.TBool)
     case Expr.EVar(name)                  => expr.withType(env(name))
-    case Expr.ELam(x, argTy, body, retTy) =>
+    case Expr.ELam(x, body) =>
       // we cannot infer the argument and return types without argument type annotation
-      argTy match {
-        case None =>
-          // If no argument type annotation, we cannot infer the type of a lambda
-          ???
-        case Some(argTy) =>
-          val bodyTyped = infer(body, env + (x -> argTy))
-          retTy.foreach(t => assert(t == bodyTyped.ty.get))
-          val expectedTy = Type.TFun(argTy, bodyTyped.ty.get)
-          assert(expr.ty.get == expectedTy)
-          Expr.ELam(x, Some(argTy), bodyTyped, bodyTyped.ty).withType(expectedTy)
-      }
+      // argTy match {
+      //   case None =>
+      //     // If no argument type annotation, we cannot infer the type of a lambda
+      //     ???
+      //   case Some(argTy) =>
+      //     val bodyTyped = infer(body, env + (x -> argTy))
+      //     retTy.foreach(t => assert(t == bodyTyped.ty.get))
+      //     val expectedTy = Type.TFun(argTy, bodyTyped.ty.get)
+      //     assert(expr.ty.get == expectedTy)
+      //     Expr.ELam(x, Some(argTy), bodyTyped, bodyTyped.ty).withType(expectedTy)
+      // }
+      ???
     case Expr.EApp(e1, e2, st) =>
       val e1Typed = infer(e1, env)
       val e2Typed = infer(e2, env)
-      val Type.TFun(argTy, retTy) = e1Typed.ty.get
+      val Type.TFun(argTy, retTy, _) = e1Typed.ty.get
       assert(e2Typed.ty.get.subtype(argTy))
       Expr.EApp(e1Typed, e2Typed, st).withType(retTy)
     case Expr.ELift(t) =>
@@ -185,8 +181,4 @@ def infer(expr: Expr, env: TypeEnv): Expr = {
           val eTyped = infer(e, env)
           assert(eTyped.ty.get == Type.TInt)
           Expr.EUnaryOp(op, eTyped, st).withType(Type.TInt)
-    case Expr.EAscribe(e, asTy) =>
-      val eTyped = infer(e, env)
-      assert(eTyped.ty.get == asTy)
-      Expr.EAscribe(eTyped, asTy).withType(asTy)
 }

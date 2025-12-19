@@ -8,14 +8,18 @@ enum Stage:
   case SNum(n: Int)
   // case SVar(x: String)
 
+// True/False correspond to ⊤/⊥.
+// `Boolean.Or` corresponds to Union.
+type Effect = Boolean
+val Top: Effect = true
+val Bot: Effect = false
+
 enum Type:
   case TUnit, TInt, TBool
-  case TFun(t1: Type, t2: Type)
+  case TFun(t1: Type, t2: Type, eff: Effect)
   // case TForallSt(s: String, t: Type)
   // case TAt(t: Type, s: Stage)
   case TCode(t: Type)
-  // case TFrag(t: Type)
-
   /* Note: the terms with rep type are only constructed by:
   1. λ|2|'s administrative typing rules, such as lam𝕔, code and lets𝕔.
   2. λ|2|'s T-REP typing rules, lift the frag type into rep type.
@@ -28,20 +32,23 @@ enum Type:
   ———————————————————————————————
   Γ ⊢ ifz² e₁ e₂ e₃ : frag τ | ⊤
   */
+  // case TFrag(t: Type)
   // case TRep(t : Type)
 
 enum Expr:
   var ty: Option[Type] = None
   def withType(t: Type): Expr = { ty = Some(t); this }
+
+  var eff: Option[Effect] = None
+  def withEff(e: Effect): Expr = { eff = Some(e); this }
+
   case EUnit
   case ENum(i: Int)
   case EBool(b: Boolean)
   case EVar(name: String)
   // case ESLam(x: String, body: Expr)
   // case ESApp(e: Expr, st: Stage)
-  // Note: are argTy and retTy still necessary here? They could be found in Expr.ty.
-  case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
-  // case ELam(x: String, body: Expr)
+  case ELam(x: String, body: Expr)
   case EApp(e1: Expr, e2: Expr, st: Stage)
   // Note: they can only lift terms to the dyn stage.
   // case ELift(t: Expr, to: Stage)
@@ -51,8 +58,6 @@ enum Expr:
   case ECond(e1: Expr, e2: Expr, e3: Expr, st: Stage)
   case EBinOp(op: String, e1: Expr, e2: Expr, st: Stage)
   case EUnaryOp(op: String, e: Expr, st: Stage)
-  // TODO: move this into Expr.ty?
-  case EAscribe(e: Expr, asTy: Type)
 
 val Sta = Stage.SNum(0)
 val Dyn = Stage.SNum(1)
@@ -114,7 +119,7 @@ def lift(k: Cont)(v: Value, γ: MCont): Value =
     case VClo(x, body, ρf) =>
       val y = fresh()
       reify(body, ρf + (x -> VCode(EVar(y))), { case VCode(t) =>
-        reflect(ELam(y, None, t, None), k, γ)
+        reflect(ELam(y, t), k, γ)
       })
 
 def evalPrim(op: String, v1: Value, v2: Value): Value =
@@ -144,7 +149,7 @@ def eval(e: Expr, ρ: Env, k: Cont, γ: MCont): Value =
       k(VBool(b), γ)
     case EVar(x) =>
       k(ρ(x), γ)
-    case ELam(x, artTy, e, retTy) =>
+    case ELam(x, e) =>
       k(VClo(x, e, ρ), γ)
     case EApp(e1, e2, s) if s == Sta =>
       eval(e1, ρ, { case (VClo(x, body, ρf), γ1) =>
@@ -198,7 +203,6 @@ def eval(e: Expr, ρ: Env, k: Cont, γ: MCont): Value =
       eval(e, ρ, { case (VCode(x), γ1) =>
         reflect(EUnaryOp1(op, x), k, γ1)
       }, γ)
-    case EAscribe(e, _) => eval(e, ρ, k, γ)
 
 def eval(e: Expr): Ans =
   reset

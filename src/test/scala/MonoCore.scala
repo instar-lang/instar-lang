@@ -12,17 +12,17 @@ class MonoCoreTest extends munit.FunSuite {
   test("subtype") {
     // Subtype relations derived from reflexivity
     assert(TInt.subtype(TInt))
-    assert(TFun(TInt, TInt).subtype(TFun(TInt, TInt)))
-    assert(!TFun(TInt, TInt).subtype(TFun(TBool, TInt)))
-    assert(!TFun(TInt, TInt).subtype(TFun(TInt, TBool)))
+    assert(TFun(TInt, TInt, Top).subtype(TFun(TInt, TInt, Top)))
+    assert(!TFun(TInt, TInt, Top).subtype(TFun(TBool, TInt, Top)))
+    assert(!TFun(TInt, TInt, Top).subtype(TFun(TInt, TBool, Top)))
 
     // Let's say Rep[t1] <: Rep[t2] when t1 <: t2
     assert(TCode(TInt).subtype(TCode(TInt)))
     assert(!TCode(TBool).subtype(TCode(TInt)))
     // covariant in return type: Int -> Int <: Int -> Rep[Int]
-    assert(TFun(TInt, TInt).subtype(TFun(TInt, TCode(TInt))))
+    assert(TFun(TInt, TInt, Top).subtype(TFun(TInt, TCode(TInt), Top)))
     // contravariant in argument type: Rep[Int] -> Int <: Int -> Int
-    assert(TFun(TCode(TInt), TInt).subtype(TFun(TCode(TInt), TInt)))
+    assert(TFun(TCode(TInt), TInt, Top).subtype(TFun(TCode(TInt), TInt, Top)))
 
     // We can say t1 <: Rep[t2] when t1 <: t2, because we can always lift a value of t1 to get a value of Rep[t1]
     // Int <: Rep[Int]

@@ -1,14 +1,11 @@
 package spmp.tyck.mono
 
 import spmp.core.mono as core
-import spmp.surf.mono as surf
+import spmp.surf.mono.*
 
 /* TODO: type checking for fully annotated core language.
 1. add effect labels to track code generation side effect.
-2. add two mutually typing judgements,
-   top-level judgment Γ ⊢ e : τ | ϵ and
-   binding-time sensitive judgment Γ ⊢ˢ e : τ | ϵ.
-3. add binding-time wellformedness restrictions.
+2. add binding-time wellformedness restrictions.
 */
 
 /* TODO: extend MonoCore with stage polymorphism.
@@ -39,21 +36,75 @@ import spmp.surf.mono as surf
    but the top-level program is well-formed only under the rep type,
    which means that our two-level programs always generate code.
 */
+
+// TODO: extend MonoCore with effect subsumption-rule.
 object Tyck:
-  type Env = Map[String, (core.Stage, core.Type)]
+  type Env = Map[String, core.Type]
 
-  def check(expr: core.Expr): Unit =
+  def check(Γ: Env, expr: core.Expr): Unit =
+    import core.Type.*
+    expr match
+      case core.Expr.EUnit => assert(expr.ty.get == TUnit); assert(expr.eff.get == core.Bot)
+      case core.Expr.ENum(i) => assert(expr.ty.get == TInt); assert(expr.eff.get == core.Bot)
+      case core.Expr.EBool(b) => assert(expr.ty.get == TBool); assert(expr.eff.get == core.Bot)
+      case core.Expr.EVar(x) => assert(expr.ty.get == Γ(x)); assert(expr.eff.get == core.Bot)
+      case core.Expr.ELam(x, body) =>
+        val TFun(argTy, retTy, eff) = expr.ty.get
+        assert(body.ty.get == retTy)
+        assert(body.eff.get == eff); assert(expr.eff.get == core.Bot)
+        check(Γ + (x -> argTy), body)
+      case core.Expr.EApp(e1, e2, st) if st == core.Sta =>
+        val TFun(argTy, retTy, eff) = e1.ty.get
+        assert(e2.ty.get == argTy); assert(expr.ty.get == retTy)
+        assert(expr.eff.get == eff || e1.eff.get || e2.eff.get)
+        check(Γ, e1); check(Γ, e2)
+      case core.Expr.EApp(e1, e2, st) if st == core.Dyn =>
+        val TCode(TFun(argTy, retTy, core.Bot)) = e1.ty.get
+        assert(e2.ty.get == TCode(argTy)); assert(expr.ty.get == TCode(retTy))
+        assert(expr.eff.get == core.Top)
+        check(Γ, e1); check(Γ, e2)
+      case core.Expr.ELift(t) =>
+        t.ty.get match
+          case TUnit => assert(expr.ty.get == TCode(TUnit))
+          case TInt => assert(expr.ty.get == TCode(TInt))
+          case TBool => assert(expr.ty.get == TCode(TBool))
+          case TFun(t1, t2, _) => assert(expr.ty.get == TCode(TFun(t1, t2, core.Bot)))
+        assert(expr.eff.get == core.Top)
+        check(Γ, t)
+      case core.Expr.ERun(t) =>
+        val TCode(ty) = t.ty.get
+        assert(expr.ty.get == ty)
+        assert(expr.eff.get == core.Bot)
+        // Note: check run in an empty context
+        check(Map.empty, t)
+      case core.Expr.ELet(x, rhs, body) =>
+        assert(expr.ty.get == body.ty.get)
+        assert(expr.eff.get == rhs.eff.get || body.eff.get)
+        check(Γ + (x -> rhs.ty.get), body)
+      case core.Expr.ECond(e1, e2, e3, st) if st == core.Sta =>
+        val ty = expr.ty.get
+        assert(e1.ty.get == TBool); assert(e2.ty.get == ty); assert(e3.ty.get == ty)
+        assert(expr.eff.get == e1.eff.get || e2.eff.get || e3.eff.get)
+        check(Γ, e1); check(Γ, e2); check(Γ, e3)
+      case core.Expr.ECond(e1, e2, e3, st) if st == core.Dyn =>
+        val TCode(ty) = expr.ty.get
+        assert(e1.ty.get == TCode(TBool)); assert(e2.ty.get == TCode(ty)); assert(e3.ty.get == TCode(ty))
+        assert(expr.eff.get == core.Top)
+        check(Γ, e1); check(Γ, e2); check(Γ, e3)
+      case core.Expr.EBinOp(op, e1, e2, st) =>
+      case core.Expr.EUnaryOp(op, e, st) =>
     ???
-
 
 /* TODO: bidirectional type checking and elaboration for surface language.
 1. use a simpler type definition? Because we don't need to distinguish code fragment and code anymore in the surface language.
+2. add subsumption-rule for code type.
+3. elaboration respects the subsumption-rule by lift-inserting.
 */
 object Elab:
   type Env = Map[String, core.Type]
 
-  def infer(env: Env, stage: core.Stage, expr: surf.Expr): core.Expr =
+  def infer(Γ: Env, stage: core.Stage, expr: Expr): core.Expr =
     ???
 
-  def check(env: Env, stage: core.Stage, expr: surf.Expr, expected: core.Type): core.Expr =
+  def check(Γ: Env, stage: core.Stage, expr: Expr, expected: core.Type): core.Expr =
     ???
