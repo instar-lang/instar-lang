@@ -40,10 +40,10 @@ import spmp.surf.mono.*
 // TODO: extend MonoCore with effect subsumption-rule.
 object Tyck:
   type Env = Map[String, core.Type]
+  import core.Type.*
+  import core.{Top, Bot}
 
   def check(Γ: Env, expr: core.Expr): Unit =
-    import core.Type.*
-    import core.{Top, Bot}
     expr match
       case core.Expr.EUnit => assert(expr.ty.get == TUnit); assert(expr.eff.get == Bot)
       case core.Expr.ENum(i) => assert(expr.ty.get == TInt); assert(expr.eff.get == Bot)
@@ -120,6 +120,11 @@ object Tyck:
             assert(expr.ty.get == TCode(TInt)); assert(e.ty.get == TCode(TInt))
         assert(expr.eff.get == Top)
         check(Γ, e)
+
+  def check(expr: core.Expr): Unit =
+    if (expr.eff.get == Top)
+      val TCode(_) = expr.ty.get
+    check(Map.empty, expr)
 
 /* TODO: bidirectional type checking and elaboration for surface language.
 1. use a simpler type definition? Because we don't need to distinguish code fragment and code anymore in the surface language.
