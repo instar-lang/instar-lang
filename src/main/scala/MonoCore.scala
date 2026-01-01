@@ -14,6 +14,12 @@ type Effect = Boolean
 val Top: Effect = true
 val Bot: Effect = false
 
+def <=(e1: Effect, e2: Effect): Boolean =
+  (e1, e2) match
+    case (false, _) => true
+    case (true, true) => true
+    case (true, false) => false
+
 enum Type:
   case TUnit, TInt, TBool
   case TFun(t1: Type, t2: Type, eff: Effect)
