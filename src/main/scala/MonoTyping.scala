@@ -220,13 +220,8 @@ object Elab:
             val join = core.join(e2Typed.ty.get, e3Typed.ty.get)
             // TODO: we need to insert some lifts according to the join type
             core.Expr
-              .ECond(
-                e1Typed,
-                e2Typed,
-                e3Typed,
-                core.Sta
-              )
-              .withType(e2Typed.ty.get)
+              .ECond(e1Typed, e2Typed, e3Typed, core.Sta)
+              .withType(join)
           case core.Type.TCode(core.Type.TBool) =>
             // Γ ⊢ e1 ⇒ Code[Bool]
             // Γ ⊢ e2 ⇒ Code[ty1]
@@ -243,14 +238,9 @@ object Elab:
             val e3Typed = infer(Γ, e3)
             val core.Type.TCode(ty1) = e2Typed.ty.get
             val core.Type.TCode(ty2) = e3Typed.ty.get
-            val join = core.max(ty1, ty2)
+            val join = core.join(ty1, ty2)
             core.Expr
-              .ECond(
-                e1Typed,
-                e2Typed,
-                e3Typed,
-                core.Dyn
-              )
+              .ECond(e1Typed, e2Typed, e3Typed, core.Dyn)
               .withType(core.Type.TCode(join))
       case Expr.EBinOp(op, e1, e2) =>
         op match
@@ -331,27 +321,42 @@ object Elab:
               .ELam(x, bodyTyped)
               .withType(expected)
       case Expr.EApp(e1, e2) =>
-        // Γ ⊢ e1 → argTy → retTy
-        // Γ ⊢ e2 ⇐ argTy
-        // retTy <: expected
-        // ------------------------
-        // Γ ⊢ e1 e2 ⇐ expected
-
-        // TODO (DZ): I think it's could be possible to do η-expansion here if
-        // e1's type is Code[argTy → retTy], but let's not do it for now.
         val e1Typed = infer(Γ, e1)
-        val core.Type.TFun(argTy, retTy, _) = e1Typed.ty.get
-        val e2Typed = check(Γ, e2, argTy)
-        assert(retTy.subtype(expected))
-        expected match
-          case core.Type.TCode(_) =>
-            core.Expr
-              .EApp(e1Typed, e2Typed, core.Dyn)
-              .withType(expected)
-          case _ =>
-            core.Expr
-              .EApp(e1Typed, e2Typed, core.Sta)
-              .withType(expected)
+        e1Typed.ty.get match
+          case core.Type.TFun(argTy, retTy, _) =>
+            // Γ ⊢ e1 → argTy → retTy
+            // Γ ⊢ e2 ⇐ argTy
+            // retTy <: expected
+            // ------------------------
+            // Γ ⊢ e1 e2 ⇐ expected
+            val e2Typed = check(Γ, e2, argTy)
+            assert(retTy.subtype(expected))
+            expected match
+              case core.Type.TCode(_) =>
+                core.Expr
+                  .EApp(e1Typed, e2Typed, core.Dyn)
+                  .withType(expected)
+              case _ =>
+                core.Expr
+                  .EApp(e1Typed, e2Typed, core.Sta)
+                  .withType(expected)
+          case core.Type.TCode(core.Type.TFun(argTy, retTy, _)) =>
+            // Γ ⊢ e1 ⇒ Code[argTy → retTy]
+            // Γ ⊢ e2 ⇐ Code[argTy]
+            // Code[retTy] <: expected
+            // ------------------------
+            // Γ ⊢ e1 e2 ⇐ expected
+            val e2Typed = check(Γ, e2, core.Type.TCode(argTy))
+            assert(core.Type.TCode(retTy).subtype(expected))
+            expected match
+              case core.Type.TCode(_) =>
+                core.Expr
+                  .EApp(e1Typed, e2Typed, core.Dyn)
+                  .withType(expected)
+              case _ =>
+                core.Expr
+                  .EApp(e1Typed, e2Typed, core.Sta)
+                  .withType(expected)
       case Expr.ELift(t) =>
         // This is a introduction rule for TCode type, the conclusion is the principal judgement.
         // Γ ⊢ t ⇐ ty
@@ -395,6 +400,7 @@ object Elab:
             // Γ ⊢ e1 ⇒ Code[Bool]
             // Γ ⊢ e2 ⇐ expected
             // Γ ⊢ e3 ⇐ expected
+            // expected is Code[_]
             // ------------------------
             // Γ ⊢ if e1 then e2 else e3 ⇐ expected
 
@@ -459,16 +465,16 @@ object Elab:
             // -----------------------
             // Γ ⊢ - e ⇐ expected
             assert(expected.subtype(core.Type.TCode(core.Type.TInt)))
-        val eTyped = check(Γ, e, expected)
-        expected match
-          case core.Type.TCode(_) =>
-            core.Expr
-              .EUnaryOp(op, eTyped, core.Dyn)
-              .withType(expected)
-          case _ =>
-            core.Expr
-              .EUnaryOp(op, eTyped, core.Sta)
-              .withType(expected)
+            val eTyped = check(Γ, e, expected)
+            expected match
+              case core.Type.TCode(_) =>
+                core.Expr
+                  .EUnaryOp(op, eTyped, core.Dyn)
+                  .withType(expected)
+              case _ =>
+                core.Expr
+                  .EUnaryOp(op, eTyped, core.Sta)
+                  .withType(expected)
 
       case Expr.EAscribe(e, asTy) =>
         // Γ ⊢ expr ⇐ asTy
