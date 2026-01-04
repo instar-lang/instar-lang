@@ -171,6 +171,7 @@ def eval(e: Expr, ρ: Env, k: Cont, γ: MCont): Value =
     case ELift(e) =>
       eval(e, ρ, lift(k), γ)
     case ERun(e) =>
+      // Question (DZ): Should we alter the meta-continuation rather than continuation here? Since continuation k only accepts a reflected variable?
       eval(e, ρ, { case (VCode(t), γ1) =>
         eval(t, ρ, k, γ1)
       }, γ)
