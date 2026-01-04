@@ -8,6 +8,8 @@ object SubTyping:
   extension (t1: Type)
     // Subtyping relation: t1 <: t2
     def subtype(t2: Type): Boolean = (t1, t2) match
+      case (Type.TFun(Type.TCode(arg1), Type.TCode(ret1), _), Type.TCode(Type.TFun(arg2, ret2, _))) =>
+        arg2.subtype(arg1) && ret1.subtype(ret2)
       case (Type.TFun(arg1, ret1, _), Type.TFun(arg2, ret2, _)) =>
         // contravariant in argument, covariant in return
         // FIXME: relation between the latent effects?
@@ -23,21 +25,23 @@ object SubTyping:
           // A: I (DZ) cannot find out a case for now.
           true
         }
-      case (a, Type.TCode(b)) => // t1 <: Rep[t2]
-        // Q: When a value of t1 can replace every usage of another value of Rep[t2]?
-        // A: Anytime if t1 <: t2. Because we can always apply operator `lift` on a value of t1 to get Rep[t1].
-        a.subtype(b)
+      case (Type.TBool, Type.TCode(Type.TBool)) |
+          (Type.TUnit, Type.TCode(Type.TUnit)) |
+          (Type.TInt, Type.TCode(Type.TInt)) =>
+        // bool <: Rep[bool]
+        // unit <: Rep[unit]
+        // int  <: Rep[int]
+        true
       case (Type.TCode(a), b) =>
-        // Q: Can we say Rep[t1] <: t2?
-        // A: No, and it's not similar as previous case.
-        //    The only way to bring a value of Rep[t1] to a first stage value of t1 is to `run` it.
-        //    But I (DZ) think inserting `lift` when needed is natural, but inserting `run` is weird.
         false
       case (a, b) if a == b =>
         // reflexivity, we must put this case after TCode cases, because TCode(TUnit).subtype(TCode(TUnit)) is false
         true
       case _ => false
-
+      // Q: Can we say Rep[t1] <: t2?
+      // A: No, and it's not similar as previous case.
+      //    The only way to bring a value of Rep[t1] to a first stage value of t1 is to `run` it.
+      //    But I (DZ) think inserting `lift` when needed is natural, but inserting `run` is weird.
     def isPure: Boolean =
       // I (DZ) don't now how to detect impurity in current setting, so let's conservatively say computation with any type could be impure.
       false
@@ -60,9 +64,11 @@ def max(t1: Type, t2: Type): Type =
 
 def join(t1: Type, t2: Type): Type =
   import SubTyping.*
+  // TODO: implement join correctly
   if t1.subtype(t2) then t2
   else if t2.subtype(t1) then t1
   else
     // no join type
-    throw new Exception(s"Join type for the case of $t1 and $t2 is not supported yet.")
-
+    throw new Exception(
+      s"Join type for the case of $t1 and $t2 is not supported yet."
+    )
