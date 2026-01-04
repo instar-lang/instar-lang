@@ -189,7 +189,13 @@ object Elab:
         // Γ ⊢ lift t ⇒ Code[ty]
         val tTyped = infer(Γ, t)
         val ty = tTyped.ty.get
-        core.Expr.ELift(tTyped).withType(core.Type.TCode(ty))
+        ty match
+          case core.Type.TUnit |
+               core.Type.TInt |
+               core.Type.TBool =>
+            core.Expr.ELift(tTyped).withType(core.Type.TCode(ty))
+          case core.Type.TFun(core.Type.TCode(argTy), core.Type.TCode(retTy), _) =>
+            core.Expr.ELift(tTyped).withType(core.Type.TCode(core.Type.TFun(argTy, retTy, core.Bot)))
       case Expr.ERun(t) =>
         // Γ ⊢ t ⇒ Code[ty]
         // ------------------------
@@ -320,6 +326,9 @@ object Elab:
             core.Expr
               .ELam(x, bodyTyped)
               .withType(expected)
+          // case core.Type.TCode(core.Type.TFun(argTyExpected, retTyExpected, _)) => ???
+          //   I (DZ) think checking a lambda against a code function type also make sense, since Code[t1] -> Code[t2] <: Code[t1 -> t2].
+          //   But let's not support this for now because I don't know what the infer rule counterpart should be.
       case Expr.EApp(e1, e2) =>
         val e1Typed = infer(Γ, e1)
         e1Typed.ty.get match

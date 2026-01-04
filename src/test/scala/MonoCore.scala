@@ -35,4 +35,89 @@ class MonoCoreTest extends munit.FunSuite {
 
   }
 
+  test("bidirectional") {
+    import spmp.surf.mono as surf
+    import spmp.tyck.mono.*
+    {
+      // lift (λx: Rep[Int]. x + 1) ⇒ Rep[Int -> Int]
+      val t = surf.Expr.ELift(
+        surf.Expr.ELam(
+          "x",
+          Some(TCode(TInt)),
+          surf.Expr.EBinOp(
+            "+",
+            surf.Expr.EVar("x"),
+            surf.Expr.ENum(1)
+          ),
+          None
+        )
+      )
+
+      val expected = TCode(
+        TFun(
+          TInt,
+          TInt,
+          Bot
+        )
+      )
+
+      val inferred = Elab.infer(Map.empty, t)
+      assertEquals(inferred.ty.get, expected)
+    }
+
+    {
+      // (λx. x + 1) : Rep[Int]->Rep[Int] ⇒ Rep[Int]->Rep[Int]
+      val t = surf.Expr
+        .EAscribe(
+          surf.Expr.ELam(
+            "x",
+            None,
+            surf.Expr.EBinOp(
+              "+",
+              surf.Expr.EVar("x"),
+              surf.Expr.ENum(1)
+            ),
+            None
+          ),
+          TFun(
+            TCode(TInt),
+            TCode(TInt),
+            Bot
+          )
+        )
+
+      val expected = TFun(
+        TCode(TInt),
+        TCode(TInt),
+        Bot
+      )
+      val inferred = Elab.infer(Map.empty, t)
+      assertEquals(inferred.ty.get, expected)
+    }
+
+    {
+      // (lift (λx: Rep[Int]. x + 1)) 1 ⇒ Rep[Int]
+      val t = surf.Expr.EApp(
+        surf.Expr.ELift(
+          surf.Expr.ELam(
+            "x",
+            Some(TCode(TInt)),
+            surf.Expr.EBinOp(
+              "+",
+              surf.Expr.EVar("x"),
+              surf.Expr.ENum(1)
+            ),
+            None
+          )
+        ),
+        surf.Expr.ENum(1)
+      )
+
+      val expected = TCode(TInt)
+      val inferred = Elab.infer(Map.empty, t)
+      assertEquals(inferred.ty.get, expected)
+    }
+
+  }
+
 }
