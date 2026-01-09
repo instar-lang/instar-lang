@@ -29,6 +29,7 @@ enum Expr:
   case EIf(cond: Expr, thn: Expr, els: Expr) // if t1 t2 t3
 
   case EBin(op: BinOp, left: Expr, right: Expr) // t1 ⊕ t2
+  case EUnary(op: String, v: Expr) // ⊖ t
 
   case EAlloc(e: Expr) // alloc t
   case EGet(e: Expr) // get t
