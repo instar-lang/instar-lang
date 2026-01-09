@@ -5,7 +5,7 @@ import spmp.surf.*
 
 type Env = Map[String, core.Type]
 
-def infer(expr: Expr): core.Expr =
+def infer(env: Env, expr: Expr): core.Expr =
   expr match
     case Expr.EUnit                 =>
     case Expr.ENatV(n)              =>
@@ -27,7 +27,7 @@ def infer(expr: Expr): core.Expr =
     case Expr.EAscribe(e, ty)       =>
   ???
 
-def check(term: Expr, expected: core.Type): core.Expr =
+def check(env: Env, term: Expr, expected: core.Type): core.Expr =
   term match
     case Expr.EUnit                 =>
     case Expr.ENatV(n)              =>
