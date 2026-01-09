@@ -1,12 +1,11 @@
 package spmp.surf
 
 import spmp.core
+import spmp.core.Type
+import spmp.core.Stage
 
 type StageVar = String
 type BinOp = String
-
-type Type = core.Type
-type Stage = core.Stage
 
 enum Expr:
   case EUnit // ()
