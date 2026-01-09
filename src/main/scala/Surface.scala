@@ -1,8 +1,8 @@
 package spmp.surf
 
-import spmp.core
-import spmp.core.Type
-import spmp.core.Stage
+import spmp.eff
+import spmp.eff.Type
+import spmp.eff.Stage
 
 type StageVar = String
 type BinOp = String
@@ -17,6 +17,8 @@ enum Expr:
 
   case ELet(x: String, rhs: Expr, body: Expr) // let x = t1 in t2
 
+  // TODO: lift accepts a stage parameter, if the parameter is None, it means lifting to stage 2
+  // case ELift(e: Expr, Option[Stage])
   case ELift(e: Expr) // lift t
   case ERun(e: Expr) // run t
 
