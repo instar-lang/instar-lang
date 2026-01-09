@@ -1,9 +1,12 @@
 package spmp.tyck
 
 import spmp.core
+import spmp.core.Type
+import spmp.core.Stage
+
 import spmp.surf.*
 
-type Env = Map[String, core.Type]
+type Env = Map[String, Type]
 
 def infer(env: Env, expr: Expr): core.Expr =
   expr match
@@ -27,7 +30,7 @@ def infer(env: Env, expr: Expr): core.Expr =
     case Expr.EAscribe(e, ty)       =>
   ???
 
-def check(env: Env, term: Expr, expected: core.Type): core.Expr =
+def check(env: Env, term: Expr, expected: Type): core.Expr =
   term match
     case Expr.EUnit                 =>
     case Expr.ENatV(n)              =>
