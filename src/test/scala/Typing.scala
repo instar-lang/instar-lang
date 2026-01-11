@@ -111,6 +111,37 @@ class TypingTest extends munit.FunSuite {
         Set.empty
       )
     )
+
+    // { s } ⊢ int <: int@s
+    assert(
+      TInt.subtype(TAt(TInt, SVar("s")), Set("s"))
+    )
+  }
+
+  def testInfer(e: Expr, str: String): Unit = {
+    val eTyped = infer(Map.empty, Set.empty, e)
+    assertEquals(eTyped.ty.get.toString, str)
+  }
+
+  test("typing-poly") {
+    import core.Type.*
+    import core.Stage.*
+    import Expr.*
+
+    // Λs. λx: int. x => ∀s. int → int
+    val e0 = ESLam(
+      "s",
+      ELam("x", TInt, EVar("x"))
+    )
+    testInfer(e0, "TForallSt(s,TFun(TInt,TInt))")
+
+    // Λs. λx: int@s. x + 1 ⇒ ∀s. int@s → int@s
+    val e1 = ESLam(
+      "s",
+      ELam("x", TAt(TInt, SVar("s")), EBin("+", EVar("x"), ENatV(1)))
+    )
+    testInfer(e1, "TForallSt(s,TFun(TAt(TInt,SVar(s)),TAt(TInt,SVar(s))))")
+
   }
 
 }
