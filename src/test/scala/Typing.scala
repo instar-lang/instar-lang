@@ -8,7 +8,7 @@ import spmp.surf.*
 class TypingTest extends munit.FunSuite {
 
   test("subtype-simple") {
-    import SubTyping.*
+    import Subtyping.*
     import core.Type.*
 
     // int <: int
@@ -52,7 +52,7 @@ class TypingTest extends munit.FunSuite {
   }
 
   test("subtype-poly") {
-    import SubTyping.*
+    import Subtyping.*
     import core.Type.*
     import core.Stage.*
 

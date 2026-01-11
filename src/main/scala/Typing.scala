@@ -10,20 +10,20 @@ import spmp.Counter.fresh
 type Env = Map[String, core.Type]
 type StEnv = Set[String]
 
-object SubTyping:
+object Subtyping:
   extension (t1: Type)
     // Subtyping relation: t1 <: t2
-    def subtype(t2: Type, env: StEnv): Boolean = (t1, t2) match
+    def subtype(t2: Type, stenv: StEnv): Boolean = (t1, t2) match
       case (
             Type.TFun(arg1, ret1),
             Type.TCode(Type.TFun(arg2, ret2))
           ) =>
-        Type.TCode(arg2).subtype(arg1, env) && ret1.subtype(Type.TCode(ret2), env)
+        Type.TCode(arg2).subtype(arg1, stenv) && ret1.subtype(Type.TCode(ret2), stenv)
       case (Type.TFun(arg1, ret1), Type.TFun(arg2, ret2)) =>
         // contravariant in argument, covariant in return
-        arg2.subtype(arg1, env) && ret1.subtype(ret2, env)
+        arg2.subtype(arg1, stenv) && ret1.subtype(ret2, stenv)
       case (Type.TCode(t1), Type.TCode(t2)) => // Code[t1] <: Code[t2]
-        t1.subtype(t2, env)
+        t1.subtype(t2, stenv)
       case (Type.TBool, Type.TCode(Type.TBool)) |
           (Type.TUnit, Type.TCode(Type.TUnit)) |
           (Type.TInt, Type.TCode(Type.TInt)) =>
@@ -44,7 +44,7 @@ object SubTyping:
         //     s ∈ Γ
         // ---------------
         // unit <: unit@s
-        env.contains(s)
+        stenv.contains(s)
       case (
             Type.TFun(arg1, ret1),
             Type.TAt(Type.TFun(arg2, ret2), Stage.SVar(s))
@@ -52,9 +52,9 @@ object SubTyping:
         // s ∈ Γ    arg2@s <: arg1   ret1 <: ret2@s
         // ----------------------------------------
         //     arg1 -> ret1 <: (arg2 -> ret2)@s
-        env.contains(s)
-        && Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, env)
-        && ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), env)
+        stenv.contains(s)
+        && Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, stenv)
+        && ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), stenv)
       case (Type.TForallSt(s1, t1), Type.TForallSt(s2, t2)) =>
         // Γ, s ⊢ t1 <: t2
         // -----------------------
@@ -62,7 +62,7 @@ object SubTyping:
         val sFresh = fresh(prefix = "s")
         val t1Inst = t1.subst(s1, Stage.SVar(sFresh))
         val t2Inst = t2.subst(s2, Stage.SVar(sFresh))
-        t1Inst.subtype(t2Inst, env + sFresh)
+        t1Inst.subtype(t2Inst, stenv + sFresh)
       case (a, b) => a == b // TODO: Make where this case (reflexivity) is applied more explicit
 
     def subst(s: String, st: Stage): Type = t1 match
@@ -81,7 +81,7 @@ object SubTyping:
         Type.TCode(t.subst(s, st))
 
     def join(t2: Type, env: StEnv): Type =
-      import SubTyping.*
+      import Subtyping.*
       // we require t1 <: t2 or t2 <: t1 when calling ⊔
       if t1.subtype(t2, env) then t2
       else if t2.subtype(t1, env) then t1
@@ -92,7 +92,7 @@ object SubTyping:
         )
 
 def infer(env: Env, expr: Expr): core.Expr =
-  import SubTyping.*
+  import Subtyping.*
   expr match
     case Expr.EUnit =>
       core.Expr.EUnit.withType(Type.TUnit)
@@ -110,8 +110,7 @@ def infer(env: Env, expr: Expr): core.Expr =
         .withType(
           Type.TFun(ty, bodyTyped.ty.get)
         )
-    case Expr.ESLam(s, body) =>
-      ???
+    case Expr.ESLam(s, body) => ???
     case Expr.ELet(x, rhs, body) =>
       val rhsTyped = infer(env, rhs)
       val bodyTyped = infer(env + (x -> rhsTyped.ty.get), body)
@@ -211,7 +210,7 @@ def infer(env: Env, expr: Expr): core.Expr =
       eTyped.withType(ty)
 
 def check(env: Env, expr: Expr, expected: Type): core.Expr =
-  import SubTyping.*
+  import Subtyping.*
   expr match
     case Expr.ESLam(s, body)     => ???
     case Expr.ELet(x, rhs, body) =>
