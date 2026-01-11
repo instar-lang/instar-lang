@@ -228,7 +228,53 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
               s
             )
             .withType(joined)
-    case Expr.EIf(_, _, _) => ???
+    case Expr.EIf(cond, thn, els) =>
+      val condTyped = infer(env, stenv, cond)
+      condTyped.ty.get match
+        case Type.TBool =>
+          // Γ ⊢ cond ⇒ Bool
+          // Γ ⊢ thn ⇒ ty1
+          // Γ ⊢ els ⇒ ty2
+          // ty1 ⊔ ty2 = ty
+          // -----------------------------------
+          // Γ ⊢ if cond then thn else els ⇒ ty
+          val thnTyped = infer(env, stenv, thn)
+          val elsTyped = infer(env, stenv, els)
+          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
+          core.Expr
+            .ECond(condTyped, thnTyped, elsTyped, core.Sta)
+            .withType(joined)
+        case Type.TCode(Type.TInt) =>
+          // Γ ⊢ cond ⇒ Code[Bool]
+          // Γ ⊢ thn ⇒ ty1
+          // Γ ⊢ els ⇒ ty2
+          // ty1 ⊔ ty2 = Code[_]
+          // ------------------------------------------
+          // Γ ⊢ if cond then thn else els ⇒ ty1 ⊔ ty2
+          val thnTyped = infer(env, stenv, thn)
+          val elsTyped = infer(env, stenv, els)
+          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
+          assert(joined.isInstanceOf[Type.TCode])
+          core.Expr
+            .ECond(condTyped, thnTyped, elsTyped, core.Dyn)
+            .withType(joined)
+        case Type.TAt(Type.TBool, s) =>
+          // Γ ⊢ cond ⇒ Bool@s
+          // Γ ⊢ thn ⇒ ty1
+          // Γ ⊢ els ⇒ ty2
+          // ty1 ⊔ ty2 = _@s
+          // -----------------------------------
+          // Γ ⊢ if cond then thn else els ⇒ ty1 ⊔ ty2
+          val thnTyped = infer(env, stenv, thn)
+          val elsTyped = infer(env, stenv, els)
+          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
+          assert(joined match
+            case Type.TAt(_, s1) if s1 == s => true
+            case _                          => false
+          )
+          core.Expr
+            .ECond(condTyped, thnTyped, elsTyped, s)
+            .withType(joined)
     case Expr.EBin(op, left, right) =>
       op match
         case "+" | "-" | "*" | "/" =>
