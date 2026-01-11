@@ -96,6 +96,18 @@ object Subtyping:
           s"$t1 and $t2 is not comparable under $str (neither t1 <: t2 nor t2 <: t1)"
         )
 
+extension (t: Type)
+  def erase: Type = t match
+    case Type.TUnit | Type.TInt | Type.TBool => t
+    case Type.TFun(arg, ret) =>
+      Type.TFun(arg.erase, ret.erase)
+    case Type.TForallSt(_, ty) =>
+      ty.erase
+    case Type.TAt(ty, _) =>
+      ty.erase
+    case Type.TCode(ty) =>
+      Type.TCode(ty.erase)
+
 def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
   import Subtyping.*
   expr match
@@ -280,18 +292,13 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
         case "+" | "-" | "*" | "/" =>
           // Γ ⊢ e1 ⇒ ty1
           // Γ ⊢ e2 ⇒ ty2
-          // ty1 ⊔ ty2 <: Code[Int] or ty1 ⊔ ty2 = Int@s
+          // |ty1 ⊔ ty2| <: Int
           // -------------------------------------------
           // Γ ⊢ e1 + e2 ⇒ ty1 ⊔ ty2
           val leftTyped = infer(env, stenv, left)
           val rightTyped = infer(env, stenv, right)
           val joined = leftTyped.ty.get.join(rightTyped.ty.get, stenv)
-          // Now we dont have int@s <: Code[int], so we have this hack: ty1 ⊔ ty2 = Int@s
-          // TODO: try to remove this hack (mabe we can check erase(ty1 ⊔ ty2) <: Int)
-          val isIntAtS = joined match
-            case Type.TAt(Type.TInt, Stage.SVar(_)) => true
-            case _                                  => false
-          assert(joined.subtype(Type.TCode(Type.TInt), stenv) || isIntAtS)
+          assert(joined.erase.subtype(Type.TInt, stenv))
           val stage = joined match
             case Type.TCode(_)          => core.Dyn
             case Type.TAt(Type.TInt, s) => s
@@ -302,20 +309,13 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
         case "==" | "!=" | "<" | "<=" | ">" | ">=" =>
           // Γ ⊢ e1 ⇒ ty1
           // Γ ⊢ e2 ⇒ ty2
-          // ty1 ⊔ ty2 <: Code[Int] or ty1 ⊔ ty2 = Int@s
+          // |ty1 ⊔ ty2| <: Int
           // ---------------------------------------------------------------------------------------
           // Γ ⊢ e1 == e2 ⇒ f(ty1 ⊔ ty2) where f(Code[t]) = Code[Bool], f(t@s) = Bool@s, f(t) = Bool
           val leftTyped = infer(env, stenv, left)
           val rightTyped = infer(env, stenv, right)
           val joined = leftTyped.ty.get.join(rightTyped.ty.get, stenv)
-          val isIntAtS = joined match
-            case Type.TAt(Type.TInt, Stage.SVar(_)) => true
-            case _                                  => false
-          // Now we dont have int@s <: Code[int], so we have this hack: ty1 ⊔ ty2 = Int@s
-          // TODO: try to remove this hack
-          assert(
-            joined.subtype(Type.TCode(Type.TInt), stenv) || isIntAtS
-          )
+          assert(joined.erase.subtype(Type.TInt, stenv))
           def f(t: Type): Type = t match
             case Type.TCode(_)  => Type.TCode(Type.TBool)
             case Type.TAt(_, s) => Type.TAt(Type.TBool, s)
