@@ -96,6 +96,161 @@ object Subtyping:
           s"$t1 and $t2 is not comparable under $str (neither t1 <: t2 nor t2 <: t1)"
         )
 
+  extension (expr: core.Expr)
+    def coerceTo(from: Type, to: Type, stenv: StEnv): core.Expr =
+      import core.Expr
+      (from, to) match
+        case (
+              Type.TFun(arg1, ret1),
+              Type.TCode(Type.TFun(arg2, ret2))
+            ) =>
+          // To coerce f: arg1 -> ret1  to  Code[arg2 -> ret2]
+          // we create a new function λ x: Code[arg2]. (f (x : arg1) : Code[ret2]), then feed the function to lift
+          // TODO: Don't do η-expansion if not necessary
+          val newArgName = fresh()
+          val newArg = Expr.EVar(newArgName)
+          val newArgCoerced = newArg.coerceTo(
+            Type.TCode(arg2),
+            arg1,
+            stenv
+          )
+          val body = Expr.EApp(
+            expr,
+            newArgCoerced,
+            core.Dyn
+          )
+          val bodyCoerced = body.coerceTo(
+            ret1,
+            Type.TCode(ret2),
+            stenv
+          )
+          Expr
+            .ELift(
+              Expr.ELam(
+                newArgName,
+                Some(Type.TCode(arg2)),
+                bodyCoerced,
+                Some(Type.TCode(ret2))
+              ),
+              core.Dyn
+            )
+            .withType(Type.TCode(Type.TFun(arg2, ret2)))
+        case (Type.TFun(arg1, ret1), Type.TFun(arg2, ret2)) =>
+          // contravariant in argument, covariant in return
+          val newArgName = fresh()
+          val newArg = Expr.EVar(newArgName)
+          val newArgCoerced = newArg.coerceTo(
+            arg2,
+            arg1,
+            stenv
+          )
+          val body = Expr.EApp(
+            expr,
+            newArgCoerced,
+            core.Sta
+          )
+          val bodyCoerced = body.coerceTo(
+            ret1,
+            ret2,
+            stenv
+          )
+          Expr
+            .ELam(
+              newArgName,
+              Some(arg2),
+              bodyCoerced,
+              Some(ret2)
+            )
+            .withType(Type.TFun(arg2, ret2))
+        // case (Type.TCode(t1), Type.TCode(t2)) => // Code[t1] <: Code[t2]
+        //   // In our current subtyping relation, two types are related only if their erased types are equal. So this case is covered by the reflexivity case below.
+        //   // But if we want to extend the type system with more types, this case should be revisited.
+        //   ???
+        case (Type.TBool, Type.TCode(Type.TBool)) |
+            (Type.TUnit, Type.TCode(Type.TUnit)) |
+            (Type.TInt, Type.TCode(Type.TInt)) =>
+          // bool <: Code[bool]
+          // unit <: Code[unit]
+          // int  <: Code[int]
+          Expr.ELift(expr, core.Dyn).withType(to)
+        case (Type.TBool | Type.TUnit | Type.TInt, Type.TAt(t, Stage.SVar(s)))
+            if t == from =>
+          //     s ∈ Γ
+          // ---------------
+          // int <: int@s
+
+          //     s ∈ Γ
+          // ---------------
+          // bool <: bool@s
+
+          //     s ∈ Γ
+          // ---------------
+          // unit <: unit@s
+          assert(stenv.contains(s))
+          Expr.ELift(expr, Stage.SVar(s)).withType(to)
+        case (
+              Type.TFun(arg1, ret1),
+              Type.TAt(Type.TFun(arg2, ret2), Stage.SVar(s))
+            ) =>
+          // s ∈ Γ    arg2@s <: arg1   ret1 <: ret2@s
+          // ----------------------------------------
+          //     arg1 -> ret1 <: (arg2 -> ret2)@s
+          Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, stenv)
+          && ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), stenv)
+          assert(stenv.contains(s))
+          val newArgName = fresh()
+          val newArg = Expr.EVar(newArgName)
+          val newArgCoerced = newArg.coerceTo(
+            Type.TAt(arg2, Stage.SVar(s)),
+            arg1,
+            stenv
+          )
+          val body = Expr.EApp(
+            expr,
+            newArgCoerced,
+            Stage.SVar(s)
+          )
+          val bodyCoerced = body.coerceTo(
+            ret1,
+            Type.TAt(ret2, Stage.SVar(s)),
+            stenv
+          )
+          Expr
+            .ELift(
+              Expr.ELam(
+                newArgName,
+                Some(Type.TAt(arg2, Stage.SVar(s))),
+                bodyCoerced,
+                Some(Type.TAt(ret2, Stage.SVar(s)))
+              ),
+              Stage.SVar(s)
+            )
+        case (Type.TForallSt(s1, t1), Type.TForallSt(s2, t2)) =>
+          // Γ, s ⊢ t1 <: t2
+          // -----------------------
+          // ∀s.t1 <: ∀s.t2
+          val sFresh = fresh(prefix = "s")
+          val t1Inst = t1.subst(s1, Stage.SVar(sFresh))
+          val t2Inst = t2.subst(s2, Stage.SVar(sFresh))
+          t1Inst.subtype(t2Inst, stenv + sFresh)
+          val bodyCoerced = Expr
+            .ESApp(expr, Stage.SVar(sFresh))
+            .coerceTo(
+              t1Inst,
+              t2Inst,
+              stenv + sFresh
+            )
+          Expr.ESLam(sFresh, bodyCoerced).withType(to)
+        case (a, b) if a == b => expr
+        case (a, b) if from.subtype(to, stenv) =>
+          throw new Exception(
+            s"Subtyping rules must be problematic, since we don't know how to coerce between $a and $b."
+          )
+        case (a, b) =>
+          throw new Exception(
+            s"Cannot coerce from $a to $b, because $a </: $b."
+          )
+
 extension (t: Type)
   def erase: Type = t match
     case Type.TUnit | Type.TInt | Type.TBool => t
@@ -150,7 +305,8 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
             .withType(
               Type.TCode(eTyped.ty.get)
             )
-        case Type.TInt | Type.TBool | Type.TUnit if stage.isInstanceOf[Stage.SVar] =>
+        case Type.TInt | Type.TBool | Type.TUnit
+            if stage.isInstanceOf[Stage.SVar] =>
           core.Expr
             .ELift(eTyped, stage)
             .withType(

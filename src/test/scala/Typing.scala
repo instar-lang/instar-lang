@@ -4,6 +4,7 @@ import spmp.eff.Type
 import spmp.eff.Stage
 
 import spmp.surf.*
+import spmp.Counter.reset
 
 class TypingTest extends munit.FunSuite {
 
@@ -118,8 +119,101 @@ class TypingTest extends munit.FunSuite {
     )
   }
 
+  def testCoerce(expr: core.Expr, from: core.Type, to: core.Type, expected: String) = {
+    import Subtyping.*
+    reset
+    val coerced = expr.coerceTo(from, to, Set.empty)
+    assertEquals(coerced.toString, expected)
+  }
+
+  test("subtype-coerce-simple") {
+    import Subtyping.*
+    import core.Type.*
+
+    val expr = core.Expr.EVar("f")
+
+    // int <: int
+    testCoerce(
+      expr,
+      TInt,
+      TInt,
+      "EVar(f)"
+    )
+
+    // int -> int <: int -> int
+    testCoerce(
+      expr,
+      TFun(TInt, TInt),
+      TFun(TInt, TInt),
+      "ELam(x0,Some(TInt),EApp(EVar(f),EVar(x0),SNum(0)),Some(TInt))"
+    )
+
+    // int <: Code[int]
+    testCoerce(
+      expr,
+      TInt,
+      TCode(TInt),
+      "ELift(EVar(f),SNum(1))"
+    )
+
+    // Code[int] -> Code[int] <: Code[int -> int]
+    // f: Code[int] -> Code[int] ⊢ f ⇐ Code[int -> int] ~> lift (λ x: Code[int]. (f x): Code[int])
+    testCoerce(
+      expr,
+      TFun(TCode(TInt), TCode(TInt)),
+      TCode(TFun(TInt, TInt)),
+      "ELift(ELam(x0,Some(TCode(TInt)),EApp(EVar(f),EVar(x0),SNum(1)),Some(TCode(TInt))),SNum(1))"
+    )
+
+    // Code[int] -> int <: Code[int -> int]
+    // f: Code[int] -> int ⊢ f ⇐ Code[int -> int] ~> lift (λ x: Code[int]. (lift (f x)) : Code[int])
+    testCoerce(
+      expr,
+      TFun(TCode(TInt), TInt),
+      TCode(TFun(TInt, TInt)),
+      "ELift(ELam(x0,Some(TCode(TInt)),ELift(EApp(EVar(f),EVar(x0),SNum(1)),SNum(1)),Some(TCode(TInt))),SNum(1))"
+    )
+  }
+
+  test("subtype-coerce-poly") {
+    import Subtyping.*
+    import core.Type.*
+    import core.Stage.*
+
+    val expr = core.Expr.EVar("f")
+
+    // forall s. int <: forall s. int@s
+    // f: forall s. int ⊢ f ⇐ forall s. int@s ~> Λs. lift (f[s], s)
+    testCoerce(
+      expr,
+      TForallSt("s", TInt),
+      TForallSt("s", TAt(TInt, SVar("s"))),
+      "ESLam(s0,ELift(ESApp(EVar(f),SVar(s0)),SVar(s0)))"
+    )
+
+    // forall s. (int@s -> int@s) <: forall s. (int -> int)@s
+    // f: forall s. (int@s -> int@s) ⊢ f ⇐ forall s. (int -> int)@s ~> Λs. lift (λ x: int@s. (f[s] x), s)
+    val s = SVar("s")
+    testCoerce(
+      expr,
+      TForallSt("s", TFun(TAt(TInt, s), TAt(TInt, s))),
+      TForallSt("s", TAt(TFun(TInt, TInt), s)),
+      "ESLam(s0,ELift(ELam(x1,Some(TAt(TInt,SVar(s0))),EApp(ESApp(EVar(f),SVar(s0)),EVar(x1),SVar(s0)),Some(TAt(TInt,SVar(s0)))),SVar(s0)))"
+    )
+
+    // forall s. int@s -> int <: forall s. (int -> int)@s
+    // f: forall s. int@s -> int ⊢ f ⇐ forall s. (int -> int)@s ~> Λs. lift (λ x: int@s. lift (f[s] x, s), s)
+    testCoerce(
+      expr,
+      TForallSt("s", TFun(TAt(TInt, SVar("s")), TInt)),
+      TForallSt("s", TAt(TFun(TInt, TInt), SVar("s"))),
+      "ESLam(s0,ELift(ELam(x1,Some(TAt(TInt,SVar(s0))),ELift(EApp(ESApp(EVar(f),SVar(s0)),EVar(x1),SVar(s0)),SVar(s0)),Some(TAt(TInt,SVar(s0)))),SVar(s0)))"
+    )
+  }
+
   def testInfer(e: Expr, str: String): Unit = {
     val eTyped = infer(Map.empty, Set.empty, e)
+    reset
     assertEquals(eTyped.ty.get.toString, str)
   }
 
