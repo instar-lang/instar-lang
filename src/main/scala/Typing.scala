@@ -141,20 +141,34 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
       val rhsTyped = infer(env, stenv, rhs)
       val bodyTyped = infer(env + (x -> rhsTyped.ty.get), stenv, body)
       core.Expr.ELet(x, rhsTyped, bodyTyped).withType(bodyTyped.ty.get)
-    case Expr.ELift(e) =>
+    case Expr.ELift(e, stage) =>
       val eTyped = infer(env, stenv, e)
       eTyped.ty.get match
-        case Type.TInt | Type.TBool | Type.TUnit =>
+        case Type.TInt | Type.TBool | Type.TUnit if stage == core.Dyn =>
           core.Expr
-            .ELift(eTyped, core.Sta)
+            .ELift(eTyped, core.Dyn)
             .withType(
               Type.TCode(eTyped.ty.get)
             )
-        case Type.TFun(Type.TCode(argTy), Type.TCode(retTy)) =>
+        case Type.TInt | Type.TBool | Type.TUnit if stage.isInstanceOf[Stage.SVar] =>
+          core.Expr
+            .ELift(eTyped, stage)
+            .withType(
+              Type.TAt(eTyped.ty.get, stage)
+            )
+        case Type.TFun(Type.TCode(argTy), Type.TCode(retTy))
+            if stage == core.Dyn =>
           core.Expr
             .ELift(eTyped, core.Dyn)
             .withType(
               Type.TCode(Type.TFun(argTy, retTy))
+            )
+        case Type.TFun(Type.TAt(argTy, s), Type.TAt(retTy, s1))
+            if s == s1 && s == s1 =>
+          core.Expr
+            .ELift(eTyped, stage)
+            .withType(
+              Type.TAt(Type.TFun(argTy, retTy), stage)
             )
     case Expr.ERun(e) =>
       val eTyped = infer(env, stenv, e)
@@ -359,10 +373,10 @@ def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
       val rhsTyped = infer(env, stenv, rhs)
       val bodyTyped = check(env + (x -> rhsTyped.ty.get), stenv, body, expected)
       core.Expr.ELet(x, rhsTyped, bodyTyped).withType(bodyTyped.ty.get)
-    case Expr.ELift(e) =>
+    case Expr.ELift(e, stage) =>
       expected match
         case Type.TCode(Type.TInt) | Type.TCode(Type.TBool) |
-            Type.TCode(Type.TUnit) =>
+            Type.TCode(Type.TUnit) if stage == core.Dyn =>
           // Γ ⊢ e ⇐ Int
           // --------------------------------
           // Γ ⊢ lift e ⇐ Code[Int]
@@ -376,7 +390,7 @@ def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
               case Type.TCode(Type.TUnit) => Type.TUnit
           )
           core.Expr.ELift(eTyped, core.Sta).withType(expected)
-        case Type.TCode(Type.TFun(argTy, retTy)) =>
+        case Type.TCode(Type.TFun(argTy, retTy)) if stage == core.Dyn =>
           // Γ ⊢ e ⇐ Code[argTy] -> Code[retTy]
           // ----------------------------------------
           // Γ ⊢ lift e ⇐ Code[argTy -> retTy]
@@ -387,6 +401,17 @@ def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
             Type.TFun(Type.TCode(argTy), Type.TCode(retTy))
           )
           core.Expr.ELift(eTyped, core.Dyn).withType(expected)
+        case Type.TAt(Type.TFun(argTy, retTy), s) =>
+          // Γ ⊢ e ⇐ argTy@s -> retTy@s
+          // ------------------------------------
+          // Γ ⊢ lift e ⇐ (argTy -> retTy)@s
+          val eTyped = check(
+            env,
+            stenv,
+            e,
+            Type.TFun(Type.TAt(argTy, s), Type.TAt(retTy, s))
+          )
+          core.Expr.ELift(eTyped, stage).withType(expected)
     case Expr.ERun(e) =>
       // Γ ⊢ e ⇐ Code[ty]
       // ------------------------

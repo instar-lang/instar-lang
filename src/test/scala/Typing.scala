@@ -123,12 +123,34 @@ class TypingTest extends munit.FunSuite {
     assertEquals(eTyped.ty.get.toString, str)
   }
 
+  test("typing-simple") {
+    import core.Type.*
+    import core.Stage.*
+    import Expr.*
+
+    // λx: int. x + 1 ⇒ int -> int
+    val e0 = ELam(
+      "x",
+      TInt,
+      EBin("+", EVar("x"), ENatV(1))
+    )
+    testInfer(e0, "TFun(TInt,TInt)")
+
+    // lift (1, Dyn) ⇒ Code[int]
+    val e1 = ELift(ENatV(1), core.Dyn)
+    testInfer(e1, "TCode(TInt)")
+
+    // lift (λx: Code[int]. x, Dyn) ⇒ Code[int -> int]
+    val e2 = ELift(ELam("x", TCode(TInt), EVar("x")), core.Dyn)
+    testInfer(e2, "TCode(TFun(TInt,TInt))")
+  }
+
   test("typing-poly") {
     import core.Type.*
     import core.Stage.*
     import Expr.*
 
-    // Λs. λx: int. x => ∀s. int → int
+    // Λs. λx: int. x ⇒ ∀s. int → int
     val e0 = ESLam(
       "s",
       ELam("x", TInt, EVar("x"))
@@ -142,6 +164,19 @@ class TypingTest extends munit.FunSuite {
     )
     testInfer(e1, "TForallSt(s,TFun(TAt(TInt,SVar(s)),TAt(TInt,SVar(s))))")
 
+    // Λs. lift (1, s) ⇒ ∀s. int@s
+    val e2 = ESLam("s", ELift(ENatV(1), SVar("s")))
+    testInfer(e2, "TForallSt(s,TAt(TInt,SVar(s)))")
+
+    // Λs. lift (λx: int@s. x, s) ⇒ ∀s. (int -> int)@s
+    val e3 = ESLam(
+      "s",
+      ELift(
+        ELam("x", TAt(TInt, SVar("s")), EVar("x")),
+        SVar("s")
+      )
+    )
+    testInfer(e3, "TForallSt(s,TAt(TFun(TInt,TInt),SVar(s)))")
   }
 
 }
