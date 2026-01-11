@@ -18,7 +18,10 @@ object Subtyping:
             Type.TFun(arg1, ret1),
             Type.TCode(Type.TFun(arg2, ret2))
           ) =>
-        Type.TCode(arg2).subtype(arg1, stenv) && ret1.subtype(Type.TCode(ret2), stenv)
+        Type.TCode(arg2).subtype(arg1, stenv) && ret1.subtype(
+          Type.TCode(ret2),
+          stenv
+        )
       case (Type.TFun(arg1, ret1), Type.TFun(arg2, ret2)) =>
         // contravariant in argument, covariant in return
         arg2.subtype(arg1, stenv) && ret1.subtype(ret2, stenv)
@@ -63,7 +66,8 @@ object Subtyping:
         val t1Inst = t1.subst(s1, Stage.SVar(sFresh))
         val t2Inst = t2.subst(s2, Stage.SVar(sFresh))
         t1Inst.subtype(t2Inst, stenv + sFresh)
-      case (a, b) => a == b // TODO: Make where this case (reflexivity) is applied more explicit
+      case (a, b) =>
+        a == b // TODO: Make where this case (reflexivity) is applied more explicit
 
     def subst(s: String, st: Stage): Type = t1 match
       case Type.TUnit | Type.TInt | Type.TBool => t1
@@ -80,15 +84,16 @@ object Subtyping:
       case Type.TCode(t) =>
         Type.TCode(t.subst(s, st))
 
-    def join(t2: Type, env: StEnv): Type =
+    def join(t2: Type, stenv: StEnv): Type =
       import Subtyping.*
       // we require t1 <: t2 or t2 <: t1 when calling ⊔
-      if t1.subtype(t2, env) then t2
-      else if t2.subtype(t1, env) then t1
+      if t1.subtype(t2, stenv) then t2
+      else if t2.subtype(t1, stenv) then t1
       else
+        val str = stenv.mkString("{ ", ", ", " }")
         // no join type
         throw new Exception(
-          s"$t1 and $t2 is not comparable in join operation (neither t1 <: t2 nor t2 <: t1)"
+          s"$t1 and $t2 is not comparable under $str (neither t1 <: t2 nor t2 <: t1)"
         )
 
 def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
