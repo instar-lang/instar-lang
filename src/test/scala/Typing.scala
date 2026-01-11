@@ -162,7 +162,7 @@ class TypingTest extends munit.FunSuite {
       expr,
       TFun(TCode(TInt), TCode(TInt)),
       TCode(TFun(TInt, TInt)),
-      "ELift(ELam(x0,Some(TCode(TInt)),EApp(EVar(f),EVar(x0),SNum(1)),Some(TCode(TInt))),SNum(1))"
+      "ELift(ELam(x0,Some(TCode(TInt)),EApp(EVar(f),EVar(x0),SNum(0)),Some(TCode(TInt))),SNum(1))"
     )
 
     // Code[int] -> int <: Code[int -> int]
@@ -171,7 +171,7 @@ class TypingTest extends munit.FunSuite {
       expr,
       TFun(TCode(TInt), TInt),
       TCode(TFun(TInt, TInt)),
-      "ELift(ELam(x0,Some(TCode(TInt)),ELift(EApp(EVar(f),EVar(x0),SNum(1)),SNum(1)),Some(TCode(TInt))),SNum(1))"
+      "ELift(ELam(x0,Some(TCode(TInt)),ELift(EApp(EVar(f),EVar(x0),SNum(0)),SNum(1)),Some(TCode(TInt))),SNum(1))"
     )
   }
 
@@ -198,7 +198,7 @@ class TypingTest extends munit.FunSuite {
       expr,
       TForallSt("s", TFun(TAt(TInt, s), TAt(TInt, s))),
       TForallSt("s", TAt(TFun(TInt, TInt), s)),
-      "ESLam(s0,ELift(ELam(x1,Some(TAt(TInt,SVar(s0))),EApp(ESApp(EVar(f),SVar(s0)),EVar(x1),SVar(s0)),Some(TAt(TInt,SVar(s0)))),SVar(s0)))"
+      "ESLam(s0,ELift(ELam(x1,Some(TAt(TInt,SVar(s0))),EApp(ESApp(EVar(f),SVar(s0)),EVar(x1),SNum(0)),Some(TAt(TInt,SVar(s0)))),SVar(s0)))"
     )
 
     // forall s. int@s -> int <: forall s. (int -> int)@s
@@ -207,7 +207,7 @@ class TypingTest extends munit.FunSuite {
       expr,
       TForallSt("s", TFun(TAt(TInt, SVar("s")), TInt)),
       TForallSt("s", TAt(TFun(TInt, TInt), SVar("s"))),
-      "ESLam(s0,ELift(ELam(x1,Some(TAt(TInt,SVar(s0))),ELift(EApp(ESApp(EVar(f),SVar(s0)),EVar(x1),SVar(s0)),SVar(s0)),Some(TAt(TInt,SVar(s0)))),SVar(s0)))"
+      "ESLam(s0,ELift(ELam(x1,Some(TAt(TInt,SVar(s0))),ELift(EApp(ESApp(EVar(f),SVar(s0)),EVar(x1),SNum(0)),SVar(s0)),Some(TAt(TInt,SVar(s0)))),SVar(s0)))"
     )
   }
 

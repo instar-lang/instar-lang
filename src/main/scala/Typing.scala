@@ -117,7 +117,7 @@ object Subtyping:
           val body = Expr.EApp(
             expr,
             newArgCoerced,
-            core.Dyn
+            core.Sta
           )
           val bodyCoerced = body.coerceTo(
             ret1,
@@ -208,7 +208,7 @@ object Subtyping:
           val body = Expr.EApp(
             expr,
             newArgCoerced,
-            Stage.SVar(s)
+            core.Sta
           )
           val bodyCoerced = body.coerceTo(
             ret1,
