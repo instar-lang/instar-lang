@@ -131,7 +131,19 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
       core.Expr.ELet(x, rhsTyped, bodyTyped).withType(bodyTyped.ty.get)
     case Expr.ELift(e) =>
       val eTyped = infer(env, stenv, e)
-      ???
+      eTyped.ty.get match
+        case Type.TInt | Type.TBool | Type.TUnit =>
+          core.Expr
+            .ELift(eTyped, core.Sta)
+            .withType(
+              Type.TCode(eTyped.ty.get)
+            )
+        case Type.TFun(Type.TCode(argTy), Type.TCode(retTy)) =>
+          core.Expr
+            .ELift(eTyped, core.Dyn)
+            .withType(
+              Type.TCode(Type.TFun(argTy, retTy))
+            )
     case Expr.ERun(e) =>
       val eTyped = infer(env, stenv, e)
       core.Expr.ERun(eTyped).withType(eTyped.ty.get)
@@ -302,12 +314,33 @@ def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
       val bodyTyped = check(env + (x -> rhsTyped.ty.get), stenv, body, expected)
       core.Expr.ELet(x, rhsTyped, bodyTyped).withType(bodyTyped.ty.get)
     case Expr.ELift(e) =>
-      // Γ ⊢ e ⇐ ty
-      // ------------------------
-      // Γ ⊢ lift e ⇐ Code[ty]
-      val Type.TCode(_) = expected
-      val eTyped = check(env, stenv, e, expected)
-      core.Expr.ELift(eTyped, core.Dyn).withType(expected)
+      expected match
+        case Type.TCode(Type.TInt) | Type.TCode(Type.TBool) |
+            Type.TCode(Type.TUnit) =>
+          // Γ ⊢ e ⇐ Int
+          // --------------------------------
+          // Γ ⊢ lift e ⇐ Code[Int]
+          val eTyped = check(
+            env,
+            stenv,
+            e,
+            expected match
+              case Type.TCode(Type.TInt)  => Type.TInt
+              case Type.TCode(Type.TBool) => Type.TBool
+              case Type.TCode(Type.TUnit) => Type.TUnit
+          )
+          core.Expr.ELift(eTyped, core.Sta).withType(expected)
+        case Type.TCode(Type.TFun(argTy, retTy)) =>
+          // Γ ⊢ e ⇐ Code[argTy] -> Code[retTy]
+          // ----------------------------------------
+          // Γ ⊢ lift e ⇐ Code[argTy -> retTy]
+          val eTyped = check(
+            env,
+            stenv,
+            e,
+            Type.TFun(Type.TCode(argTy), Type.TCode(retTy))
+          )
+          core.Expr.ELift(eTyped, core.Dyn).withType(expected)
     case Expr.ERun(e) =>
       // Γ ⊢ e ⇐ Code[ty]
       // ------------------------
