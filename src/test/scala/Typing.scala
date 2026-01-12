@@ -119,7 +119,12 @@ class TypingTest extends munit.FunSuite {
     )
   }
 
-  def testCoerce(expr: core.Expr, from: core.Type, to: core.Type, expected: String) = {
+  def testCoerce(
+      expr: core.Expr,
+      from: core.Type,
+      to: core.Type,
+      expected: String
+  ) = {
     import Subtyping.*
     reset
     val coerced = expr.coerceTo(from, to, Set.empty)
@@ -271,6 +276,70 @@ class TypingTest extends munit.FunSuite {
       )
     )
     testInfer(e3, "TForallSt(s,TAt(TFun(TInt,TInt),SVar(s)))")
+
+    // Λs. λx: int@s. λy: int. x + y ⇒ ∀s. int@s -> int -> int@s
+    val e4 = ESLam(
+      "s",
+      ELam(
+        "x",
+        TAt(TInt, SVar("s")),
+        ELam(
+          "y",
+          TInt,
+          EBin("+", EVar("x"), EVar("y"))
+        )
+      )
+    )
+    testInfer(
+      e4,
+      "TForallSt(s,TFun(TAt(TInt,SVar(s)),TFun(TInt,TAt(TInt,SVar(s)))))"
+    )
+
+    // ⊢ fix power: ∀s. int@s -> int -> int@s = Λs. λx: int@s. λn: int. ifz n then 1@s else x * (power[s] (n - 1))
+    // ⇒ ∀s. int@s -> int -> int@s
+    val e5 = EFix(
+      "power",
+      TForallSt(
+        "s",
+        TFun(
+          TAt(TInt, SVar("s")),
+          TFun(
+            TInt,
+            TAt(TInt, SVar("s"))
+          )
+        )
+      ),
+      ESLam(
+        "s",
+        ELam(
+          "x",
+          TAt(TInt, SVar("s")),
+          ELam(
+            "n",
+            TInt,
+            EIfz(
+              EVar("n"),
+              ELift(ENatV(1), SVar("s")),
+              EBin(
+                "*",
+                EVar("x"),
+                EApp(
+                  EApp(
+                    ESApp(EVar("power"), SVar("s")),
+                    EVar("x")
+                  ),
+                  EBin("-", EVar("n"), ENatV(1))
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    testInfer(
+      e5,
+      "TForallSt(s,TFun(TAt(TInt,SVar(s)),TFun(TInt,TAt(TInt,SVar(s)))))"
+    )
   }
 
 }
