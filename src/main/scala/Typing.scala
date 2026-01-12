@@ -529,6 +529,34 @@ def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
       val inst = ty.subst(s1, Stage.SVar(s))
       val bodyTyped = check(env, stenv + s, body, inst)
       core.Expr.ESLam(s, bodyTyped).withType(expected)
+    // case Expr.ELam(x, ty, e) =>
+    //   expected match
+    //     case Type.TFun(argTy, retTy) =>
+    //       // Γ, x: ty ⊢ e ⇐ retTy
+    //       // argTy <: ty
+    //       // -------------------------------------------
+    //       // Γ ⊢ λx: ty. e ⇐ argTy -> retTy
+    //       assert(argTy.subtype(ty, stenv))
+    //       val bodyTyped = check(env + (x -> ty), stenv, e, retTy)
+    //       core.Expr.ELam(x, Some(ty), bodyTyped, Some(retTy)).withType(expected)
+    //     case Type.TCode(Type.TFun(argTy, retTy)) =>
+    //       // Γ, x: Code[argTy] ⊢ e ⇐ Code[retTy]
+    //       // -----------------------------------------------
+    //       // Γ ⊢ λx: Code[argTy]. e ⇐ Code[argTy -> retTy]
+    //       val bodyTyped = check(
+    //         env + (x -> Type.TCode(argTy)),
+    //         stenv,
+    //         e,
+    //         Type.TCode(retTy)
+    //       )
+    //       core.Expr
+    //         .ELam(
+    //           x,
+    //           Some(Type.TCode(argTy)),
+    //           bodyTyped,
+    //           Some(Type.TCode(retTy))
+    //         )
+    //         .withType(expected)
     case Expr.ELet(x, rhs, body) =>
       // Γ ⊢ rhs ⇒ ty
       // Γ, x: ty ⊢ body ⇐ expected
@@ -657,9 +685,9 @@ def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
           val leftTyped = check(env, stenv, left, expected)
           val rightTyped = check(env, stenv, right, expected)
           val stage = expected match
-            case Type.TCode(_) => core.Dyn
+            case Type.TCode(_)          => core.Dyn
             case Type.TAt(Type.TInt, s) => s
-            case _             => core.Sta
+            case _                      => core.Sta
           core.Expr
             .EBinOp(op, leftTyped, rightTyped, stage)
             .withType(expected)
@@ -672,15 +700,15 @@ def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
           // Γ ⊢ left == right ⇐ expected
           assert(expected.erase.subtype(Type.TBool, stenv))
           def f(t: Type): Type = t match
-            case Type.TCode(Type.TBool) => Type.TCode(Type.TInt)
+            case Type.TCode(Type.TBool)  => Type.TCode(Type.TInt)
             case Type.TAt(Type.TBool, s) => Type.TAt(Type.TInt, s)
-            case Type.TBool             => Type.TInt
+            case Type.TBool              => Type.TInt
           val leftTyped = check(env, stenv, left, f(expected))
           val rightTyped = check(env, stenv, right, f(expected))
           val stage = expected match
-            case Type.TCode(_) => core.Dyn
+            case Type.TCode(_)           => core.Dyn
             case Type.TAt(Type.TBool, s) => s
-            case _             => core.Sta
+            case _                       => core.Sta
           core.Expr
             .EBinOp(op, leftTyped, rightTyped, stage)
             .withType(expected)
