@@ -217,8 +217,8 @@ class TypingTest extends munit.FunSuite {
   }
 
   def testInfer(e: Expr, str: String): Unit = {
-    val eTyped = infer(Map.empty, Set.empty, e)
     reset
+    val eTyped = infer(Map.empty, Set.empty, e)
     assertEquals(eTyped.ty.get.toString, str)
   }
 
@@ -340,6 +340,22 @@ class TypingTest extends munit.FunSuite {
       e5,
       "TForallSt(s,TFun(TAt(TInt,SVar(s)),TFun(TInt,TAt(TInt,SVar(s)))))"
     )
+
+    intercept[MatchError] {
+      // lift λx: Code[int]. Λs. 1ˢ
+      val e6 = ELift(
+        ELam(
+          "x",
+          TCode(TInt),
+          ESLam(
+            "s",
+            ELift(ENatV(1), SVar("s"))
+          )
+        ),
+        core.Dyn
+      )
+      testInfer(e6, "")
+    }
   }
 
 }

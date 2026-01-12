@@ -84,6 +84,14 @@ class CoreTest extends munit.FunSuite {
 
     val VCode(e) = eval(e5(1))
     testEval(e, "VNum(6)")
+
+    intercept[MatchError] {
+      // creating a stage closure in reification context will cause error (we must reject this in our type checker)
+      // lift λx. Λs. 1ˢ
+      val e6 =
+        ELift2(ELam("x", None, ESLam("s", ELift(ENum(1), SVar("s"))), None))
+      eval(e6)
+    }
   }
 
   test("run") {
