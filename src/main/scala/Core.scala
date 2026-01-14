@@ -171,6 +171,8 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Cont, γ: MCont): Value =
       // free variables, locations and stage variables.
       reify(e, ρ, ς, {
         case VCode(t) =>
+          // TODO: Moreover, if we allow cross-stage persistence, t will refer some
+          // locations in current σ', how to observe current σ' here?
           eval(t, Map(), Map(), k, γ)
       })
     case ELet(x, rhs, e) =>
