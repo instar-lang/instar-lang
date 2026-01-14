@@ -166,9 +166,13 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Cont, γ: MCont): Value =
     case ELift(e, to) if evalStVar(to, ς) == Dyn =>
       eval(e, ρ, ς, lift(k), γ)
     case ERun(e) =>
-      eval(e, ρ, ς, { case (VCode(t), γ1) =>
-        eval(t, ρ, ς, k, γ1)
-      }, γ)
+      // Note: Because `Run` is a R context, we need to reify first.
+      // Here we assume that t is a closed expression without any
+      // free variables, locations and stage variables.
+      reify(e, ρ, ς, {
+        case VCode(t) =>
+          eval(t, Map(), Map(), k, γ)
+      })
     case ELet(x, rhs, e) =>
       eval(rhs, ρ, ς, (v, γ1) => eval(e, ρ + (x -> v), ς, k, γ1), γ)
     case ECond(e1, e2, e3, s) if evalStVar(s, ς) == Sta =>
