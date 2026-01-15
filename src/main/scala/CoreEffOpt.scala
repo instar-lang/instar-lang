@@ -96,7 +96,7 @@ enum Value:
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
-  case VCode(t: Expr) //XXX: could extend to open code value with environment?
+  case VCode(t: Expr) // XXX: could extend to open code value with environment?
 
 extension (t: Option[Type])
   // Assuming well-formedness of types

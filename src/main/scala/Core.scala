@@ -61,7 +61,7 @@ enum Value:
   case VBool(b: Boolean)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
-  case VCode(e: Expr) //XXX: could extend to open code value with environment?
+  case VCode(e: Expr) // XXX: could extend to open code value with environment?
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -171,8 +171,6 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Cont, γ: MCont): Value =
       // free variables, locations and stage variables.
       reify(e, ρ, ς, {
         case VCode(t) =>
-          // TODO: Moreover, if we allow cross-stage persistence, t will refer some
-          // locations in current σ', how to observe current σ' here?
           eval(t, Map(), Map(), k, γ)
       })
     case ELet(x, rhs, e) =>
