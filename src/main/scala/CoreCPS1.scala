@@ -158,7 +158,8 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Value => Value): Value =
     case ELift(e, to) if evalStVar(to, ς) == Dyn =>
       eval(e, ρ, ς, v => lift(v, k))
     case ERun(e) =>
-      eval(e, ρ, ς, { case VCode(t) => eval(t, ρ, ς, k) })
+      val t = reify(e, ρ, ς)
+      eval(t, Map(), Map(), k)
     case ELet(x, rhs, e) =>
       eval(rhs, ρ, ς, v =>
         eval(e, ρ + (x -> v), ς, k))

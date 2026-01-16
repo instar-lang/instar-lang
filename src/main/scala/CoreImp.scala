@@ -157,7 +157,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv): Value =
       lift(eval(e, ρ, ς))
     case ERun(e) =>
       val t = reify { eval(e, ρ, ς) }
-      eval(t, ρ, ς)
+      eval(t, Map(), Map())
     case ELet(x, rhs, e) =>
       val v = eval(rhs, ρ, ς)
       eval(e, ρ + (x -> v), ς)
