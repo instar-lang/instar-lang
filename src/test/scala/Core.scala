@@ -114,6 +114,7 @@ class CoreTest extends munit.FunSuite {
       e2,
       "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(1),SNum(0)),EVar(x3))))"
     )
+
     testEval(
       ERun(e2),
       "VNum(2)"

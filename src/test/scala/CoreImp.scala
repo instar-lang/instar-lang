@@ -91,6 +91,7 @@ class CoreImpTest extends munit.FunSuite {
       e2,
       "VCode(ELet(x3,ELam(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None),ELet(x4,ENum(1),ELet(x5,EApp(EVar(x3),EVar(x4),SNum(0)),EVar(x5)))))"
     )
+
     testEval(
       ERun(e2),
       "VNum(2)"

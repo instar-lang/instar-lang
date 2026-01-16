@@ -212,4 +212,45 @@ class CoreEffTest extends munit.FunSuite {
     testEval(e, exp)
   }
 
+  test("run") {
+    testEval(ENum(1), "VNum(1)")
+
+    testEval(ERun(ELift2(ENum(1))), "VNum(1)")
+
+    val e1 =
+      ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None))
+
+    testEval(
+      e1,
+      "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),EVar(x2)))"
+    )
+
+    testEval(
+      ERun(e1),
+      "VClo(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None,Map(),Map())"
+    )
+
+    val e2 = ELet(
+      "y",
+      ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None)),
+      EApp2(EVar("y"), ELift2(ENum(1)))
+    )
+
+    testEval(
+      e2,
+      "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(1),SNum(0)),EVar(x3))))"
+    )
+
+    testEval(
+      ERun(e2),
+      "VNum(2)"
+    )
+
+    val e3 = EDeref1(ERun(ELift2(EAlloc1(ENum(1)))))
+
+    testEval(
+      e3,
+      "VNum(1)"
+    )
+  }
 }
