@@ -8,7 +8,29 @@ import spmp.surf.*
 import spmp.Counter.fresh
 
 type Env = Map[String, core.Type]
-type StEnv = Set[String]
+
+enum StEnvElem:
+  case SVar(s: String)
+  case ExistSVar(s: String)
+  case ExistSVarBound(s: String, bound: Stage)
+
+type StEnv = List[StEnvElem]
+
+val EmptyStEnv: StEnv = List.empty
+
+extension (stenv: StEnv)
+  def containsSVar(s: String): Boolean =
+    stenv.exists {
+      case StEnvElem.SVar(s1)              => s1 == s
+      case StEnvElem.ExistSVar(s1)         => false
+      case StEnvElem.ExistSVarBound(s1, _) => false
+    }
+
+  def addSVar(s: String): StEnv =
+    StEnvElem.SVar(s) :: stenv
+
+  def addExistSVar(s: String): StEnv =
+    StEnvElem.ExistSVar(s) :: stenv
 
 object Subtyping:
   extension (t1: Type)
@@ -47,7 +69,7 @@ object Subtyping:
         //     s ∈ Γ
         // ---------------
         // unit <: unit@s
-        stenv.contains(s)
+        stenv.containsSVar(s)
       case (
             Type.TFun(arg1, ret1),
             Type.TAt(Type.TFun(arg2, ret2), Stage.SVar(s))
@@ -55,7 +77,7 @@ object Subtyping:
         // s ∈ Γ    arg2@s <: arg1   ret1 <: ret2@s
         // ----------------------------------------
         //     arg1 -> ret1 <: (arg2 -> ret2)@s
-        stenv.contains(s)
+        stenv.containsSVar(s)
         && Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, stenv)
         && ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), stenv)
       case (Type.TForallSt(s1, t1), Type.TForallSt(s2, t2)) =>
@@ -65,7 +87,7 @@ object Subtyping:
         val sFresh = fresh(prefix = "s")
         val t1Inst = t1.subst(s1, Stage.SVar(sFresh))
         val t2Inst = t2.subst(s2, Stage.SVar(sFresh))
-        t1Inst.subtype(t2Inst, stenv + sFresh)
+        t1Inst.subtype(t2Inst, stenv.addSVar(sFresh))
       case (a, b) =>
         a == b // TODO: Make where this case (reflexivity) is applied more explicit
 
@@ -186,7 +208,7 @@ object Subtyping:
           //     s ∈ Γ
           // ---------------
           // unit <: unit@s
-          assert(stenv.contains(s))
+          assert(stenv.containsSVar(s))
           Expr.ELift(expr, Stage.SVar(s)).withType(to)
         case (
               Type.TFun(arg1, ret1),
@@ -197,7 +219,7 @@ object Subtyping:
           //     arg1 -> ret1 <: (arg2 -> ret2)@s
           Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, stenv)
           && ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), stenv)
-          assert(stenv.contains(s))
+          assert(stenv.containsSVar(s))
           val newArgName = fresh()
           val newArg = Expr.EVar(newArgName)
           val newArgCoerced = newArg.coerceTo(
@@ -232,13 +254,13 @@ object Subtyping:
           val sFresh = fresh(prefix = "s")
           val t1Inst = t1.subst(s1, Stage.SVar(sFresh))
           val t2Inst = t2.subst(s2, Stage.SVar(sFresh))
-          t1Inst.subtype(t2Inst, stenv + sFresh)
+          t1Inst.subtype(t2Inst, stenv.addSVar(sFresh))
           val bodyCoerced = Expr
             .ESApp(expr, Stage.SVar(sFresh))
             .coerceTo(
               t1Inst,
               t2Inst,
-              stenv + sFresh
+              stenv.addSVar(sFresh)
             )
           Expr.ESLam(sFresh, bodyCoerced).withType(to)
         case (a, b) if a == b => expr
@@ -286,7 +308,7 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
       // Γ, s ⊢ body ⇒ ty
       // ---------------------------
       // Γ ⊢ Λs. body ⇒ ∀s. ty
-      val bodyTyped = infer(env, stenv + s, body)
+      val bodyTyped = infer(env, stenv.addSVar(s), body)
       core.Expr
         .ESLam(s, bodyTyped)
         .withType(
@@ -519,10 +541,10 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
 
 def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
   import Subtyping.*
-    // Γ ⊢ expr ⇒ ty
-    // ty <: expected
-    // -----------------------
-    // Γ ⊢ expr ⇐ expected
-    val exprTyped = infer(env, stenv, expr)
-    assert(exprTyped.ty.get.subtype(expected, stenv))
-    exprTyped
+  // Γ ⊢ expr ⇒ ty
+  // ty <: expected
+  // -----------------------
+  // Γ ⊢ expr ⇐ expected
+  val exprTyped = infer(env, stenv, expr)
+  assert(exprTyped.ty.get.subtype(expected, stenv))
+  exprTyped

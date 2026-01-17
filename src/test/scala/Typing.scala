@@ -13,42 +13,42 @@ class TypingTest extends munit.FunSuite {
     import core.Type.*
 
     // int <: int
-    assert(TInt.subtype(TInt, Set.empty))
+    assert(TInt.subtype(TInt, EmptyStEnv))
 
     // bool <: bool
-    assert(TBool.subtype(TBool, Set.empty))
+    assert(TBool.subtype(TBool, EmptyStEnv))
 
     // unit <: unit
-    assert(TUnit.subtype(TUnit, Set.empty))
+    assert(TUnit.subtype(TUnit, EmptyStEnv))
 
     // int -> int <: int -> int
     assert(
       TFun(TInt, TInt)
-        .subtype(TFun(TInt, TInt), Set.empty)
+        .subtype(TFun(TInt, TInt), EmptyStEnv)
     )
 
     // int <: Code[int]
-    assert(TInt.subtype(TCode(TInt), Set.empty))
+    assert(TInt.subtype(TCode(TInt), EmptyStEnv))
 
     // Code[int] </: int
-    assert(!TCode(TInt).subtype(TInt, Set.empty))
+    assert(!TCode(TInt).subtype(TInt, EmptyStEnv))
 
     // Code[int] -> Code[int] <: Code[int -> int]
     assert(
       TFun(TCode(TInt), TCode(TInt))
-        .subtype(TCode(TFun(TInt, TInt)), Set.empty)
+        .subtype(TCode(TFun(TInt, TInt)), EmptyStEnv)
     )
 
     // Code[int] -> int <: Code[int -> int]
     assert(
       TFun(TCode(TInt), TInt)
-        .subtype(TCode(TFun(TInt, TInt)), Set.empty)
+        .subtype(TCode(TFun(TInt, TInt)), EmptyStEnv)
     )
 
     // int -> Code[int] </: Code[int -> int]
     assert(
       !TFun(TInt, TCode(TInt))
-        .subtype(TCode(TFun(TInt, TInt)), Set.empty)
+        .subtype(TCode(TFun(TInt, TInt)), EmptyStEnv)
     )
   }
 
@@ -62,7 +62,7 @@ class TypingTest extends munit.FunSuite {
       TForallSt("s", TInt)
         .subtype(
           TForallSt("s", TAt(TInt, Stage.SVar("s"))),
-          Set.empty
+          EmptyStEnv
         )
     )
 
@@ -72,7 +72,7 @@ class TypingTest extends munit.FunSuite {
       TForallSt("s", TFun(TAt(TInt, s), TAt(TInt, s)))
         .subtype(
           TForallSt("s", TAt(TFun(TInt, TInt), s)),
-          Set.empty
+          EmptyStEnv
         )
     )
 
@@ -81,7 +81,7 @@ class TypingTest extends munit.FunSuite {
       TForallSt("s", TFun(TAt(TInt, SVar("s")), TInt))
         .subtype(
           TForallSt("s", TAt(TFun(TInt, TInt), SVar("s"))),
-          Set.empty
+          EmptyStEnv
         )
     )
 
@@ -92,7 +92,7 @@ class TypingTest extends munit.FunSuite {
       TForallSt("s1", TFun(TAt(TInt, s1), TInt))
         .subtype(
           TForallSt("s2", TAt(TFun(TInt, TInt), s2)),
-          Set.empty
+          EmptyStEnv
         )
     )
 
@@ -100,7 +100,7 @@ class TypingTest extends munit.FunSuite {
     assert(
       !TInt.subtype(
         TForallSt("s", TAt(TInt, Stage.SVar("s"))),
-        Set.empty
+        EmptyStEnv
       )
     )
 
@@ -109,13 +109,13 @@ class TypingTest extends munit.FunSuite {
     assert(
       !TForallSt("s", TAt(TInt, Stage.SVar("s"))).subtype(
         TForallSt("s", TCode(TInt)),
-        Set.empty
+        EmptyStEnv
       )
     )
 
     // { s } ⊢ int <: int@s
     assert(
-      TInt.subtype(TAt(TInt, SVar("s")), Set("s"))
+      TInt.subtype(TAt(TInt, SVar("s")), EmptyStEnv.addSVar("s"))
     )
   }
 
@@ -127,7 +127,7 @@ class TypingTest extends munit.FunSuite {
   ) = {
     import Subtyping.*
     reset
-    val coerced = expr.coerceTo(from, to, Set.empty)
+    val coerced = expr.coerceTo(from, to, EmptyStEnv)
     assertEquals(coerced.toString, expected)
   }
 
@@ -218,7 +218,7 @@ class TypingTest extends munit.FunSuite {
 
   def testInfer(e: Expr, str: String): Unit = {
     reset
-    val eTyped = infer(Map.empty, Set.empty, e)
+    val eTyped = infer(Map.empty, EmptyStEnv, e)
     assertEquals(eTyped.ty.get.toString, str)
   }
 
