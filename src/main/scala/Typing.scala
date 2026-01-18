@@ -184,10 +184,11 @@ object Subtyping:
               Some(ret2)
             )
             .withType(Type.TFun(arg2, ret2))
-        // case (Type.TCode(t1), Type.TCode(t2)) => // Code[t1] <: Code[t2]
-        //   // In our current subtyping relation, two types are related only if their erased types are equal. So this case is covered by the reflexivity case below.
-        //   // But if we want to extend the type system with more types, this case should be revisited.
-        //   ???
+        case (Type.TCode(t1), Type.TCode(t2)) => // Code[t1] <: Code[t2]
+          // In our current subtyping relation, two types are related only if their erased types are equal. So this case is covered by the reflexivity case below.
+          // But if we want to extend the type system with more types, this case should be revisited.
+          assert(t1 == t2)
+          expr
         case (Type.TBool, Type.TCode(Type.TBool)) |
             (Type.TUnit, Type.TCode(Type.TUnit)) |
             (Type.TInt, Type.TCode(Type.TInt)) =>
@@ -389,16 +390,30 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // -----------------------------------
           // Γ ⊢ ifz cond then thn else els ⇒ ty
           val thnTyped = infer(env, stenv, thn)
-          val elsTyped = infer(env, stenv, els)
-          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
-          core.Expr
-            .ECond(
-              core.Expr.EBinOp("==", condTyped, core.Expr.ENum(0), core.Sta),
-              thnTyped,
-              elsTyped,
-              core.Sta
-            )
-            .withType(joined)
+          thnTyped.ty.get match
+            case Type.TCode(_) | Type.TAt(_, _) =>
+              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
+              core.Expr
+                .ECond(
+                  core.Expr
+                    .EBinOp("==", condTyped, core.Expr.ENum(0), core.Sta),
+                  thnTyped,
+                  elsTyped,
+                  core.Sta
+                )
+                .withType(thnTyped.ty.get)
+            case _ =>
+              val elsTyped = infer(env, stenv, els)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
+              core.Expr
+                .ECond(
+                  core.Expr
+                    .EBinOp("==", condTyped, core.Expr.ENum(0), core.Sta),
+                  thnTyped,
+                  elsTyped,
+                  core.Sta
+                )
+                .withType(elsTyped.ty.get)
         case Type.TCode(Type.TInt) =>
           // Γ ⊢ cond ⇒ Code[Int]
           // Γ ⊢ thn ⇒ ty1
@@ -407,17 +422,18 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ------------------------------------------
           // Γ ⊢ ifz cond then thn else els ⇒ ty1 ⊔ ty2
           val thnTyped = infer(env, stenv, thn)
-          val elsTyped = infer(env, stenv, els)
-          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
-          assert(joined.isInstanceOf[Type.TCode])
-          core.Expr
-            .ECond(
-              core.Expr.EBinOp("==", condTyped, core.Expr.ENum(0), core.Dyn),
-              thnTyped,
-              elsTyped,
-              core.Dyn
-            )
-            .withType(joined)
+          thnTyped.ty.get match
+            case Type.TCode(_) =>
+              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
+              core.Expr
+                .ECond(
+                  core.Expr
+                    .EBinOp("==", condTyped, core.Expr.ENum(0), core.Dyn),
+                  thnTyped,
+                  elsTyped,
+                  core.Dyn
+                )
+                .withType(thnTyped.ty.get)
         case Type.TAt(Type.TInt, s) =>
           // Γ ⊢ cond ⇒ Int@s
           // Γ ⊢ thn ⇒ ty1
@@ -426,20 +442,17 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // -----------------------------------
           // Γ ⊢ ifz cond then thn else els ⇒ ty1 ⊔ ty2
           val thnTyped = infer(env, stenv, thn)
-          val elsTyped = infer(env, stenv, els)
-          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
-          assert(joined match
-            case Type.TAt(_, s1) if s1 == s => true
-            case _                          => false
-          )
-          core.Expr
-            .ECond(
-              core.Expr.EBinOp("==", condTyped, core.Expr.ENum(0), s),
-              thnTyped,
-              elsTyped,
-              s
-            )
-            .withType(joined)
+          thnTyped.ty.get match
+            case Type.TAt(_, _) =>
+              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
+              core.Expr
+                .ECond(
+                  core.Expr.EBinOp("==", condTyped, core.Expr.ENum(0), s),
+                  thnTyped,
+                  elsTyped,
+                  s
+                )
+                .withType(thnTyped.ty.get)
     case Expr.EIf(cond, thn, els) =>
       val condTyped = infer(env, stenv, cond)
       condTyped.ty.get match
@@ -451,12 +464,21 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // -----------------------------------
           // Γ ⊢ if cond then thn else els ⇒ ty
           val thnTyped = infer(env, stenv, thn)
-          val elsTyped = infer(env, stenv, els)
-          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
-          core.Expr
-            .ECond(condTyped, thnTyped, elsTyped, core.Sta)
-            .withType(joined)
-        case Type.TCode(Type.TInt) =>
+          thnTyped.ty.get match
+            case Type.TCode(_) | Type.TAt(_, _) =>
+              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
+              core.Expr
+                .ECond(condTyped, thnTyped, elsTyped, core.Sta)
+                .withType(elsTyped.ty.get)
+            case _ =>
+              infer(env, stenv, els)
+              val elsTyped = infer(env, stenv, els)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
+              core.Expr
+                .ECond(condTyped, thnTyped, elsTyped, core.Sta)
+                .withType(elsTyped.ty.get)
+        case Type.TCode(Type.TBool) =>
           // Γ ⊢ cond ⇒ Code[Bool]
           // Γ ⊢ thn ⇒ ty1
           // Γ ⊢ els ⇒ ty2
@@ -464,12 +486,13 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ------------------------------------------
           // Γ ⊢ if cond then thn else els ⇒ ty1 ⊔ ty2
           val thnTyped = infer(env, stenv, thn)
-          val elsTyped = infer(env, stenv, els)
-          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
-          assert(joined.isInstanceOf[Type.TCode])
-          core.Expr
-            .ECond(condTyped, thnTyped, elsTyped, core.Dyn)
-            .withType(joined)
+          thnTyped.ty.get match
+            case Type.TCode(_) =>
+              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
+              core.Expr
+                .ECond(condTyped, thnTyped, elsTyped, core.Dyn)
+                .withType(thnTyped.ty.get)
         case Type.TAt(Type.TBool, s) =>
           // Γ ⊢ cond ⇒ Bool@s
           // Γ ⊢ thn ⇒ ty1
@@ -478,15 +501,12 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // -----------------------------------
           // Γ ⊢ if cond then thn else els ⇒ ty1 ⊔ ty2
           val thnTyped = infer(env, stenv, thn)
-          val elsTyped = infer(env, stenv, els)
-          val joined = thnTyped.ty.get.join(elsTyped.ty.get, stenv)
-          assert(joined match
-            case Type.TAt(_, s1) if s1 == s => true
-            case _                          => false
-          )
-          core.Expr
-            .ECond(condTyped, thnTyped, elsTyped, s)
-            .withType(joined)
+          thnTyped.ty.get match
+            case Type.TAt(_, _) =>
+              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
+              core.Expr
+                .ECond(condTyped, thnTyped, elsTyped, s)
+                .withType(thnTyped.ty.get)
     case Expr.EBin(op, left, right) =>
       op match
         case "+" | "-" | "*" | "/" =>
@@ -496,38 +516,50 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // -------------------------------------------
           // Γ ⊢ e1 + e2 ⇒ ty1 ⊔ ty2
           val leftTyped = infer(env, stenv, left)
-          val rightTyped = infer(env, stenv, right)
-          val joined = leftTyped.ty.get.join(rightTyped.ty.get, stenv)
-          assert(joined.erase.subtype(Type.TInt, stenv))
-          val stage = joined match
-            case Type.TCode(_)          => core.Dyn
-            case Type.TAt(Type.TInt, s) => s
-            case _                      => core.Sta
-          core.Expr
-            .EBinOp(op, leftTyped, rightTyped, stage)
-            .withType(joined)
+          leftTyped.ty.get match
+            case Type.TCode(_) | Type.TAt(_, _) =>
+              val rightTyped = check(env, stenv, right, leftTyped.ty.get)
+              core.Expr
+                .EBinOp(op, leftTyped, rightTyped, core.Dyn)
+                .withType(leftTyped.ty.get)
+            case _ =>
+              val rightTyped = infer(env, stenv, right)
+              assert(leftTyped.ty.get.erase.subtype(Type.TInt, stenv))
+              val stage = rightTyped.ty.get match
+                case Type.TCode(_)          => core.Dyn
+                case Type.TAt(Type.TInt, s) => s
+                case _                      => core.Sta
+              core.Expr
+                .EBinOp(op, leftTyped, rightTyped, stage)
+                .withType(leftTyped.ty.get)
         case "==" | "!=" | "<" | "<=" | ">" | ">=" =>
           // Γ ⊢ e1 ⇒ ty1
           // Γ ⊢ e2 ⇒ ty2
           // |ty1 ⊔ ty2| <: Int
           // ---------------------------------------------------------------------------------------
           // Γ ⊢ e1 == e2 ⇒ f(ty1 ⊔ ty2) where f(Code[t]) = Code[Bool], f(t@s) = Bool@s, f(t) = Bool
-          val leftTyped = infer(env, stenv, left)
-          val rightTyped = infer(env, stenv, right)
-          val joined = leftTyped.ty.get.join(rightTyped.ty.get, stenv)
-          assert(joined.erase.subtype(Type.TInt, stenv))
           def f(t: Type): Type = t match
             case Type.TCode(_)  => Type.TCode(Type.TBool)
             case Type.TAt(_, s) => Type.TAt(Type.TBool, s)
             case _              => Type.TBool
-          val retType = f(joined)
-          val stage = joined match
-            case Type.TCode(_)          => core.Dyn
-            case Type.TAt(Type.TInt, s) => s
-            case _                      => core.Sta
-          core.Expr
-            .EBinOp(op, leftTyped, rightTyped, stage)
-            .withType(retType)
+
+          val leftTyped = infer(env, stenv, left)
+          leftTyped.ty.get match
+            case Type.TCode(Type.TInt) | Type.TAt(Type.TInt, _) =>
+              val rightTyped = check(env, stenv, right, leftTyped.ty.get)
+              val retType = f(leftTyped.ty.get)
+              core.Expr
+                .EBinOp(op, leftTyped, rightTyped, core.Dyn)
+                .withType(retType)
+            case _ =>
+              val rightTyped = infer(env, stenv, right)
+              val stage = rightTyped.ty.get match
+                case Type.TCode(_)          => core.Dyn
+                case Type.TAt(Type.TInt, s) => s
+                case _                      => core.Sta
+              core.Expr
+                .EBinOp(op, leftTyped, rightTyped, stage)
+                .withType(rightTyped.ty.get)
     case Expr.EAlloc(e)       => ???
     case Expr.EGet(e)         => ???
     case Expr.EPut(e1, e2)    => ???
@@ -536,7 +568,7 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
       // -----------------
       // Γ ⊢ (e : ty) ⇒ ty
       val eTyped = infer(env, stenv, e)
-      assert(eTyped.ty.get == ty)
+      assert(eTyped.ty.get.subtype(ty, stenv))
       eTyped.withType(ty)
 
 def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =

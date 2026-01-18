@@ -222,7 +222,7 @@ class TypingTest extends munit.FunSuite {
     assertEquals(eTyped.ty.get.toString, str)
   }
 
-  test("typing-simple") {
+  test("typing-mono") {
     import core.Type.*
     import core.Stage.*
     import Expr.*
@@ -242,6 +242,28 @@ class TypingTest extends munit.FunSuite {
     // lift (λx: Code[int]. x, Dyn) ⇒ Code[int -> int]
     val e2 = ELift(ELam("x", TCode(TInt), EVar("x")), core.Dyn)
     testInfer(e2, "TCode(TFun(TInt,TInt))")
+
+    // ifz 0 then 1 else (2 : Code[int])
+    val e3 = EIfz(ENatV(0), ENatV(1), EAscribe(ENatV(2), TCode(TInt)))
+    testInfer(e3, "TCode(TInt)")
+
+    // if 0 then (1: Code[int]) else 2
+    val e4 = EIfz(
+      ENatV(0),
+      EAscribe(ENatV(1), TCode(TInt)),
+      ENatV(2)
+    )
+    testInfer(e4, "TCode(TInt)")
+
+    intercept[MatchError] {
+      // if lift(0) then 1 else 2
+      val e5 = EIfz(
+        ELift(ENatV(0), core.Dyn),
+        ENatV(1),
+        ENatV(2)
+      )
+      testInfer(e5, "")
+    }
   }
 
   test("typing-poly") {
