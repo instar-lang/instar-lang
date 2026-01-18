@@ -286,101 +286,129 @@ extension (t: Type)
     case Type.TCode(ty) =>
       Type.TCode(ty.erase)
 
-def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
+def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
   import Subtyping.*
   expr match
     case Expr.EUnit =>
-      core.Expr.EUnit.withType(Type.TUnit)
+      (core.Expr.EUnit.withType(Type.TUnit), stenv)
     case Expr.ENatV(n) =>
-      core.Expr.ENum(n).withType(Type.TInt)
+      (core.Expr.ENum(n).withType(Type.TInt), stenv)
     case Expr.EVar(x) =>
-      core.Expr.EVar(x).withType(env(x))
+      (core.Expr.EVar(x).withType(env(x)), stenv)
     case Expr.ELam(x, ty, body) =>
       // Γ, x: argTy ⊢ body ⇐ retTy
       // -------------------------------------------
       // Γ ⊢ λx: argTy. body: retTy ⇒ argTy → retTy
-      val bodyTyped = infer(env + (x -> ty), stenv, body)
-      core.Expr
-        .ELam(x, Some(ty), bodyTyped, bodyTyped.ty)
-        .withType(
-          Type.TFun(ty, bodyTyped.ty.get)
-        )
+      val (bodyTyped, stenv1) = infer(env + (x -> ty), stenv, body)
+      (
+        core.Expr
+          .ELam(x, Some(ty), bodyTyped, bodyTyped.ty)
+          .withType(
+            Type.TFun(ty, bodyTyped.ty.get)
+          ),
+        stenv1
+      )
     case Expr.ESLam(s, body) =>
       // Γ, s ⊢ body ⇒ ty
       // ---------------------------
       // Γ ⊢ Λs. body ⇒ ∀s. ty
-      val bodyTyped = infer(env, stenv.addSVar(s), body)
-      core.Expr
-        .ESLam(s, bodyTyped)
-        .withType(
-          Type.TForallSt(s, bodyTyped.ty.get)
-        )
+      val (bodyTyped, stenv1) = infer(env, stenv.addSVar(s), body)
+      val sIndex = stenv1.lastIndexOf(StEnvElem.SVar(s))
+      (
+        core.Expr
+          .ESLam(s, bodyTyped)
+          .withType(
+            Type.TForallSt(s, bodyTyped.ty.get)
+          ),
+        stenv1.drop(sIndex)
+      )
     case Expr.ELet(x, rhs, body) =>
-      val rhsTyped = infer(env, stenv, rhs)
-      val bodyTyped = infer(env + (x -> rhsTyped.ty.get), stenv, body)
-      core.Expr.ELet(x, rhsTyped, bodyTyped).withType(bodyTyped.ty.get)
+      val (rhsTyped, stenv1) = infer(env, stenv, rhs)
+      val (bodyTyped, stenv2) =
+        infer(env + (x -> rhsTyped.ty.get), stenv1, body)
+      (
+        core.Expr.ELet(x, rhsTyped, bodyTyped).withType(bodyTyped.ty.get),
+        stenv2
+      )
     case Expr.ELift(e, stage) =>
-      val eTyped = infer(env, stenv, e)
+      val (eTyped, stenv1) = infer(env, stenv, e)
       eTyped.ty.get match
         case Type.TInt | Type.TBool | Type.TUnit if stage == core.Dyn =>
-          core.Expr
-            .ELift(eTyped, core.Dyn)
-            .withType(
-              Type.TCode(eTyped.ty.get)
-            )
+          (
+            core.Expr
+              .ELift(eTyped, core.Dyn)
+              .withType(
+                Type.TCode(eTyped.ty.get)
+              ),
+            stenv1
+          )
         case Type.TInt | Type.TBool | Type.TUnit
             if stage.isInstanceOf[Stage.SVar] =>
-          core.Expr
-            .ELift(eTyped, stage)
-            .withType(
-              Type.TAt(eTyped.ty.get, stage)
-            )
+          (
+            core.Expr
+              .ELift(eTyped, stage)
+              .withType(
+                Type.TAt(eTyped.ty.get, stage)
+              ),
+            stenv1
+          )
         case Type.TFun(Type.TCode(argTy), Type.TCode(retTy))
             if stage == core.Dyn =>
-          core.Expr
-            .ELift(eTyped, core.Dyn)
-            .withType(
-              Type.TCode(Type.TFun(argTy, retTy))
-            )
+          (
+            core.Expr
+              .ELift(eTyped, core.Dyn)
+              .withType(
+                Type.TCode(Type.TFun(argTy, retTy))
+              ),
+            stenv1
+          )
         case Type.TFun(Type.TAt(argTy, s), Type.TAt(retTy, s1))
             if s == s1 && s == s1 =>
-          core.Expr
-            .ELift(eTyped, stage)
-            .withType(
-              Type.TAt(Type.TFun(argTy, retTy), stage)
-            )
+          (
+            core.Expr
+              .ELift(eTyped, stage)
+              .withType(
+                Type.TAt(Type.TFun(argTy, retTy), stage)
+              ),
+            stenv1
+          )
     case Expr.ERun(e) =>
-      val eTyped = infer(env, stenv, e)
-      core.Expr.ERun(eTyped).withType(eTyped.ty.get)
+      val (eTyped, stenv1) = infer(env, stenv, e)
+      (core.Expr.ERun(eTyped).withType(eTyped.ty.get), stenv1)
     case Expr.EApp(e1, e2) =>
-      val e1Typed = infer(env, stenv, e1)
+      val (e1Typed, stenv1) = infer(env, stenv, e1)
       e1Typed.ty.get match
         case Type.TFun(argTy, retTy) =>
-          val e2Typed = check(env, stenv, e2, argTy)
-          core.Expr.EApp(e1Typed, e2Typed, core.Sta).withType(retTy)
+          val (e2Typed, stenv2) = check(env, stenv1, e2, argTy)
+          (core.Expr.EApp(e1Typed, e2Typed, core.Sta).withType(retTy), stenv2)
         case Type.TCode(Type.TFun(argTy, retTy)) =>
-          val e2Typed = check(env, stenv, e2, Type.TCode(argTy))
-          core.Expr.EApp(e1Typed, e2Typed, core.Dyn).withType(Type.TCode(retTy))
+          val (e2Typed, stenv2) = check(env, stenv1, e2, Type.TCode(argTy))
+          (
+            core.Expr
+              .EApp(e1Typed, e2Typed, core.Dyn)
+              .withType(Type.TCode(retTy)),
+            stenv2
+          )
     case Expr.ESApp(e, s) =>
       // Γ ⊢ e ⇒ ∀s1. ty
       // --------------------
       // Γ ⊢ e [s] ⇒ ty[s/s1]
-      val eTyped = infer(env, stenv, e)
+      val (eTyped, stenv1) = infer(env, stenv, e)
       val Type.TForallSt(s1, ty) = eTyped.ty.get
       val inst = ty.subst(s1, s)
-      core.Expr.ESApp(eTyped, s).withType(inst)
+      (core.Expr.ESApp(eTyped, s).withType(inst), stenv1)
     case Expr.EFix(f, ty, e) =>
       // Γ, f: ty ⊢ e ⇐ ty
       // -------------------------------------------
       // Γ ⊢ fix f: ty. e ⇒ ty
-      val bodyTyped = check(env + (f -> ty), stenv, e, ty)
+      val (bodyTyped, stenv1) = check(env + (f -> ty), stenv, e, ty)
       val stage = ty match
         case Type.TCode(_)          => core.Dyn
         case Type.TAt(Type.TInt, s) => s
         case _                      => core.Sta
-      core.Expr.EFix(f, bodyTyped, stage).withType(ty)
+      (core.Expr.EFix(f, bodyTyped, stage).withType(ty), stenv1)
     case Expr.EIfz(cond, thn, els) =>
-      val condTyped = infer(env, stenv, cond)
+      val (condTyped, stenv1) = infer(env, stenv, cond)
       condTyped.ty.get match
         case Type.TInt =>
           // Γ ⊢ cond ⇒ Int
@@ -389,31 +417,37 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ty1 ⊔ ty2 = ty
           // -----------------------------------
           // Γ ⊢ ifz cond then thn else els ⇒ ty
-          val thnTyped = infer(env, stenv, thn)
+          val (thnTyped, stenv2) = infer(env, stenv1, thn)
           thnTyped.ty.get match
             case Type.TCode(_) | Type.TAt(_, _) =>
-              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
-              core.Expr
-                .ECond(
-                  core.Expr
-                    .EBinOp("==", condTyped, core.Expr.ENum(0), core.Sta),
-                  thnTyped,
-                  elsTyped,
-                  core.Sta
-                )
-                .withType(thnTyped.ty.get)
+              val (elsTyped, stenv3) = check(env, stenv2, els, thnTyped.ty.get)
+              (
+                core.Expr
+                  .ECond(
+                    core.Expr
+                      .EBinOp("==", condTyped, core.Expr.ENum(0), core.Sta),
+                    thnTyped,
+                    elsTyped,
+                    core.Sta
+                  )
+                  .withType(thnTyped.ty.get),
+                stenv3
+              )
             case _ =>
-              val elsTyped = infer(env, stenv, els)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
-              core.Expr
-                .ECond(
-                  core.Expr
-                    .EBinOp("==", condTyped, core.Expr.ENum(0), core.Sta),
-                  thnTyped,
-                  elsTyped,
-                  core.Sta
-                )
-                .withType(elsTyped.ty.get)
+              val (elsTyped, stenv3) = infer(env, stenv2, els)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              (
+                core.Expr
+                  .ECond(
+                    core.Expr
+                      .EBinOp("==", condTyped, core.Expr.ENum(0), core.Sta),
+                    thnTyped,
+                    elsTyped,
+                    core.Sta
+                  )
+                  .withType(elsTyped.ty.get),
+                stenv3
+              )
         case Type.TCode(Type.TInt) =>
           // Γ ⊢ cond ⇒ Code[Int]
           // Γ ⊢ thn ⇒ ty1
@@ -421,19 +455,22 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ty1 ⊔ ty2 = Code[_]
           // ------------------------------------------
           // Γ ⊢ ifz cond then thn else els ⇒ ty1 ⊔ ty2
-          val thnTyped = infer(env, stenv, thn)
+          val (thnTyped, stenv1) = infer(env, stenv, thn)
           thnTyped.ty.get match
             case Type.TCode(_) =>
-              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
-              core.Expr
-                .ECond(
-                  core.Expr
-                    .EBinOp("==", condTyped, core.Expr.ENum(0), core.Dyn),
-                  thnTyped,
-                  elsTyped,
-                  core.Dyn
-                )
-                .withType(thnTyped.ty.get)
+              val (elsTyped, stenv2) = check(env, stenv1, els, thnTyped.ty.get)
+              (
+                core.Expr
+                  .ECond(
+                    core.Expr
+                      .EBinOp("==", condTyped, core.Expr.ENum(0), core.Dyn),
+                    thnTyped,
+                    elsTyped,
+                    core.Dyn
+                  )
+                  .withType(thnTyped.ty.get),
+                stenv2
+              )
         case Type.TAt(Type.TInt, s) =>
           // Γ ⊢ cond ⇒ Int@s
           // Γ ⊢ thn ⇒ ty1
@@ -441,20 +478,23 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ty1 ⊔ ty2 = _@s
           // -----------------------------------
           // Γ ⊢ ifz cond then thn else els ⇒ ty1 ⊔ ty2
-          val thnTyped = infer(env, stenv, thn)
+          val (thnTyped, stenv1) = infer(env, stenv, thn)
           thnTyped.ty.get match
             case Type.TAt(_, _) =>
-              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
-              core.Expr
-                .ECond(
-                  core.Expr.EBinOp("==", condTyped, core.Expr.ENum(0), s),
-                  thnTyped,
-                  elsTyped,
-                  s
-                )
-                .withType(thnTyped.ty.get)
+              val (elsTyped, stenv2) = check(env, stenv1, els, thnTyped.ty.get)
+              (
+                core.Expr
+                  .ECond(
+                    core.Expr.EBinOp("==", condTyped, core.Expr.ENum(0), s),
+                    thnTyped,
+                    elsTyped,
+                    s
+                  )
+                  .withType(thnTyped.ty.get),
+                stenv2
+              )
     case Expr.EIf(cond, thn, els) =>
-      val condTyped = infer(env, stenv, cond)
+      val (condTyped, stenv1) = infer(env, stenv, cond)
       condTyped.ty.get match
         case Type.TBool =>
           // Γ ⊢ cond ⇒ Bool
@@ -463,21 +503,26 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ty1 ⊔ ty2 = ty
           // -----------------------------------
           // Γ ⊢ if cond then thn else els ⇒ ty
-          val thnTyped = infer(env, stenv, thn)
+          val (thnTyped, stenv2) = infer(env, stenv1, thn)
           thnTyped.ty.get match
             case Type.TCode(_) | Type.TAt(_, _) =>
-              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
-              core.Expr
-                .ECond(condTyped, thnTyped, elsTyped, core.Sta)
-                .withType(elsTyped.ty.get)
+              val (elsTyped, stenv3) = check(env, stenv2, els, thnTyped.ty.get)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              (
+                core.Expr
+                  .ECond(condTyped, thnTyped, elsTyped, core.Sta)
+                  .withType(elsTyped.ty.get),
+                stenv3
+              )
             case _ =>
-              infer(env, stenv, els)
-              val elsTyped = infer(env, stenv, els)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
-              core.Expr
-                .ECond(condTyped, thnTyped, elsTyped, core.Sta)
-                .withType(elsTyped.ty.get)
+              val (elsTyped, stenv3) = infer(env, stenv2, els)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              (
+                core.Expr
+                  .ECond(condTyped, thnTyped, elsTyped, core.Sta)
+                  .withType(elsTyped.ty.get),
+                stenv3
+              )
         case Type.TCode(Type.TBool) =>
           // Γ ⊢ cond ⇒ Code[Bool]
           // Γ ⊢ thn ⇒ ty1
@@ -485,14 +530,17 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ty1 ⊔ ty2 = Code[_]
           // ------------------------------------------
           // Γ ⊢ if cond then thn else els ⇒ ty1 ⊔ ty2
-          val thnTyped = infer(env, stenv, thn)
+          val (thnTyped, stenv2) = infer(env, stenv1, thn)
           thnTyped.ty.get match
             case Type.TCode(_) =>
-              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv))
-              core.Expr
-                .ECond(condTyped, thnTyped, elsTyped, core.Dyn)
-                .withType(thnTyped.ty.get)
+              val (elsTyped, stenv3) = check(env, stenv2, els, thnTyped.ty.get)
+              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              (
+                core.Expr
+                  .ECond(condTyped, thnTyped, elsTyped, core.Dyn)
+                  .withType(thnTyped.ty.get),
+                stenv3
+              )
         case Type.TAt(Type.TBool, s) =>
           // Γ ⊢ cond ⇒ Bool@s
           // Γ ⊢ thn ⇒ ty1
@@ -500,13 +548,16 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // ty1 ⊔ ty2 = _@s
           // -----------------------------------
           // Γ ⊢ if cond then thn else els ⇒ ty1 ⊔ ty2
-          val thnTyped = infer(env, stenv, thn)
+          val (thnTyped, stenv2) = infer(env, stenv1, thn)
           thnTyped.ty.get match
             case Type.TAt(_, _) =>
-              val elsTyped = check(env, stenv, els, thnTyped.ty.get)
-              core.Expr
-                .ECond(condTyped, thnTyped, elsTyped, s)
-                .withType(thnTyped.ty.get)
+              val (elsTyped, stenv3) = check(env, stenv2, els, thnTyped.ty.get)
+              (
+                core.Expr
+                  .ECond(condTyped, thnTyped, elsTyped, s)
+                  .withType(thnTyped.ty.get),
+                stenv3
+              )
     case Expr.EBin(op, left, right) =>
       op match
         case "+" | "-" | "*" | "/" =>
@@ -515,23 +566,30 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
           // |ty1 ⊔ ty2| <: Int
           // -------------------------------------------
           // Γ ⊢ e1 + e2 ⇒ ty1 ⊔ ty2
-          val leftTyped = infer(env, stenv, left)
+          val (leftTyped, stenv1) = infer(env, stenv, left)
           leftTyped.ty.get match
             case Type.TCode(_) | Type.TAt(_, _) =>
-              val rightTyped = check(env, stenv, right, leftTyped.ty.get)
-              core.Expr
-                .EBinOp(op, leftTyped, rightTyped, core.Dyn)
-                .withType(leftTyped.ty.get)
+              val (rightTyped, stenv2) =
+                check(env, stenv1, right, leftTyped.ty.get)
+              (
+                core.Expr
+                  .EBinOp(op, leftTyped, rightTyped, core.Dyn)
+                  .withType(leftTyped.ty.get),
+                stenv2
+              )
             case _ =>
-              val rightTyped = infer(env, stenv, right)
+              val (rightTyped, stenv2) = infer(env, stenv1, right)
               assert(leftTyped.ty.get.erase.subtype(Type.TInt, stenv))
               val stage = rightTyped.ty.get match
                 case Type.TCode(_)          => core.Dyn
                 case Type.TAt(Type.TInt, s) => s
                 case _                      => core.Sta
-              core.Expr
-                .EBinOp(op, leftTyped, rightTyped, stage)
-                .withType(leftTyped.ty.get)
+              (
+                core.Expr
+                  .EBinOp(op, leftTyped, rightTyped, stage)
+                  .withType(leftTyped.ty.get),
+                stenv2
+              )
         case "==" | "!=" | "<" | "<=" | ">" | ">=" =>
           // Γ ⊢ e1 ⇒ ty1
           // Γ ⊢ e2 ⇒ ty2
@@ -543,23 +601,30 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
             case Type.TAt(_, s) => Type.TAt(Type.TBool, s)
             case _              => Type.TBool
 
-          val leftTyped = infer(env, stenv, left)
+          val (leftTyped, stenv1) = infer(env, stenv, left)
           leftTyped.ty.get match
             case Type.TCode(Type.TInt) | Type.TAt(Type.TInt, _) =>
-              val rightTyped = check(env, stenv, right, leftTyped.ty.get)
+              val (rightTyped, stenv2) =
+                check(env, stenv1, right, leftTyped.ty.get)
               val retType = f(leftTyped.ty.get)
-              core.Expr
-                .EBinOp(op, leftTyped, rightTyped, core.Dyn)
-                .withType(retType)
+              (
+                core.Expr
+                  .EBinOp(op, leftTyped, rightTyped, core.Dyn)
+                  .withType(retType),
+                stenv2
+              )
             case _ =>
-              val rightTyped = infer(env, stenv, right)
+              val (rightTyped, stenv2) = infer(env, stenv1, right)
               val stage = rightTyped.ty.get match
                 case Type.TCode(_)          => core.Dyn
                 case Type.TAt(Type.TInt, s) => s
                 case _                      => core.Sta
-              core.Expr
-                .EBinOp(op, leftTyped, rightTyped, stage)
-                .withType(rightTyped.ty.get)
+              (
+                core.Expr
+                  .EBinOp(op, leftTyped, rightTyped, stage)
+                  .withType(rightTyped.ty.get),
+                stenv2
+              )
     case Expr.EAlloc(e)       => ???
     case Expr.EGet(e)         => ???
     case Expr.EPut(e1, e2)    => ???
@@ -567,16 +632,21 @@ def infer(env: Env, stenv: StEnv, expr: Expr): core.Expr =
       // Γ ⊢ e ⇐ ty
       // -----------------
       // Γ ⊢ (e : ty) ⇒ ty
-      val eTyped = infer(env, stenv, e)
+      val (eTyped, stenv1) = infer(env, stenv, e)
       assert(eTyped.ty.get.subtype(ty, stenv))
-      eTyped.withType(ty)
+      (eTyped.withType(ty), stenv1)
 
-def check(env: Env, stenv: StEnv, expr: Expr, expected: Type): core.Expr =
+def check(
+    env: Env,
+    stenv: StEnv,
+    expr: Expr,
+    expected: Type
+): (core.Expr, StEnv) =
   import Subtyping.*
   // Γ ⊢ expr ⇒ ty
   // ty <: expected
   // -----------------------
   // Γ ⊢ expr ⇐ expected
-  val exprTyped = infer(env, stenv, expr)
+  val (exprTyped, stenv1) = infer(env, stenv, expr)
   assert(exprTyped.ty.get.subtype(expected, stenv))
-  exprTyped
+  (exprTyped, stenv1)

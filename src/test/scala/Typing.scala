@@ -218,7 +218,7 @@ class TypingTest extends munit.FunSuite {
 
   def testInfer(e: Expr, str: String): Unit = {
     reset
-    val eTyped = infer(Map.empty, EmptyStEnv, e)
+    val (eTyped, stenv) = infer(Map.empty, EmptyStEnv, e)
     assertEquals(eTyped.ty.get.toString, str)
   }
 
