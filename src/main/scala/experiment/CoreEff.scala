@@ -9,6 +9,7 @@ import instar.Counter.*
 enum Stage:
   case SNum(n: Int)
   case SVar(x: String)
+  case ExistSVar(x: String)
 
 enum Type:
   case TUnit, TInt, TBool

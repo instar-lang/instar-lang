@@ -6,6 +6,7 @@ import spmp.eff.Stage
 
 import spmp.surf.*
 import spmp.Counter.fresh
+import scala.util.{Try, Success, Failure}
 
 type Env = Map[String, core.Type]
 
@@ -33,21 +34,27 @@ extension (stenv: StEnv)
     StEnvElem.ExistSVar(s) :: stenv
 
 object Subtyping:
+
+  case class SubtypeError(message: String) extends Exception(message)
+
   extension (t1: Type)
     // Subtyping relation: t1 <: t2
-    def subtype(t2: Type, stenv: StEnv): Boolean = (t1, t2) match
+    def subtype(t2: Type, stenv: StEnv): StEnv = (t1, t2) match
       case (
             Type.TFun(arg1, ret1),
             Type.TCode(Type.TFun(arg2, ret2))
           ) =>
-        Type.TCode(arg2).subtype(arg1, stenv) && ret1.subtype(
+        val stenv1 = Type.TCode(arg2).subtype(arg1, stenv)
+        ret1.subtype(
           Type.TCode(ret2),
-          stenv
+          stenv1
         )
       case (Type.TFun(arg1, ret1), Type.TFun(arg2, ret2)) =>
         // contravariant in argument, covariant in return
-        arg2.subtype(arg1, stenv) && ret1.subtype(ret2, stenv)
-      case (Type.TCode(t1), Type.TCode(t2)) => // Code[t1] <: Code[t2]
+        val stenv1 = arg2.subtype(arg1, stenv)
+        ret1.subtype(ret2, stenv1)
+      case (Type.TCode(t1), Type.TCode(t2)) =>
+        // Code[t1] <: Code[t2]
         t1.subtype(t2, stenv)
       case (Type.TBool, Type.TCode(Type.TBool)) |
           (Type.TUnit, Type.TCode(Type.TUnit)) |
@@ -55,7 +62,7 @@ object Subtyping:
         // bool <: Code[bool]
         // unit <: Code[unit]
         // int  <: Code[int]
-        true
+        stenv
       case (Type.TBool | Type.TUnit | Type.TInt, Type.TAt(t, Stage.SVar(s)))
           if t == t1 =>
         //     s ∈ Γ
@@ -69,7 +76,8 @@ object Subtyping:
         //     s ∈ Γ
         // ---------------
         // unit <: unit@s
-        stenv.containsSVar(s)
+        assert(stenv.containsSVar(s))
+        stenv
       case (
             Type.TFun(arg1, ret1),
             Type.TAt(Type.TFun(arg2, ret2), Stage.SVar(s))
@@ -77,9 +85,9 @@ object Subtyping:
         // s ∈ Γ    arg2@s <: arg1   ret1 <: ret2@s
         // ----------------------------------------
         //     arg1 -> ret1 <: (arg2 -> ret2)@s
-        stenv.containsSVar(s)
-        && Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, stenv)
-        && ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), stenv)
+        assert(stenv.containsSVar(s))
+        val stenv1 = Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, stenv)
+        ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), stenv1)
       case (Type.TForallSt(s1, t1), Type.TForallSt(s2, t2)) =>
         // Γ, s ⊢ t1 <: t2
         // -----------------------
@@ -89,7 +97,9 @@ object Subtyping:
         val t2Inst = t2.subst(s2, Stage.SVar(sFresh))
         t1Inst.subtype(t2Inst, stenv.addSVar(sFresh))
       case (a, b) =>
-        a == b // TODO: Make where this case (reflexivity) is applied more explicit
+        // TODO: Make where this case (reflexivity) is applied more explicit
+        if a == b then stenv
+        else throw new SubtypeError(s"$t1 </: $t2")
 
     def subst(s: String, st: Stage): Type = t1 match
       case Type.TUnit | Type.TInt | Type.TBool => t1
@@ -106,17 +116,20 @@ object Subtyping:
       case Type.TCode(t) =>
         Type.TCode(t.subst(s, st))
 
-    def join(t2: Type, stenv: StEnv): Type =
+    def join(t2: Type, stenv: StEnv): (Type, StEnv) =
       import Subtyping.*
-      // we require t1 <: t2 or t2 <: t1 when calling ⊔
-      if t1.subtype(t2, stenv) then t2
-      else if t2.subtype(t1, stenv) then t1
-      else
-        val str = stenv.mkString("{ ", ", ", " }")
-        // no join type
+
+      Try {
+        val st1 = t1.subtype(t2, stenv)
+        (t2, st1)
+      }.orElse(Try {
+        val st1 = t2.subtype(t1, stenv)
+        (t1, st1)
+      }).getOrElse {
         throw new Exception(
-          s"$t1 and $t2 is not comparable under $str (neither t1 <: t2 nor t2 <: t1)"
+          s"Cannot compute join of $t1 and $t2, since neither $t1 <: $t2 nor $t2 <: $t1."
         )
+      }
 
   extension (expr: core.Expr)
     def coerceTo(from: Type, to: Type, stenv: StEnv): core.Expr =
@@ -218,8 +231,6 @@ object Subtyping:
           // s ∈ Γ    arg2@s <: arg1   ret1 <: ret2@s
           // ----------------------------------------
           //     arg1 -> ret1 <: (arg2 -> ret2)@s
-          Type.TAt(arg2, Stage.SVar(s)).subtype(arg1, stenv)
-          && ret1.subtype(Type.TAt(ret2, Stage.SVar(s)), stenv)
           assert(stenv.containsSVar(s))
           val newArgName = fresh()
           val newArg = Expr.EVar(newArgName)
@@ -255,7 +266,6 @@ object Subtyping:
           val sFresh = fresh(prefix = "s")
           val t1Inst = t1.subst(s1, Stage.SVar(sFresh))
           val t2Inst = t2.subst(s2, Stage.SVar(sFresh))
-          t1Inst.subtype(t2Inst, stenv.addSVar(sFresh))
           val bodyCoerced = Expr
             .ESApp(expr, Stage.SVar(sFresh))
             .coerceTo(
@@ -265,14 +275,17 @@ object Subtyping:
             )
           Expr.ESLam(sFresh, bodyCoerced).withType(to)
         case (a, b) if a == b => expr
-        case (a, b) if from.subtype(to, stenv) =>
-          throw new Exception(
-            s"Subtyping rules must be problematic, since we don't know how to coerce between $a and $b."
-          )
         case (a, b) =>
-          throw new Exception(
-            s"Cannot coerce from $a to $b, because $a </: $b."
-          )
+          Try(from.subtype(to, stenv)) match
+            case Success(_) =>
+              throw new Exception(
+                s"Subtyping rules must be problematic, since we don't know how to coerce between $a and $b."
+              )
+
+            case Failure(_) =>
+              throw new Exception(
+                s"Cannot coerce from $a to $b, because $a </: $b."
+              )
 
 extension (t: Type)
   def erase: Type = t match
@@ -285,6 +298,38 @@ extension (t: Type)
       ty.erase
     case Type.TCode(ty) =>
       Type.TCode(ty.erase)
+
+def inferCall(
+    env: Env,
+    stenv: StEnv,
+    op: core.Expr,
+    arg: Expr
+): (core.Expr, StEnv) =
+  import Subtyping.*
+  op.ty.get match
+    case Type.TFun(argTy, retTy) =>
+      val (e2Typed, stenv2) = check(env, stenv, arg, argTy)
+      (core.Expr.EApp(op, e2Typed, core.Sta).withType(retTy), stenv2)
+    case Type.TCode(Type.TFun(argTy, retTy)) =>
+      val (e2Typed, stenv2) = check(env, stenv, arg, Type.TCode(argTy))
+      (
+        core.Expr
+          .EApp(op, e2Typed, core.Dyn)
+          .withType(Type.TCode(retTy)),
+        stenv2
+      )
+    case Type.TAt(Type.TFun(argTy, retTy), s) =>
+      val (e2Typed, stenv2) = check(env, stenv, arg, Type.TAt(argTy, s))
+      (
+        core.Expr.EApp(op, e2Typed, s).withType(Type.TAt(retTy, s)),
+        stenv2
+      )
+    case Type.TForallSt(s, ty) =>
+      val existSVar = fresh(prefix = "α")
+      val stenv1 = stenv.addExistSVar(existSVar)
+      val tyInst = ty.subst(s, Stage.SVar(existSVar))
+      val opInst = core.Expr.ESApp(op, Stage.SVar(existSVar)).withType(tyInst)
+      inferCall(env, stenv1, opInst, arg)
 
 def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
   import Subtyping.*
@@ -377,18 +422,7 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
       (core.Expr.ERun(eTyped).withType(eTyped.ty.get), stenv1)
     case Expr.EApp(e1, e2) =>
       val (e1Typed, stenv1) = infer(env, stenv, e1)
-      e1Typed.ty.get match
-        case Type.TFun(argTy, retTy) =>
-          val (e2Typed, stenv2) = check(env, stenv1, e2, argTy)
-          (core.Expr.EApp(e1Typed, e2Typed, core.Sta).withType(retTy), stenv2)
-        case Type.TCode(Type.TFun(argTy, retTy)) =>
-          val (e2Typed, stenv2) = check(env, stenv1, e2, Type.TCode(argTy))
-          (
-            core.Expr
-              .EApp(e1Typed, e2Typed, core.Dyn)
-              .withType(Type.TCode(retTy)),
-            stenv2
-          )
+      inferCall(env, stenv1, e1Typed, e2)
     case Expr.ESApp(e, s) =>
       // Γ ⊢ e ⇒ ∀s1. ty
       // --------------------
@@ -435,7 +469,7 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
               )
             case _ =>
               val (elsTyped, stenv3) = infer(env, stenv2, els)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              val stenv4 = thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3)
               (
                 core.Expr
                   .ECond(
@@ -446,7 +480,7 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
                     core.Sta
                   )
                   .withType(elsTyped.ty.get),
-                stenv3
+                stenv4
               )
         case Type.TCode(Type.TInt) =>
           // Γ ⊢ cond ⇒ Code[Int]
@@ -507,21 +541,21 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
           thnTyped.ty.get match
             case Type.TCode(_) | Type.TAt(_, _) =>
               val (elsTyped, stenv3) = check(env, stenv2, els, thnTyped.ty.get)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              val stenv4 = thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3)
               (
                 core.Expr
                   .ECond(condTyped, thnTyped, elsTyped, core.Sta)
                   .withType(elsTyped.ty.get),
-                stenv3
+                stenv4
               )
             case _ =>
               val (elsTyped, stenv3) = infer(env, stenv2, els)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              val stenv4 = thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3)
               (
                 core.Expr
                   .ECond(condTyped, thnTyped, elsTyped, core.Sta)
                   .withType(elsTyped.ty.get),
-                stenv3
+                stenv4
               )
         case Type.TCode(Type.TBool) =>
           // Γ ⊢ cond ⇒ Code[Bool]
@@ -534,12 +568,12 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
           thnTyped.ty.get match
             case Type.TCode(_) =>
               val (elsTyped, stenv3) = check(env, stenv2, els, thnTyped.ty.get)
-              assert(thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3))
+              val stenv4 = thnTyped.ty.get.subtype(elsTyped.ty.get, stenv3)
               (
                 core.Expr
                   .ECond(condTyped, thnTyped, elsTyped, core.Dyn)
                   .withType(thnTyped.ty.get),
-                stenv3
+                stenv4
               )
         case Type.TAt(Type.TBool, s) =>
           // Γ ⊢ cond ⇒ Bool@s
@@ -579,7 +613,7 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
               )
             case _ =>
               val (rightTyped, stenv2) = infer(env, stenv1, right)
-              assert(leftTyped.ty.get.erase.subtype(Type.TInt, stenv))
+              val stenv3 = leftTyped.ty.get.erase.subtype(Type.TInt, stenv2)
               val stage = rightTyped.ty.get match
                 case Type.TCode(_)          => core.Dyn
                 case Type.TAt(Type.TInt, s) => s
@@ -588,7 +622,7 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
                 core.Expr
                   .EBinOp(op, leftTyped, rightTyped, stage)
                   .withType(leftTyped.ty.get),
-                stenv2
+                stenv3
               )
         case "==" | "!=" | "<" | "<=" | ">" | ">=" =>
           // Γ ⊢ e1 ⇒ ty1
@@ -633,8 +667,8 @@ def infer(env: Env, stenv: StEnv, expr: Expr): (core.Expr, StEnv) =
       // -----------------
       // Γ ⊢ (e : ty) ⇒ ty
       val (eTyped, stenv1) = infer(env, stenv, e)
-      assert(eTyped.ty.get.subtype(ty, stenv))
-      (eTyped.withType(ty), stenv1)
+      val stenv2 = eTyped.ty.get.subtype(ty, stenv1)
+      (eTyped.withType(ty), stenv2)
 
 def check(
     env: Env,
@@ -648,5 +682,5 @@ def check(
   // -----------------------
   // Γ ⊢ expr ⇐ expected
   val (exprTyped, stenv1) = infer(env, stenv, expr)
-  assert(exprTyped.ty.get.subtype(expected, stenv))
-  (exprTyped, stenv1)
+  val stenv2 = exprTyped.ty.get.subtype(expected, stenv1)
+  (exprTyped, stenv2)
