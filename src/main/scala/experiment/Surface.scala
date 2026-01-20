@@ -1,8 +1,8 @@
-package spmp.surf
+package instar.experiment.surf
 
-import spmp.eff
-import spmp.eff.Type
-import spmp.eff.Stage
+import instar.experiment.eff
+import instar.experiment.eff.Type
+import instar.experiment.eff.Stage
 
 type StageVar = String
 type BinOp = String
