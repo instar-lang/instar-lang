@@ -76,7 +76,7 @@ enum Value:
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
-  case VCode(t: Expr) //XXX: could extend to open code value with environment?
+  case VCode(t: Expr) // XXX: could extend to open code value with environment?
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -150,6 +150,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont): (Value, Store) = v match
         reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, k, γ)
     })
 
+// FIXME: fst-stage side effect will break semantics-preservation.
 def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont): (Value, Store) =
   e match
     case EUnit =>
@@ -158,6 +159,8 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont): (Value, St
       k(VNum(i), σ, γ)
     case EBool(b) =>
       k(VBool(b), σ, γ)
+    case ELoc(l) =>
+      k(VLoc(l), σ, γ)
     case EVar(x) =>
       k(σ(ρ(x)), σ, γ)
     case ESLam(x, body) =>
@@ -185,9 +188,10 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont): (Value, St
     case ELift(e, to) if evalStVar(to, ς) == Dyn =>
       eval(e, ρ, ς, σ, lift(k), γ)
     case ERun(e) =>
-      eval(e, ρ, ς, σ, { case (VCode(t), σ1, γ1) =>
-        eval(t, ρ, ς, σ1, k, γ1)
-      }, γ)
+      reify(e, ρ, ς, σ, { case (VCode(t), σ2) =>
+        // Note: here we allow cross-stage persistence!
+        eval(t, Map(), Map(), σ2, k, γ)
+      })
     case ELet(x, rhs, e) =>
       eval(rhs, ρ, ς, σ, (v, σ1, γ1) =>
         val l = σ1.size

@@ -99,10 +99,10 @@ class CoreTest extends munit.FunSuite {
       "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),EVar(x2)))"
     )
 
-    intercept[NoSuchElementException] {
-      // run (lift (λx. x + lift 1))
-      eval(ERun(e1))
-    }
+    testEval(
+      ERun(e1),
+      "VClo(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None,Map(),Map())"
+    )
 
     val e2 = ELet(
       "y",
@@ -114,9 +114,10 @@ class CoreTest extends munit.FunSuite {
       e2,
       "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(1),SNum(0)),EVar(x3))))"
     )
-    intercept[NoSuchElementException] {
-      // run (let y = lift (λx. x + lift 1) in y lift 1)
-      eval(ERun(e2))
-    }
+
+    testEval(
+      ERun(e2),
+      "VNum(2)"
+    )
   }
 }

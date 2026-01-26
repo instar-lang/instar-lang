@@ -58,7 +58,7 @@ enum Value:
   case VBool(b: Boolean)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
-  case VCode(e: Expr) //XXX: could extend to open code value with environment?
+  case VCode(e: Expr) // XXX: could extend to open code value with environment?
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -158,7 +158,8 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Value => Value): Value =
     case ELift(e, to) if evalStVar(to, ς) == Dyn =>
       eval(e, ρ, ς, v => lift(v, k))
     case ERun(e) =>
-      eval(e, ρ, ς, { case VCode(t) => eval(t, ρ, ς, k) })
+      val t = reify(e, ρ, ς)
+      eval(t, Map(), Map(), k)
     case ELet(x, rhs, e) =>
       eval(rhs, ρ, ς, v =>
         eval(e, ρ + (x -> v), ς, k))

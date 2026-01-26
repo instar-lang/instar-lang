@@ -62,4 +62,39 @@ class CoreImpTest extends munit.FunSuite {
     val VCode(e) = eval(e5(1))
     testEval(e, "VNum(6)")
   }
+
+  test("run") {
+    testEval(ENum(1), "VNum(1)")
+
+    testEval(ERun(ELift2(ENum(1))), "VNum(1)")
+
+    val e1 =
+      ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None))
+
+    testEval(
+      e1,
+      "VCode(ELet(x3,ELam(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None),EVar(x3)))"
+    )
+
+    testEval(
+      ERun(e1),
+      "VClo(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None,Map(),Map())"
+    )
+
+    val e2 = ELet(
+      "y",
+      ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None)),
+      EApp2(EVar("y"), ELift2(ENum(1)))
+    )
+
+    testEval(
+      e2,
+      "VCode(ELet(x3,ELam(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None),ELet(x4,ENum(1),ELet(x5,EApp(EVar(x3),EVar(x4),SNum(0)),EVar(x5)))))"
+    )
+
+    testEval(
+      ERun(e2),
+      "VNum(2)"
+    )
+  }
 }

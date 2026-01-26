@@ -96,7 +96,7 @@ enum Value:
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
-  case VCode(t: Expr) //XXX: could extend to open code value with environment?
+  case VCode(t: Expr) // XXX: could extend to open code value with environment?
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -396,6 +396,7 @@ def lift(k: Cont)(v: Value, σ: Store, c: Cache, γ: MCont): (Value, Store) = v 
           reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, c, k, γ)
       })
 
+// FIXME: fst-stage side effect will break semantics-preservation.
 def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   e match
     case EUnit =>
@@ -404,6 +405,8 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, c: Cache, k: Cont, γ: MCont): 
       k(VNum(i), σ, c, γ)
     case EBool(b) =>
       k(VBool(b), σ, c, γ)
+    case ELoc(l) =>
+      k(VLoc(l), σ, c, γ)
     case EVar(x) =>
       k(σ(ρ(x)), σ, c, γ)
     case ESLam(x, body) =>
@@ -431,9 +434,10 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, c: Cache, k: Cont, γ: MCont): 
     case ELift(e, to) if evalStVar(to, ς) == Dyn =>
       eval(e, ρ, ς, σ, c, lift(k), γ)
     case ERun(e) =>
-      eval(e, ρ, ς, σ, c, { case (VCode(t), σ1, c1, γ1) =>
-        eval(t, ρ, ς, σ1, c1, k, γ1)
-      }, γ)
+      // TODO: does meta-continuation need to observe current cache here?
+      reify(e, ρ, ς, σ, c, { case (VCode(t), σ2) =>
+        eval(t, Map(), Map(), σ2, c, k, γ)
+      })
     case ELet(x, rhs, e) =>
       eval(rhs, ρ, ς, σ, c, (v, σ1, c1, γ1) =>
         val l = σ1.size
