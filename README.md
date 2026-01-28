@@ -1,5 +1,13 @@
 ## Stage-Polymorphic Meta-programming Language
 
+### Getting Started 
+
+Requirements: JDK 17+, Scala, sbt
+
+Install Scala: https://www.scala-lang.org/download/
+
+Run `sbt` to start an interactive console.
+
 ### Interpreter
 
 Currently there are three variant interpreters for the elaborated core language:
@@ -12,7 +20,7 @@ Currently there are three variant interpreters for the elaborated core language:
 
 High priority
 
-- [ ] need a name for the language
+- [x] need a name for the language
 - [ ] surface language syntax and parser
   - [ ] antlr4 grammar
   - [ ] ast definitions (Surface.scala)
@@ -33,18 +41,17 @@ High priority
     - [ ] lean mechanization
     - [ ] formalization of typing rules (in latex)
 - [ ] case study
+  - [ ] explore stage-polymorphic standard library
   - [ ] stream fusion
-
 
 Medium priority
 
-- [ ] explore stage-polymorphic standard library
 - [ ] optimizations
   - [ ] lambda lifting or closure conversion
   - [ ] lambda dropping
-  - [ ] common sub-expression elimination (pure)
+  - [x] common sub-expression elimination (pure)
   - [ ] code motion
-  - [ ] function inlining
+  - [x] function inlining
   - [x] simplification of pure expressions
   - [x] dead code elimination (pure)
 
@@ -57,10 +64,3 @@ Low priority
 - [ ] type system tracking aliases and separation
 - [ ] type polymorphism a la F
 
-### Meeting notes
-20251213 (Jun and Dinghong):
-- Discussed the overall plan (see TODO list updates above)
-- We will first focus on implementing type checking for a fully annotated
-  monomorphic core language
-  - Dinghong will work on Scala implementation of core language type checker
-  - Jun will sort out the gap of Lean mechanization, and some test cases for scala type checker for core language
