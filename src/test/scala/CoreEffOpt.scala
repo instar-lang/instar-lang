@@ -435,14 +435,12 @@ class CoreEffOpt extends Base {
     testEval(e2, exp2, Set("rewriting", "simp-cond"))
   }
 
-  /*
   test("rewriting-partial") {
     val e = ELift2(ELam("x", None,
       EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
       None))
-    testEval(e, "FIXME", Set("rewriting"))
+    testEval(e, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x2,EBinOp(+,ENum(3),EVar(x1),SNum(0)),EVar(x2))),None),EVar(x3)))", Set())
   }
-  */
 }
 
 class CoreEffAnalysis extends Base {
