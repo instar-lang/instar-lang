@@ -439,7 +439,7 @@ class CoreEffOpt extends Base {
     val e = ELift2(ELam("x", None,
       EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
       None))
-    testEval(e, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x2,EBinOp(+,ENum(3),EVar(x1),SNum(0)),EVar(x2))),None),EVar(x3)))", Set())
+    testEval(e, "VCode(ELet(x5,ELam(x0,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x4,EBinOp(+,ENum(4),EVar(x0),SNum(0)),EVar(x4))),None),EVar(x5)))", Set("rewriting"))
   }
 }
 

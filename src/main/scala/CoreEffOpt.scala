@@ -283,6 +283,7 @@ def reflectCondSimp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, S
 
 def reflectCse(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e if Opt("cse") && e.isPure && c.contains(e) =>
+    println("CSE hit: " + e)
     k(VCode(EVar(c(e))), σ, c, γ)
 
 def reflectDce(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
@@ -292,6 +293,50 @@ def reflectDce(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store)
       if (!body.freeVar(x)) γ(VCode(body), σ1)
       else γ(VCode(ELet(x, e, body)), σ1)
     })
+
+val CommutativeOps = Set("+", "*", "==", "!=", "&&", "||")
+
+def normalizeCommSemi(op: String, e: Expr, c: Cache): (VNum, List[EVar]) =
+  var vars = List[EVar]()
+  var num: Option[VNum] = None
+  def aux(e: Expr): Unit =
+    e match
+      case EVar(name) =>
+        if (
+          c.inv.contains(name) && c
+            .inv(name)
+            .isInstanceOf[EBinOp] && c.inv(name).asInstanceOf[EBinOp].op == op
+        ) {
+          aux(c.inv(name))
+        } else {
+          vars = EVar(name) :: vars
+        }
+      case EBinOp(op1, e1, e2, Sta) if op1 == op =>
+        aux(e1)
+        aux(e2)
+      case ENum(i) if op == "+" =>
+        num = num match
+          case Some(VNum(j)) =>
+            Some(VNum(i + j))
+          case None => Some(VNum(i))
+      case ENum(i) if op == "*" =>
+        num = num match
+          case Some(VNum(j)) =>
+            Some(VNum(i * j))
+          case None => Some(VNum(i))
+  aux(e)
+  (num.getOrElse(VNum(if op == "+" then 0 else 1)), vars)
+
+def reflectBinOp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
+  case EBinOp(op, e1, e2, Sta) if Opt("rewriting") && CommutativeOps(op)  =>
+    val (v1, xs1) = normalizeCommSemi(op, e1, c)
+    val (v2, xs2) = normalizeCommSemi(op, e2, c)
+    val ev = evalPrim(op, v1, v2) match
+      case VNum(i) => ENum(i)
+      case VBool(b) => EBool(b)
+    val es = ev :: (xs1 ++ xs2)
+    println("simplify commutative op: " + EBinOp(op, e1, e2, Sta) + " to " + es)
+    reflectBinOps(op, es, σ: Store, c: Cache, k: Cont, γ: MCont)
 
 def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e =>
@@ -310,8 +355,26 @@ def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
     reflectCondSimp,
     reflectCse,
     reflectDce,
+    reflectBinOp
   )
   funs.foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
+
+def reflectBinOps(op: String, es: List[Expr], σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) = es match
+  case e1 :: e2 :: Nil =>
+    val bin = EBinOp(op, e1, e2, Sta)
+    if (c.contains(bin)) {
+      val x = c(bin)
+      k(VCode(EVar(x)), σ, c, γ)
+    } else {
+      val x = fresh()
+      // TODO: call reflect here so we can optimize this bin out as well.
+      // But need to be careful to avoid infinite recursion.
+      reflectDefault(σ, c, k, γ)(bin)
+    }
+  case e1 :: e2 :: rest =>
+    reflect(EBinOp1(op, e1, e2), σ, c, { case (VCode(t), σ1, c1, γ1) =>
+      reflectBinOps(op, t :: rest, σ1, c1, k, γ1)
+    }, γ)
 
 def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, c: Cache, γ: MCont): (Value, Store) =
   eval(e, ρ, ς, σ, c, (x, σ1, c1, γ1) => γ1(x, σ1), γ)
