@@ -307,8 +307,10 @@ def normalizeCommSemi(op: String, e: Expr, c: Cache): (VNum, List[EVar]) =
             .inv(name)
             .isInstanceOf[EBinOp] && c.inv(name).asInstanceOf[EBinOp].op == op
         ) {
+          // If the variable is defined as binary expression with same op, further expand it
           aux(c.inv(name))
         } else {
+          // otherwise, treat it as dynamic variable
           vars = EVar(name) :: vars
         }
       case EBinOp(op1, e1, e2, Sta) if op1 == op =>
@@ -327,8 +329,28 @@ def normalizeCommSemi(op: String, e: Expr, c: Cache): (VNum, List[EVar]) =
   aux(e)
   (num.getOrElse(VNum(if op == "+" then 0 else 1)), vars)
 
+def isSemiGroupNormalForm(op: String, e1: Expr, e2: Expr, c: Cache): Boolean =
+  def allDynamic(e: Expr): Boolean =
+    e match
+      case EVar(name) =>
+        if (
+          c.inv.contains(name) && c
+            .inv(name)
+            .isInstanceOf[EBinOp] && c.inv(name).asInstanceOf[EBinOp].op == op
+        ) {
+          allDynamic(c.inv(name))
+        } else {
+          true
+        }
+      case EBinOp(op1, e1, e2, Sta) if op1 == op =>
+        allDynamic(e1) && allDynamic(e2)
+      case ENum(_) | EBool(_) => false
+      case _ => true
+  allDynamic(e2)
+
 def reflectBinOp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case EBinOp(op, e1, e2, Sta) if Opt("rewriting") && CommutativeOps(op)  =>
+  case EBinOp(op, e1, e2, Sta) if Opt("ps") && CommutativeOps(op) && !isSemiGroupNormalForm(op, e1, e2, c) =>
+    // should only enter this case when it's not already in normal form
     val (v1, xs1) = normalizeCommSemi(op, e1, c)
     val (v2, xs2) = normalizeCommSemi(op, e2, c)
     val ev = evalPrim(op, v1, v2) match
@@ -354,23 +376,17 @@ def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
     reflectSimp,
     reflectCondSimp,
     reflectCse,
-    reflectDce,
-    reflectBinOp
+    reflectBinOp,
+    reflectDce
   )
   funs.foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
 
 def reflectBinOps(op: String, es: List[Expr], σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) = es match
   case e1 :: e2 :: Nil =>
-    val bin = EBinOp(op, e1, e2, Sta)
-    if (c.contains(bin)) {
-      val x = c(bin)
-      k(VCode(EVar(x)), σ, c, γ)
-    } else {
-      val x = fresh()
-      // TODO: call reflect here so we can optimize this bin out as well.
-      // But need to be careful to avoid infinite recursion.
-      reflectDefault(σ, c, k, γ)(bin)
-    }
+    // call reflect here so we could optimize this bin out as well.
+    // But need to be careful to avoid infinite recursion.
+    // The bin here is in semi group normal form, so we rule out the infinite recursion case.
+    reflect(EBinOp(op, e1, e2, Sta), σ, c, k, γ)
   case e1 :: e2 :: rest =>
     reflect(EBinOp1(op, e1, e2), σ, c, { case (VCode(t), σ1, c1, γ1) =>
       reflectBinOps(op, t :: rest, σ1, c1, k, γ1)
