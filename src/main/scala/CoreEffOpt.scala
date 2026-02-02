@@ -294,40 +294,44 @@ def reflectDce(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store)
       else γ(VCode(ELet(x, e, body)), σ1)
     })
 
-val CommutativeOps = Set("+", "*", "==", "!=", "&&", "||")
+val MonoidOps = Set("+", "*", "==", "!=", "&&", "||")
 
-def normalizeCommSemi(op: String, e: Expr, c: Cache): (VNum, List[EVar]) =
+def identity(op: String): Value = op match
+  case "+" => VNum(0)
+  case "*" => VNum(1)
+  case "==" => VBool(true)
+  case "!=" => VBool(false)
+  case "&&" => VBool(true)
+  case "||" => VBool(false)
+
+extension (c: Cache)
+  def lookupBinOp(op: String, x: String): Option[(Expr, Expr)] =
+    if (c.inv.contains(x))
+      c.inv(x) match
+        case EBinOp(op1, e1, e2, Sta) if op1 == op => Some((e1, e2))
+        case _ => None
+    else None
+
+def normalizeCommSemi(op: String, e: Expr, c: Cache): (Value, List[EVar]) =
   var vars = List[EVar]()
-  var num: Option[VNum] = None
+  var value = identity(op)
   def aux(e: Expr): Unit =
     e match
       case EVar(name) =>
-        if (
-          c.inv.contains(name) && c
-            .inv(name)
-            .isInstanceOf[EBinOp] && c.inv(name).asInstanceOf[EBinOp].op == op
-        ) {
-          // If the variable is defined as binary expression with same op, further expand it
-          aux(c.inv(name))
-        } else {
-          // otherwise, treat it as dynamic variable
-          vars = EVar(name) :: vars
-        }
+        c.lookupBinOp(op, name) match
+          case Some((e1, e2)) =>
+            // If the variable is defined as binary expression with same op, further expand it
+            aux(e1)
+            aux(e2)
+          case None => // otherwise, treat the variable as dynamic data of a partially static structure
+            vars = EVar(name) :: vars
       case EBinOp(op1, e1, e2, Sta) if op1 == op =>
         aux(e1)
         aux(e2)
-      case ENum(i) if op == "+" =>
-        num = num match
-          case Some(VNum(j)) =>
-            Some(VNum(i + j))
-          case None => Some(VNum(i))
-      case ENum(i) if op == "*" =>
-        num = num match
-          case Some(VNum(j)) =>
-            Some(VNum(i * j))
-          case None => Some(VNum(i))
+      case ENum(i) => value = evalPrim(op, VNum(i), value)
+      case EBool(b) => value = evalPrim(op, VBool(b), value)
   aux(e)
-  (num.getOrElse(VNum(if op == "+" then 0 else 1)), vars)
+  (value, vars)
 
 def isSemiGroupNormalForm(op: String, e1: Expr, e2: Expr, c: Cache): Boolean =
   def allDynamic(e: Expr): Boolean =
@@ -349,7 +353,7 @@ def isSemiGroupNormalForm(op: String, e1: Expr, e2: Expr, c: Cache): Boolean =
   allDynamic(e2)
 
 def reflectBinOp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case EBinOp(op, e1, e2, Sta) if Opt("ps") && CommutativeOps(op) && !isSemiGroupNormalForm(op, e1, e2, c) =>
+  case EBinOp(op, e1, e2, Sta) if Opt("ps") && MonoidOps(op) && !isSemiGroupNormalForm(op, e1, e2, c) =>
     // should only enter this case when it's not already in normal form
     val (v1, xs1) = normalizeCommSemi(op, e1, c)
     val (v2, xs2) = normalizeCommSemi(op, e2, c)
