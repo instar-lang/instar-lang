@@ -294,15 +294,13 @@ def reflectDce(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store)
       else γ(VCode(ELet(x, e, body)), σ1)
     })
 
-val MonoidOps = Set("+", "*", "==", "!=", "&&", "||")
+val MonoidOps = Set("+", "*", "==", "!=")
 
 def identity(op: String): Value = op match
   case "+" => VNum(0)
   case "*" => VNum(1)
   case "==" => VBool(true)
   case "!=" => VBool(false)
-  case "&&" => VBool(true)
-  case "||" => VBool(false)
 
 extension (c: Cache)
   def lookupBinOp(op: String, x: String): Option[(Expr, Expr)] =
@@ -312,57 +310,44 @@ extension (c: Cache)
         case _ => None
     else None
 
-def normalizeCommSemi(op: String, e: Expr, c: Cache): (Value, List[EVar]) =
-  var vars = List[EVar]()
-  var value = identity(op)
-  def aux(e: Expr): Unit =
-    e match
-      case EVar(name) =>
-        c.lookupBinOp(op, name) match
-          case Some((e1, e2)) =>
-            // If the variable is defined as binary expression with same op, further expand it
-            aux(e1)
-            aux(e2)
-          case None => // otherwise, treat the variable as dynamic data of a partially static structure
-            vars = EVar(name) :: vars
-      case EBinOp(op1, e1, e2, Sta) if op1 == op =>
-        aux(e1)
-        aux(e2)
-      case ENum(i) => value = evalPrim(op, VNum(i), value)
-      case EBool(b) => value = evalPrim(op, VBool(b), value)
-  aux(e)
-  (value, vars)
+def normalizeCommMonoid(op: String, e: Expr, c: Cache)(value: Value, vars: List[Expr]): (Value, List[Expr]) =
+  e match
+    case EVar(name) =>
+      c.lookupBinOp(op, name) match
+        case Some((e1, e2)) =>
+          val (v1, vars1) = normalizeCommMonoid(op, e1, c)(value, vars)
+          normalizeCommMonoid(op, e2, c)(v1, vars1)
+        case None =>
+          (value, EVar(name) :: vars)
+    case EBinOp(op1, e1, e2, Sta) if op1 == op =>
+      val (v1, vars1) = normalizeCommMonoid(op, e1, c)(value, vars)
+      normalizeCommMonoid(op, e2, c)(v1, vars1)
+    case ENum(i) =>
+      (evalPrim(op, VNum(i), value), vars)
+    case EBool(b) =>
+      (evalPrim(op, VBool(b), value), vars)
 
-def isSemiGroupNormalForm(op: String, e1: Expr, e2: Expr, c: Cache): Boolean =
+def isCommMonoidNormalForm(op: String, e1: Expr, e2: Expr, c: Cache): Boolean =
   def allDynamic(e: Expr): Boolean =
     e match
       case EVar(name) =>
-        if (
-          c.inv.contains(name) && c
-            .inv(name)
-            .isInstanceOf[EBinOp] && c.inv(name).asInstanceOf[EBinOp].op == op
-        ) {
-          allDynamic(c.inv(name))
-        } else {
-          true
-        }
+        c.lookupBinOp(op, name) match
+          case Some((e1, e2)) => allDynamic(e1) && allDynamic(e2)
+          case None => true
       case EBinOp(op1, e1, e2, Sta) if op1 == op =>
         allDynamic(e1) && allDynamic(e2)
-      case ENum(_) | EBool(_) => false
-      case _ => true
-  allDynamic(e2)
+      case _ => extractConst(e, c).isEmpty
+  /* extractConst(e1, c).isDefined && */ allDynamic(e2)
 
 def reflectBinOp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case EBinOp(op, e1, e2, Sta) if Opt("ps") && MonoidOps(op) && !isSemiGroupNormalForm(op, e1, e2, c) =>
+  case e@EBinOp(op, e1, e2, Sta) if Opt("ps") && MonoidOps(op) && !isCommMonoidNormalForm(op, e1, e2, c) =>
     // should only enter this case when it's not already in normal form
-    val (v1, xs1) = normalizeCommSemi(op, e1, c)
-    val (v2, xs2) = normalizeCommSemi(op, e2, c)
-    val ev = evalPrim(op, v1, v2) match
+    val (v, xs) = normalizeCommMonoid(op, e, c)(identity(op), List())
+    val ev = v match
       case VNum(i) => ENum(i)
       case VBool(b) => EBool(b)
-    val es = ev :: (xs1 ++ xs2)
-    println("simplify commutative op: " + EBinOp(op, e1, e2, Sta) + " to " + es)
-    reflectBinOps(op, es, σ: Store, c: Cache, k: Cont, γ: MCont)
+    println("simplify commutative op: " + e + " to " + ev :: xs)
+    reflectBinOps(op, ev :: xs, σ: Store, c: Cache, k: Cont, γ: MCont)
 
 def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e =>
