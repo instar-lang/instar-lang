@@ -294,7 +294,7 @@ def reflectDce(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store)
       else γ(VCode(ELet(x, e, body)), σ1)
     })
 
-val MonoidOps = Set("+", "*", "==", "!=")
+val CommMonoidOps = Set("+", "*", "==", "!=")
 
 def identity(op: String): Value = op match
   case "+" => VNum(0)
@@ -327,27 +327,27 @@ def normalizeCommMonoid(op: String, e: Expr, c: Cache)(value: Value, vars: List[
     case EBool(b) =>
       (evalPrim(op, VBool(b), value), vars)
 
-def isCommMonoidNormalForm(op: String, e1: Expr, e2: Expr, c: Cache): Boolean =
-  def allDynamic(e: Expr): Boolean =
+def canPerformOptimization(op: String, e: Expr, c: Cache): Boolean =
+  def countConst(e: Expr): Int =
     e match
       case EVar(name) =>
         c.lookupBinOp(op, name) match
-          case Some((e1, e2)) => allDynamic(e1) && allDynamic(e2)
-          case None => true
+          case Some((e1, e2)) => countConst(e1) + countConst(e2)
+          case None => 0
       case EBinOp(op1, e1, e2, Sta) if op1 == op =>
-        allDynamic(e1) && allDynamic(e2)
-      case _ => extractConst(e, c).isEmpty
-  /* extractConst(e1, c).isDefined && */ allDynamic(e2)
+        countConst(e1) + countConst(e2)
+      case _ => if extractConst(e, c).isEmpty then 0 else 1
+  CommMonoidOps(op) && (countConst(e) > 1)
 
 def reflectBinOp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case e@EBinOp(op, e1, e2, Sta) if Opt("ps") && MonoidOps(op) && !isCommMonoidNormalForm(op, e1, e2, c) =>
+  case e@EBinOp(op, _, _, Sta) if Opt("ps") && canPerformOptimization(op, e, c) =>
     // should only enter this case when it's not already in normal form
     val (v, xs) = normalizeCommMonoid(op, e, c)(identity(op), List())
     val ev = v match
       case VNum(i) => ENum(i)
       case VBool(b) => EBool(b)
     println("simplify commutative op: " + e + " to " + ev :: xs)
-    reflectBinOps(op, ev :: xs, σ: Store, c: Cache, k: Cont, γ: MCont)
+    reflectBinOps(op, (ev :: xs).reverse, σ: Store, c: Cache, k: Cont, γ: MCont)
 
 def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e =>
@@ -371,12 +371,12 @@ def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   funs.foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
 
 def reflectBinOps(op: String, es: List[Expr], σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) = es match
-  case e1 :: e2 :: Nil =>
+  case e2 :: e1 :: Nil =>
     // call reflect here so we could optimize this bin out as well.
     // But need to be careful to avoid infinite recursion.
     // The bin here is in semi group normal form, so we rule out the infinite recursion case.
     reflect(EBinOp(op, e1, e2, Sta), σ, c, k, γ)
-  case e1 :: e2 :: rest =>
+  case e2 :: e1 :: rest =>
     reflect(EBinOp1(op, e1, e2), σ, c, { case (VCode(t), σ1, c1, γ1) =>
       reflectBinOps(op, t :: rest, σ1, c1, k, γ1)
     }, γ)
