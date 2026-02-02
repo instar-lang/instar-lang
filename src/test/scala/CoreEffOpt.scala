@@ -500,7 +500,20 @@ class CoreEffOpt extends Base {
           EBinOp2("+", ENum2(1), EVar("y"))),
         None)),
       None))
-    testEval(e4, "VCode(ELet(x7,ELam(x0,None,ELet(x6,ELam(x1,None,ELet(x4,EBinOp(+,EVar(x1),EVar(x0),SNum(0)),ELet(x5,EBinOp(+,ENum(2),EVar(x4),SNum(0)),EVar(x5))),None),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
+    testEval(e4, "VCode(ELet(x7,ELam(x0,None,ELet(x6,ELam(x1,None,ELet(x4,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),ELet(x5,EBinOp(+,ENum(2),EVar(x4),SNum(0)),EVar(x5))),None),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
+
+    // λf. λx. λy. (1 + f x) + (1 + (1 + f y))
+    // the normalization shouldn't change the order of effects
+    val e5 = ELift2(ELam("f", None,
+      ELift2(ELam("x", None,
+        ELift2(ELam("y", None,
+          EBinOp2("+",
+            EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x"))),
+            EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y"))))),
+          None)),
+        None)),
+      None))
+    testEval(e5, "VCode(ELet(x12,ELam(x0,None,ELet(x11,ELam(x1,None,ELet(x10,ELam(x2,None,ELet(x3,EApp(EVar(x0),EVar(x1),SNum(0)),ELet(x5,EApp(EVar(x0),EVar(x2),SNum(0)),ELet(x8,EBinOp(+,EVar(x3),EVar(x5),SNum(0)),ELet(x9,EBinOp(+,ENum(3),EVar(x8),SNum(0)),EVar(x9))))),None),EVar(x10)),None),EVar(x11)),None),EVar(x12)))", Set("ps", "dce"))
   }
 }
 

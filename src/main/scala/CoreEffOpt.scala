@@ -318,7 +318,7 @@ def normalizeCommMonoid(op: String, e: Expr, c: Cache)(value: Value, vars: List[
           val (v1, vars1) = normalizeCommMonoid(op, e1, c)(value, vars)
           normalizeCommMonoid(op, e2, c)(v1, vars1)
         case None =>
-          (value, EVar(name) :: vars)
+          (value, vars ++ List(EVar(name)))
     case EBinOp(op1, e1, e2, Sta) if op1 == op =>
       val (v1, vars1) = normalizeCommMonoid(op, e1, c)(value, vars)
       normalizeCommMonoid(op, e2, c)(v1, vars1)
