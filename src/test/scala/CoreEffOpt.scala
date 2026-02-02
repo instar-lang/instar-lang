@@ -461,7 +461,7 @@ class CoreEffOpt extends Base {
                 ENum2(1), EApp2(EVar("f"), EVar("x"))))))),
         None)),
       None))
-    testEval(e3, "VCode(ELet(x9,ELam(x0,None,ELet(x8,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),SNum(0)),ELet(x7,EBinOp(+,ENum(5),EVar(x2),SNum(0)),EVar(x7))),None),EVar(x8)),None),EVar(x9)))", Set("ps"))
+    testEval(e3, "VCode(ELet(x9,ELam(x0,None,ELet(x8,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),SNum(0)),ELet(x3,EBinOp(+,ENum(1),EVar(x2),SNum(0)),ELet(x4,EBinOp(+,ENum(2),EVar(x2),SNum(0)),ELet(x5,EBinOp(+,ENum(3),EVar(x2),SNum(0)),ELet(x6,EBinOp(+,ENum(4),EVar(x2),SNum(0)),ELet(x7,EBinOp(+,ENum(5),EVar(x2),SNum(0)),EVar(x7))))))),None),EVar(x8)),None),EVar(x9)))", Set("ps"))
   }
 
   test("rewriting-partial-dce") {
