@@ -327,7 +327,7 @@ def normalizeCommMonoid(op: String, e: Expr, c: Cache)(value: Value, vars: List[
     case EBool(b) =>
       (evalPrim(op, VBool(b), value), vars)
 
-def canPerformOptimization(op: String, e: Expr, c: Cache): Boolean =
+def isPartiallyStatic(op: String, e: Expr, c: Cache): Boolean =
   def countConst(e: Expr): Int =
     e match
       case EVar(name) =>
@@ -339,8 +339,8 @@ def canPerformOptimization(op: String, e: Expr, c: Cache): Boolean =
       case _ => if extractConst(e, c).isEmpty then 0 else 1
   CommMonoidOps(op) && (countConst(e) > 1)
 
-def reflectBinOp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case e@EBinOp(op, _, _, Sta) if Opt("ps") && canPerformOptimization(op, e, c) =>
+def reflectPartiallyStatic(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
+  case e@EBinOp(op, _, _, Sta) if Opt("ps") && isPartiallyStatic(op, e, c) =>
     // should only enter this case when it's not already in normal form
     val (v, xs) = normalizeCommMonoid(op, e, c)(identity(op), List())
     val ev = v match
@@ -365,7 +365,7 @@ def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
     reflectSimp,
     reflectCondSimp,
     reflectCse,
-    reflectBinOp,
+    reflectPartiallyStatic,
     reflectDce
   )
   funs.foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
