@@ -528,7 +528,7 @@ class CoreEffOpt extends Base {
             EBinOp2("+", EVar("y"), ENum2(1))),
         None))),
       None))
-    testEval(e6, "VCode(ELet(x13,ELam(x0,None,ELet(x12,ELam(x3,None,ELet(x6,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x7,EBinOp(+,EVar(x0),EVar(x6),SNum(0)),ELet(x8,EBinOp(+,EVar(x0),EVar(x7),SNum(0)),ELet(x9,EBinOp(+,EVar(x0),EVar(x8),SNum(0)),ELet(x10,EBinOp(+,EVar(x0),EVar(x9),SNum(0)),ELet(x11,EBinOp(+,ENum(3),EVar(x10),SNum(0)),EVar(x11))))))),None),EVar(x12)),None),EVar(x13)))", Set("ps", "dce"))
+    testEval(e6, "VCode(ELet(x20,ELam(x0,None,ELet(x19,ELam(x6,None,ELet(x13,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x14,EBinOp(+,EVar(x0),EVar(x13),SNum(0)),ELet(x15,EBinOp(+,EVar(x0),EVar(x14),SNum(0)),ELet(x16,EBinOp(+,EVar(x0),EVar(x15),SNum(0)),ELet(x17,EBinOp(+,EVar(x0),EVar(x16),SNum(0)),ELet(x18,EBinOp(+,ENum(3),EVar(x17),SNum(0)),EVar(x18))))))),None),EVar(x19)),None),EVar(x20)))", Set("ps", "dce"))
 
     // Another pessimization example:
     // λx. let y = x + x in let f= λz. λw. y + 1 + y + 1 in f y
@@ -547,7 +547,7 @@ class CoreEffOpt extends Base {
           None)),
         EApp2(EVar("f"), EVar("y")))),
       None))
-    testEval(e7, "VCode(ELet(x13,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x11,ELam(x2,None,ELet(x10,ELam(x3,None,ELet(x6,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x7,EBinOp(+,EVar(x0),EVar(x6),SNum(0)),ELet(x8,EBinOp(+,EVar(x0),EVar(x7),SNum(0)),ELet(x9,EBinOp(+,ENum(2),EVar(x8),SNum(0)),EVar(x9))))),None),EVar(x10)),None),ELet(x12,EApp(EVar(x11),EVar(x1),SNum(0)),EVar(x12)))),None),EVar(x13)))", Set("ps", "dce"))
+    testEval(e7, "VCode(ELet(x16,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x2,EBinOp(+,ENum(0),EVar(x1),SNum(0)),ELet(x14,ELam(x3,None,ELet(x13,ELam(x4,None,ELet(x9,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x10,EBinOp(+,EVar(x0),EVar(x9),SNum(0)),ELet(x11,EBinOp(+,EVar(x0),EVar(x10),SNum(0)),ELet(x12,EBinOp(+,ENum(2),EVar(x11),SNum(0)),EVar(x12))))),None),EVar(x13)),None),ELet(x15,EApp(EVar(x14),EVar(x2),SNum(0)),EVar(x15))))),None),EVar(x16)))", Set("ps", "dce"))
 
   }
 }

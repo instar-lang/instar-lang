@@ -327,20 +327,22 @@ def normalizeCommMonoid(op: String, e: Expr, c: Cache)(value: Value, vars: List[
     case EBool(b) =>
       (evalPrim(op, VBool(b), value), vars)
 
-def isPartiallyStatic(op: String, e: Expr, c: Cache): Boolean =
-  def countConst(e: Expr): Int =
-    e match
-      case EVar(name) =>
-        c.lookupBinOp(op, name) match
-          case Some((e1, e2)) => countConst(e1) + countConst(e2)
-          case None => 0
-      case EBinOp(op1, e1, e2, Sta) if op1 == op =>
-        countConst(e1) + countConst(e2)
-      case _ => if extractConst(e, c).isEmpty then 0 else 1
-  CommMonoidOps(op) && (countConst(e) > 1)
+// def isPartiallyStatic(op: String, e: Expr, c: Cache): Boolean =
+//   def countConst(e: Expr): Int =
+//     e match
+//       case EVar(name) =>
+//         c.lookupBinOp(op, name) match
+//           case Some((e1, e2)) => countConst(e1) + countConst(e2)
+//           case None => 0
+//       case EBinOp(op1, e1, e2, Sta) if op1 == op =>
+//         countConst(e1) + countConst(e2)
+//       case _ => if extractConst(e, c).isEmpty then 0 else 1
+//   CommMonoidOps(op) && (countConst(e) > 1)
+
+
 
 def reflectPartiallyStatic(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case e@EBinOp(op, _, _, Sta) if Opt("ps") && isPartiallyStatic(op, e, c) =>
+  case e@EBinOp(op, _, _, Sta) if Opt("ps") && CommMonoidOps(op) =>
     // should only enter this case when it's not already in normal form
     val (v, xs) = normalizeCommMonoid(op, e, c)(identity(op), List())
     val ev = v match
@@ -358,6 +360,10 @@ def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, St
     })
 
 def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  val opts = List(
+    reflectPartiallyStatic,
+  )
+
   val funs = List(
     reflectAtom,
     reflectLam,
@@ -365,7 +371,19 @@ def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
     reflectSimp,
     reflectCondSimp,
     reflectCse,
-    reflectPartiallyStatic,
+    reflectDce,
+  )
+
+  (opts ++ funs).foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
+
+def reflectNoOpt(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  val funs = List(
+    reflectAtom,
+    reflectLam,
+    reflectInline,
+    reflectSimp,
+    reflectCondSimp,
+    reflectCse,
     reflectDce
   )
   funs.foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
@@ -375,9 +393,9 @@ def reflectBinOps(op: String, es: List[Expr], σ: Store, c: Cache, k: Cont, γ: 
     // call reflect here so we could optimize this bin out as well.
     // But need to be careful to avoid infinite recursion.
     // The bin here is in semi group normal form, so we rule out the infinite recursion case.
-    reflect(EBinOp(op, e1, e2, Sta), σ, c, k, γ)
+    reflectNoOpt(EBinOp(op, e1, e2, Sta), σ, c, k, γ)
   case e2 :: e1 :: rest =>
-    reflect(EBinOp1(op, e1, e2), σ, c, { case (VCode(t), σ1, c1, γ1) =>
+    reflectNoOpt(EBinOp1(op, e1, e2), σ, c, { case (VCode(t), σ1, c1, γ1) =>
       reflectBinOps(op, t :: rest, σ1, c1, k, γ1)
     }, γ)
 
