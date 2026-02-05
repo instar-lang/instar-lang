@@ -42,7 +42,6 @@ enum Cont:
   case KBinOpL(op: String, e: Expr, st: Stage, ρ: Env, k: Cont)
   case KBinOpR(op: String, v: Value, st: Stage, k: Cont)
   case KCond(e2: Expr, e3: Expr, st: Stage, ρ: Env, k: Cont)
-  case KReflect(k: Cont)
 
 enum MCont:
   case MHalt
@@ -76,6 +75,10 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
     case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
     case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
 
+def reflect(e: Expr, k: Cont, γ: MCont): VState =
+  val x = fresh()
+  VState(VCode(EVar(x)), k, MLetc(x, e, γ))
+
 def step(s: State): State =
   s match
     // value inclusion
@@ -93,7 +96,7 @@ def step(s: State): State =
     case VState(v, KAppR(VClo(x, body, ρ), Sta, k), γ) =>
       EState(body, ρ + (x -> v), k, γ)
     case VState(VCode(e2), KAppR(VCode(e1), Dyn, k), γ) =>
-      VState(VCode(EApp1(e1, e2)), KReflect(k), γ)
+      reflect(EApp1(e1, e2), k, γ)
     // lift
     case EState(ELift(e), ρ, k, γ) =>
       EState(e, ρ, KLift(k), γ)
@@ -108,7 +111,7 @@ def step(s: State): State =
       val y = fresh()
       EState(body, ρ + (x -> VCode(EVar(y))), KHalt, MLamc(y, k, γ))
     case VState(VCode(body), KHalt, MLamc(x, k, γ)) =>
-      VState(VCode(ELam(x, body)), KReflect(k), γ)
+      reflect(ELam(x, body), k, γ)
     // run
     case EState(ERun(e), ρ, k, γ) =>
       EState(e, ρ, KHalt, MRun(k, γ))
@@ -127,7 +130,7 @@ def step(s: State): State =
     case VState(v2, KHalt, MCondL(v1, e3, ρ, k, γ)) =>
       EState(e3, ρ, KHalt, MCondR(v1, v2, k, γ))
     case VState(VCode(e3), KHalt, MCondR(VCode(e1), VCode(e2), k, γ)) =>
-      VState(VCode(ECond1(e1, e2, e3)), KReflect(k), γ)
+      reflect(ECond1(e1, e2, e3), k, γ)
     // binary operation
     case EState(EBinOp(op, e1, e2, st), ρ, k, γ) =>
       EState(e1, ρ, KBinOpL(op, e2, st, ρ, k), γ)
@@ -136,11 +139,7 @@ def step(s: State): State =
     case VState(v2, KBinOpR(op, v1, Sta, k), γ) =>
       VState(evalPrim(op, v1, v2), k, γ)
     case VState(VCode(e2), KBinOpR(op, VCode(e1), Dyn, k), γ) =>
-      VState(VCode(EBinOp1(op, e1, e2)), KReflect(k), γ)
-    // reflect
-    case VState(VCode(e), KReflect(k), γ) =>
-      val x = fresh()
-      VState(VCode(EVar(x)), k, MLetc(x, e, γ))
+      reflect(EBinOp1(op, e1, e2), k, γ)
     // reify
     case VState(VCode(body), KHalt, MLetc(x, rhs, γ)) =>
       VState(VCode(ELet(x, rhs, body)), KHalt, γ)
