@@ -547,6 +547,15 @@ class CoreEffOpt extends Base {
       None))
     testEval(e7, "VCode(ELet(x14,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x12,ELam(x2,None,ELet(x11,ELam(x3,None,ELet(x8,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x9,EBinOp(+,EVar(x8),EVar(x8),SNum(0)),ELet(x10,EBinOp(+,ENum(2),EVar(x9),SNum(0)),EVar(x10)))),None),EVar(x11)),None),ELet(x13,EApp(EVar(x12),EVar(x1),SNum(0)),EVar(x13)))),None),EVar(x14)))", Set("ps", "dce"))
 
+
+    // λx. (x + 1) * (x + 1)
+    // ~> x^2 + 2x + 1
+    val e8 = ELift2(ELam("x", None,
+      EBinOp2("*",
+        EBinOp2("+", EVar("x"), ENum2(1)),
+        EBinOp2("+", EVar("x"), ENum2(1))),
+      None))
+    testEval(e8, "VCode(ELet(x7,ELam(x0,None,ELet(x3,EBinOp(*,ENum(2),EVar(x0),SNum(0)),ELet(x4,EBinOp(*,EVar(x0),EVar(x0),SNum(0)),ELet(x5,EBinOp(+,ENum(1),EVar(x4),SNum(0)),ELet(x6,EBinOp(+,EVar(x3),EVar(x5),SNum(0)),EVar(x6))))),None),EVar(x7)))", Set("ps", "dce"))
   }
 }
 

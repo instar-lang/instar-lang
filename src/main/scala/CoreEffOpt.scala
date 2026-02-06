@@ -384,7 +384,7 @@ def reflectMonomials(op: String, vars: Map[EVar, Int], σ: Store, c: Cache, k: C
     case None => reflectNoOpt(identityExpr(op), σ, c, k, γ)
 
 def isPSCommMonoid(e: Expr, c: Cache): Boolean =
-  // TODO: return true only when it's really a partially static expression
+  // TODO: return true only when it's really a partially static expression (the expression is not already optimal)
   e match
     case EBinOp(op, _, _, Sta) if CommMonoidOps(op) => true
     case _ => false
@@ -410,6 +410,132 @@ def reflectPSCommMonoid(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Valu
             reflectNoOpt(EBinOp1(op, ev, e), σ1, c1, k, γ1)
       }, γ)
 
+val RingOps = Set(
+  ("+", "*"),
+  ("-", "*"),
+  ("+", "/"),
+  ("-", "/")
+)
+
+def isPSRing(addOp: String, mulOp: String, e: Expr, c: Cache): Boolean =
+  var foundAdd = false
+  var foundMul = false
+  def aux(e: Expr): Unit =
+    e match
+      case EBinOp(op, e1, e2, Sta) =>
+        if (op == addOp) foundAdd = true
+        else if (op == mulOp) foundMul = true
+        aux(e1)
+        aux(e2)
+      case EVar(name) =>
+        c.lookupBinOp(addOp, name) match
+          case Some((e1, e2)) =>
+            foundAdd = true
+            aux(e1)
+            aux(e2)
+          case None =>
+            c.lookupBinOp(mulOp, name) match
+              case Some((e1, e2)) =>
+                foundMul = true
+                aux(e1)
+                aux(e2)
+              case None => ()
+      case _ => ()
+  aux(e)
+  println(s"Checking isPSRing($addOp, $mulOp) for expr: $e => foundAdd: $foundAdd, foundMul: $foundMul")
+  foundAdd && foundMul
+
+// return (addOp, mulOp) if e is an expression that uses some ring operations
+def getPSRing(e: Expr, c: Cache): Option[(String, String)] =
+  RingOps.find { case (opAdd, opMul) => isPSRing(opAdd, opMul, e, c) }
+
+def mergeMaps(m1: Map[EVar, Int], m2: Map[EVar, Int]): Map[EVar, Int] =
+  (m1.keySet ++ m2.keySet).map { k =>
+    k -> (m1.getOrElse(k, 0) + m2.getOrElse(k, 0))
+  }.toMap
+
+case class MultinomialTerm(coeff: Int, vars: Map[EVar, Int])
+
+type Multinomial = List[MultinomialTerm]
+
+def regroupMultinomial(terms: Multinomial): Multinomial =
+  terms.groupBy(_.vars).flatMap { case (vars, terms) =>
+    val sum = terms.map(_.coeff).sum
+    if (sum != 0) Some(MultinomialTerm(sum, vars)) else None
+  }.toList
+
+def addMultinomial(m1: Multinomial, m2: Multinomial): Multinomial =
+  regroupMultinomial(m1 ++ m2)
+
+def multiplyMultinomial(m1: Multinomial, m2: Multinomial): Multinomial =
+  regroupMultinomial(for {
+    t1 <- m1
+    t2 <- m2
+  } yield MultinomialTerm(t1.coeff * t2.coeff, mergeMaps(t1.vars, t2.vars)))
+
+
+def normalizeRing(opAdd: String, opMul: String, e: Expr, c: Cache): Multinomial = e match
+  case EBinOp(`opAdd`, e1, e2, Sta) =>
+    val terms1 = normalizeRing(opAdd, opMul, e1, c)
+    val terms2 = normalizeRing(opAdd, opMul, e2, c)
+    addMultinomial(terms1, terms2)
+  case EBinOp(`opMul`, e1, e2, Sta) =>
+    val terms1 = normalizeRing(opAdd, opMul, e1, c)
+    val terms2 = normalizeRing(opAdd, opMul, e2, c)
+    multiplyMultinomial(terms1, terms2)
+  case ENum(i) =>
+    List(MultinomialTerm(i, Map()))
+  case EVar(name) if c.lookupBinOp(opAdd, name).isDefined =>
+    c.lookupBinOp(opAdd, name) match
+      case Some((e1, e2)) =>
+        normalizeRing(opAdd, opMul, EBinOp1(opAdd, e1, e2), c)
+      case None =>
+        List(MultinomialTerm(1, Map(EVar(name) -> 1)))
+  case EVar(name) if c.lookupBinOp(opMul, name).isDefined =>
+    c.lookupBinOp(opMul, name) match
+      case Some((e1, e2)) =>
+        normalizeRing(opAdd, opMul, EBinOp1(opMul, e1, e2), c)
+      case None =>
+        List(MultinomialTerm(1, Map(EVar(name) -> 1)))
+  case EVar(name) =>
+    List(MultinomialTerm(1, Map(EVar(name) -> 1)))
+
+def reflectMultinomialTerm(opMul: String, term: MultinomialTerm, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  val coeff = term.coeff
+  val vars = term.vars
+  reflectMonomials(opMul, vars, σ, c, {
+    case (VCode(varExpr), σ1, c1, γ1) =>
+      if (coeff == 1)
+        reflectNoOpt(varExpr, σ1, c1, k, γ1)
+      else
+        reflectNoOpt(EBinOp1(opMul, ENum(coeff), varExpr), σ1, c1, k, γ1)
+  }, γ)
+
+def reflectMultinomial(opAdd: String, opMul: String, terms: Multinomial, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  terms.match
+    case Nil => reflectNoOpt(identityExpr(opAdd), σ, c, k, γ)
+    case term :: rest =>
+      reflectMultinomialTerm(opMul, term, σ, c, {
+        case (VCode(termExpr), σ1, c1, γ1) =>
+          reflectMultinomial(opAdd, opMul, rest, σ1, c1, {
+            case (VCode(restExpr), σ2, c2, γ2) =>
+              if (termExpr == identityExpr(opAdd))
+                reflectNoOpt(restExpr, σ2, c2, k, γ2)
+              else if (restExpr == identityExpr(opAdd))
+                reflectNoOpt(termExpr, σ2, c2, k, γ2)
+              else
+                reflectNoOpt(EBinOp1(opAdd, termExpr, restExpr), σ2, c2, k, γ2)
+          }, γ1)
+      }, γ)
+
+def reflectPSRing(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
+  case e@EBinOp(_, _, _, Sta) if Opt("ps") && getPSRing(e, c).isDefined =>
+    val (opAdd, opMul) = getPSRing(e, c).get
+    val terms = normalizeRing(opAdd, opMul, e, c)
+    println("simplify ring expression: " + e + " to terms: " + terms)
+
+    reflectMultinomial(opAdd, opMul, terms, σ, c, k, γ)
+
 def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e =>
     val x = fresh()
@@ -420,6 +546,7 @@ def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, St
 
 def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   val opts = List(
+    reflectPSRing,
     reflectPSCommMonoid,
   )
 
