@@ -247,6 +247,10 @@ def reflectAtom(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store
   case EUnit => k(VCode(EUnit), σ, c, γ)
   case ENum(i) => k(VCode(ENum(i)), σ, c, γ)
   case EBool(b) => k(VCode(EBool(b)), σ, c, γ)
+  // Variables are also an atom. We don't need this case for other evaluators since they maintain an invariant: never reflect variables.
+  // After adding partially static optimizations, we may reflect variables. We don't need to worry about the variable capture here since
+  // all the generated variables are distinct.
+  case EVar(name) => k(VCode(EVar(name)), σ, c, γ)
 
 def reflectLam(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e@ELam(_, _, _, _) if Opt("no-let-lam") =>
