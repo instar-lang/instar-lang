@@ -20,7 +20,7 @@ package spmp.eff.opt
 
 import spmp.Counter.*
 import spmp.BiMap
-import collection.mutable.HashSet
+import collection.mutable.{HashSet, HashMap}
 
 enum Stage:
   case SNum(n: Int)
@@ -287,7 +287,6 @@ def reflectCondSimp(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, S
 
 def reflectCse(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e if Opt("cse") && e.isPure && c.contains(e) =>
-    println("CSE hit: " + e)
     k(VCode(EVar(c(e))), σ, c, γ)
 
 def reflectDce(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
@@ -306,6 +305,10 @@ def identity(op: String): Value = op match
   case "==" => VBool(true)
   case "!=" => VBool(false)
 
+def identityExpr(op: String): Expr = identity(op) match
+  case VNum(i) => ENum(i)
+  case VBool(b) => EBool(b)
+
 extension (c: Cache)
   def lookupBinOp(op: String, x: String): Option[(Expr, Expr)] =
     if (c.inv.contains(x))
@@ -314,46 +317,98 @@ extension (c: Cache)
         case _ => None
     else None
 
-def normalizeCommMonoid(op: String, e: Expr, c: Cache)(value: Value, vars: List[Expr]): (Value, List[Expr]) =
+// normalize a commutative monoid expression into multiset
+def normalizeCommMonoid(op: String, e: Expr, c: Cache): (Value, Map[EVar, Int]) =
+  var vars = Map[EVar, Int]()
+  var value = identity(op)
+  def aux(e: Expr): Unit =
+    e match
+      case e@EVar(name) =>
+        c.lookupBinOp(op, name) match
+          case Some((e1, e2)) =>
+            aux(e1)
+            aux(e2)
+          case None =>
+            vars = vars.updated(e, vars.getOrElse(e, 0) + 1)
+      case EBinOp(op1, e1, e2, Sta) if op1 == op =>
+        aux(e1)
+        aux(e2)
+      case ENum(i) =>
+        value = evalPrim(op, VNum(i), value)
+      case EBool(b) =>
+        value = evalPrim(op, VBool(b), value)
+  aux(e)
+  (value, vars)
+
+// reflect a monomial x^count
+def reflectMonomial(op: String, x: EVar, count: Int, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  count match
+    case 0 => reflectNoOpt(identityExpr(op), σ, c, k, γ)
+    case 1 =>
+      reflectNoOpt(x, σ, c, k, γ)
+    case n if n > 1 =>
+      val count1 = count / 2
+      val count2 = count - (count1 * 2)
+      assert(count1 * 2 + count2 == count)
+      reflectMonomial(op, x, count1, σ, c, {
+        case (VCode(e1), σ1, c1, γ1) =>
+          reflectMonomial(op, x, count2, σ1, c1, {
+            case (VCode(e2), σ2, c2, γ2) =>
+              if (e1 == identityExpr(op))
+                reflectNoOpt(e2, σ2, c2, k, γ2)
+              else if (e2 == identityExpr(op))
+                reflectNoOpt(EBinOp1(op, e1, e1), σ2, c2, k, γ2)
+              else
+                reflectNoOpt(EBinOp1(op, e1, e1), σ2, c2, {
+                  case (VCode(e3), σ3, c3, γ3) =>
+                    reflectNoOpt(EBinOp1(op, e3, e2), σ3, c3, k, γ3)
+                }, γ2)
+          }, γ1)
+      }, γ)
+
+def reflectMonomials(op: String, vars: Map[EVar, Int], σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  vars.headOption match
+    case Some((x, count)) =>
+      reflectMonomial(op, x, count, σ, c, {
+        case (VCode(e1), σ1, c1, γ1) =>
+          reflectMonomials(op, vars - x, σ1, c1, {
+            case (VCode(e2), σ2, c2, γ2) =>
+              if (e1 == identityExpr(op))
+                reflectNoOpt(e2, σ2, c2, k, γ2)
+              else if (e2 == identityExpr(op))
+                reflectNoOpt(e1, σ2, c2, k, γ2)
+              else
+                reflectNoOpt(EBinOp1(op, e1, e2), σ2, c2, k, γ2)
+          }, γ1)
+      }, γ)
+    case None => reflectNoOpt(identityExpr(op), σ, c, k, γ)
+
+def isPSCommMonoid(e: Expr, c: Cache): Boolean =
+  // TODO: return true only when it's really a partially static expression
   e match
-    case EVar(name) =>
-      c.lookupBinOp(op, name) match
-        case Some((e1, e2)) =>
-          val (v1, vars1) = normalizeCommMonoid(op, e1, c)(value, vars)
-          normalizeCommMonoid(op, e2, c)(v1, vars1)
-        case None =>
-          (value, vars ++ List(EVar(name)))
-    case EBinOp(op1, e1, e2, Sta) if op1 == op =>
-      val (v1, vars1) = normalizeCommMonoid(op, e1, c)(value, vars)
-      normalizeCommMonoid(op, e2, c)(v1, vars1)
-    case ENum(i) =>
-      (evalPrim(op, VNum(i), value), vars)
-    case EBool(b) =>
-      (evalPrim(op, VBool(b), value), vars)
+    case EBinOp(op, _, _, Sta) if CommMonoidOps(op) => true
+    case _ => false
 
-// def isPartiallyStatic(op: String, e: Expr, c: Cache): Boolean =
-//   def countConst(e: Expr): Int =
-//     e match
-//       case EVar(name) =>
-//         c.lookupBinOp(op, name) match
-//           case Some((e1, e2)) => countConst(e1) + countConst(e2)
-//           case None => 0
-//       case EBinOp(op1, e1, e2, Sta) if op1 == op =>
-//         countConst(e1) + countConst(e2)
-//       case _ => if extractConst(e, c).isEmpty then 0 else 1
-//   CommMonoidOps(op) && (countConst(e) > 1)
+def reflectPSCommMonoid(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
+  case e@EBinOp(op, _, _, Sta) if isPSCommMonoid(e, c) =>
+    // should only enter this case when we can make some optimization
+    val (v, vars) = normalizeCommMonoid(op, e, c)
+    println("simplify commutative monoid: " + e + " to vars: " + vars + ", const: " + v)
 
-
-
-def reflectPartiallyStatic(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case e@EBinOp(op, _, _, Sta) if Opt("ps") && CommMonoidOps(op) =>
-    // should only enter this case when it's not already in normal form
-    val (v, xs) = normalizeCommMonoid(op, e, c)(identity(op), List())
     val ev = v match
       case VNum(i) => ENum(i)
       case VBool(b) => EBool(b)
-    println("simplify commutative op: " + e + " to " + ev :: xs)
-    reflectBinOps(op, (ev :: xs).reverse, σ: Store, c: Cache, k: Cont, γ: MCont)
+
+    if (v == identity(op))
+      reflectMonomials(op, vars, σ, c, k, γ)
+    else
+      reflectMonomials(op, vars, σ, c, {
+        case (VCode(e), σ1, c1, γ1) =>
+          if (e == identityExpr(op))
+            reflectNoOpt(ev, σ1, c1, k, γ1)
+          else
+            reflectNoOpt(EBinOp1(op, ev, e), σ1, c1, k, γ1)
+      }, γ)
 
 def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e =>
@@ -365,7 +420,7 @@ def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, St
 
 def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   val opts = List(
-    reflectPartiallyStatic,
+    reflectPSCommMonoid,
   )
 
   val funs = List(
@@ -391,17 +446,6 @@ def reflectNoOpt(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Stor
     reflectDce
   )
   funs.foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
-
-def reflectBinOps(op: String, es: List[Expr], σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) = es match
-  case e2 :: e1 :: Nil =>
-    // call reflect here so we could optimize this bin out as well.
-    // But need to be careful to avoid infinite recursion.
-    // The bin here is in semi group normal form, so we rule out the infinite recursion case.
-    reflectNoOpt(EBinOp(op, e1, e2, Sta), σ, c, k, γ)
-  case e2 :: e1 :: rest =>
-    reflectNoOpt(EBinOp1(op, e1, e2), σ, c, { case (VCode(t), σ1, c1, γ1) =>
-      reflectBinOps(op, t :: rest, σ1, c1, k, γ1)
-    }, γ)
 
 def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, c: Cache, γ: MCont): (Value, Store) =
   eval(e, ρ, ς, σ, c, (x, σ1, c1, γ1) => γ1(x, σ1), γ)
