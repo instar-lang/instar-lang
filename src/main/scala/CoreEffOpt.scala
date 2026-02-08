@@ -21,6 +21,7 @@ package spmp.eff.opt
 import spmp.Counter.*
 import spmp.BiMap
 import collection.mutable.{HashSet, HashMap}
+import spmp.eff.opt.Opt.opt
 
 enum Stage:
   case SNum(n: Int)
@@ -297,13 +298,13 @@ def reflectDce(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store)
       else γ(VCode(ELet(x, e, body)), σ1)
     })
 
-val CommMonoidOps = Set("+", "*", "==", "!=")
-
 def identity(op: String): Value = op match
   case "+" => VNum(0)
+  case "-" => VNum(0)
   case "*" => VNum(1)
   case "==" => VBool(true)
   case "!=" => VBool(false)
+  case _ => throw new RuntimeException(s"Unknown commutative monoid operator: $op")
 
 def identityExpr(op: String): Expr = identity(op) match
   case VNum(i) => ENum(i)
@@ -318,34 +319,34 @@ extension (c: Cache)
     else None
 
 // normalize a commutative monoid expression into multiset
-def normalizeCommMonoid(op: String, e: Expr, c: Cache): (Value, Map[EVar, Int]) =
-  var vars = Map[EVar, Int]()
-  var value = identity(op)
-  def aux(e: Expr): Unit =
+def normalizeCommMonoid(op: String, e: Expr, c: Cache): Option[(Value, Map[EVar, Int])] =
+  def aux(e: Expr): Option[(Value, Map[EVar, Int])] =
     e match
       case e@EVar(name) =>
         c.lookupBinOp(op, name) match
           case Some((e1, e2)) =>
-            aux(e1)
-            aux(e2)
+            aux(EBinOp1(op, e1, e2))
           case None =>
-            vars = vars.updated(e, vars.getOrElse(e, 0) + 1)
+            Some((identity(op), Map(EVar(name) -> 1)))
       case EBinOp(op1, e1, e2, Sta) if op1 == op =>
-        aux(e1)
-        aux(e2)
+        aux(e1).flatMap { case (v1, vars1) =>
+          aux(e2).map { case (v2, vars2) =>
+            (evalPrim(op, v1, v2), mergeMaps(vars1, vars2))
+          }
+        }
       case ENum(i) =>
-        value = evalPrim(op, VNum(i), value)
+        Some((VNum(i), Map()))
       case EBool(b) =>
-        value = evalPrim(op, VBool(b), value)
+        Some((VBool(b), Map()))
+      case _ => None
   aux(e)
-  (value, vars)
 
 // reflect a monomial x^count
 def reflectMonomial(op: String, x: EVar, count: Int, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   count match
-    case 0 => reflectNoOpt(identityExpr(op), σ, c, k, γ)
+    case 0 => reflect(identityExpr(op), σ, c, k, γ)
     case 1 =>
-      reflectNoOpt(x, σ, c, k, γ)
+      reflect(x, σ, c, k, γ)
     case n if n > 1 =>
       val count1 = count / 2
       val count2 = count - (count1 * 2)
@@ -355,13 +356,13 @@ def reflectMonomial(op: String, x: EVar, count: Int, σ: Store, c: Cache, k: Con
           reflectMonomial(op, x, count2, σ1, c1, {
             case (VCode(e2), σ2, c2, γ2) =>
               if (e1 == identityExpr(op))
-                reflectNoOpt(e2, σ2, c2, k, γ2)
+                reflect(e2, σ2, c2, k, γ2)
               else if (e2 == identityExpr(op))
-                reflectNoOpt(EBinOp1(op, e1, e1), σ2, c2, k, γ2)
+                reflect(EBinOp1(op, e1, e1), σ2, c2, k, γ2)
               else
-                reflectNoOpt(EBinOp1(op, e1, e1), σ2, c2, {
+                reflect(EBinOp1(op, e1, e1), σ2, c2, {
                   case (VCode(e3), σ3, c3, γ3) =>
-                    reflectNoOpt(EBinOp1(op, e3, e2), σ3, c3, k, γ3)
+                    reflect(EBinOp1(op, e3, e2), σ3, c3, k, γ3)
                 }, γ2)
           }, γ1)
       }, γ)
@@ -374,80 +375,14 @@ def reflectMonomials(op: String, vars: Map[EVar, Int], σ: Store, c: Cache, k: C
           reflectMonomials(op, vars - x, σ1, c1, {
             case (VCode(e2), σ2, c2, γ2) =>
               if (e1 == identityExpr(op))
-                reflectNoOpt(e2, σ2, c2, k, γ2)
+                reflect(e2, σ2, c2, k, γ2)
               else if (e2 == identityExpr(op))
-                reflectNoOpt(e1, σ2, c2, k, γ2)
+                reflect(e1, σ2, c2, k, γ2)
               else
-                reflectNoOpt(EBinOp1(op, e1, e2), σ2, c2, k, γ2)
+                reflect(EBinOp1(op, e1, e2), σ2, c2, k, γ2)
           }, γ1)
       }, γ)
-    case None => reflectNoOpt(identityExpr(op), σ, c, k, γ)
-
-def isPSCommMonoid(e: Expr, c: Cache): Boolean =
-  // TODO: return true only when it's really a partially static expression (the expression is not already optimal)
-  e match
-    case EBinOp(op, _, _, Sta) if CommMonoidOps(op) => true
-    case _ => false
-
-def reflectPSCommMonoid(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case e@EBinOp(op, _, _, Sta) if isPSCommMonoid(e, c) =>
-    // should only enter this case when we can make some optimization
-    val (v, vars) = normalizeCommMonoid(op, e, c)
-    println("simplify commutative monoid: " + e + " to vars: " + vars + ", const: " + v)
-
-    val ev = v match
-      case VNum(i) => ENum(i)
-      case VBool(b) => EBool(b)
-
-    if (v == identity(op))
-      reflectMonomials(op, vars, σ, c, k, γ)
-    else
-      reflectMonomials(op, vars, σ, c, {
-        case (VCode(e), σ1, c1, γ1) =>
-          if (e == identityExpr(op))
-            reflectNoOpt(ev, σ1, c1, k, γ1)
-          else
-            reflectNoOpt(EBinOp1(op, ev, e), σ1, c1, k, γ1)
-      }, γ)
-
-val RingOps = Set(
-  ("+", "*"),
-  ("-", "*"),
-  ("+", "/"),
-  ("-", "/")
-)
-
-def isPSRing(addOp: String, mulOp: String, e: Expr, c: Cache): Boolean =
-  var foundAdd = false
-  var foundMul = false
-  def aux(e: Expr): Unit =
-    e match
-      case EBinOp(op, e1, e2, Sta) =>
-        if (op == addOp) foundAdd = true
-        else if (op == mulOp) foundMul = true
-        aux(e1)
-        aux(e2)
-      case EVar(name) =>
-        c.lookupBinOp(addOp, name) match
-          case Some((e1, e2)) =>
-            foundAdd = true
-            aux(e1)
-            aux(e2)
-          case None =>
-            c.lookupBinOp(mulOp, name) match
-              case Some((e1, e2)) =>
-                foundMul = true
-                aux(e1)
-                aux(e2)
-              case None => ()
-      case _ => ()
-  aux(e)
-  println(s"Checking isPSRing($addOp, $mulOp) for expr: $e => foundAdd: $foundAdd, foundMul: $foundMul")
-  foundAdd && foundMul
-
-// return (addOp, mulOp) if e is an expression that uses some ring operations
-def getPSRing(e: Expr, c: Cache): Option[(String, String)] =
-  RingOps.find { case (opAdd, opMul) => isPSRing(opAdd, opMul, e, c) }
+    case None => reflect(identityExpr(op), σ, c, k, γ)
 
 def mergeMaps(m1: Map[EVar, Int], m2: Map[EVar, Int]): Map[EVar, Int] =
   (m1.keySet ++ m2.keySet).map { k =>
@@ -473,32 +408,36 @@ def multiplyMultinomial(m1: Multinomial, m2: Multinomial): Multinomial =
     t2 <- m2
   } yield MultinomialTerm(t1.coeff * t2.coeff, mergeMaps(t1.vars, t2.vars)))
 
-
-def normalizeRing(opAdd: String, opMul: String, e: Expr, c: Cache): Multinomial = e match
+def normalizeRing(opAdd: String, opMul: String, e: Expr, c: Cache): Option[Multinomial] = e match
   case EBinOp(`opAdd`, e1, e2, Sta) =>
-    val terms1 = normalizeRing(opAdd, opMul, e1, c)
-    val terms2 = normalizeRing(opAdd, opMul, e2, c)
-    addMultinomial(terms1, terms2)
+    normalizeRing(opAdd, opMul, e1, c).flatMap { terms1 =>
+      normalizeRing(opAdd, opMul, e2, c).map { terms2 =>
+        addMultinomial(terms1, terms2)
+      }
+    }
   case EBinOp(`opMul`, e1, e2, Sta) =>
-    val terms1 = normalizeRing(opAdd, opMul, e1, c)
-    val terms2 = normalizeRing(opAdd, opMul, e2, c)
-    multiplyMultinomial(terms1, terms2)
+    normalizeRing(opAdd, opMul, e1, c).flatMap { terms1 =>
+      normalizeRing(opAdd, opMul, e2, c).map { terms2 =>
+        multiplyMultinomial(terms1, terms2)
+      }
+    }
   case ENum(i) =>
-    List(MultinomialTerm(i, Map()))
+    Some(List(MultinomialTerm(i, Map())))
   case EVar(name) if c.lookupBinOp(opAdd, name).isDefined =>
     c.lookupBinOp(opAdd, name) match
       case Some((e1, e2)) =>
         normalizeRing(opAdd, opMul, EBinOp1(opAdd, e1, e2), c)
       case None =>
-        List(MultinomialTerm(1, Map(EVar(name) -> 1)))
+        Some(List(MultinomialTerm(1, Map(EVar(name) -> 1))))
   case EVar(name) if c.lookupBinOp(opMul, name).isDefined =>
     c.lookupBinOp(opMul, name) match
       case Some((e1, e2)) =>
         normalizeRing(opAdd, opMul, EBinOp1(opMul, e1, e2), c)
       case None =>
-        List(MultinomialTerm(1, Map(EVar(name) -> 1)))
+        Some(List(MultinomialTerm(1, Map(EVar(name) -> 1))))
   case EVar(name) =>
-    List(MultinomialTerm(1, Map(EVar(name) -> 1)))
+    Some(List(MultinomialTerm(1, Map(EVar(name) -> 1))))
+  case _ => None
 
 def reflectMultinomialTerm(opMul: String, term: MultinomialTerm, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   val coeff = term.coeff
@@ -506,35 +445,30 @@ def reflectMultinomialTerm(opMul: String, term: MultinomialTerm, σ: Store, c: C
   reflectMonomials(opMul, vars, σ, c, {
     case (VCode(varExpr), σ1, c1, γ1) =>
       if (coeff == 1)
-        reflectNoOpt(varExpr, σ1, c1, k, γ1)
+        reflect(varExpr, σ1, c1, k, γ1)
       else
-        reflectNoOpt(EBinOp1(opMul, ENum(coeff), varExpr), σ1, c1, k, γ1)
+        if (varExpr == identityExpr(opMul))
+          reflect(ENum(coeff), σ1, c1, k, γ1)
+        else
+          reflect(EBinOp1(opMul, ENum(coeff), varExpr), σ1, c1, k, γ1)
   }, γ)
 
 def reflectMultinomial(opAdd: String, opMul: String, terms: Multinomial, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   terms.match
-    case Nil => reflectNoOpt(identityExpr(opAdd), σ, c, k, γ)
+    case Nil => reflect(identityExpr(opAdd), σ, c, k, γ)
     case term :: rest =>
       reflectMultinomialTerm(opMul, term, σ, c, {
         case (VCode(termExpr), σ1, c1, γ1) =>
           reflectMultinomial(opAdd, opMul, rest, σ1, c1, {
             case (VCode(restExpr), σ2, c2, γ2) =>
               if (termExpr == identityExpr(opAdd))
-                reflectNoOpt(restExpr, σ2, c2, k, γ2)
+                reflect(restExpr, σ2, c2, k, γ2)
               else if (restExpr == identityExpr(opAdd))
-                reflectNoOpt(termExpr, σ2, c2, k, γ2)
+                reflect(termExpr, σ2, c2, k, γ2)
               else
-                reflectNoOpt(EBinOp1(opAdd, termExpr, restExpr), σ2, c2, k, γ2)
+                reflect(EBinOp1(opAdd, termExpr, restExpr), σ2, c2, k, γ2)
           }, γ1)
       }, γ)
-
-def reflectPSRing(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
-  case e@EBinOp(_, _, _, Sta) if Opt("ps") && getPSRing(e, c).isDefined =>
-    val (opAdd, opMul) = getPSRing(e, c).get
-    val terms = normalizeRing(opAdd, opMul, e, c)
-    println("simplify ring expression: " + e + " to terms: " + terms)
-
-    reflectMultinomial(opAdd, opMul, terms, σ, c, k, γ)
 
 def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, Store) =
   case e =>
@@ -544,12 +478,69 @@ def reflectDefault(σ: Store, c: Cache, k: Cont, γ: MCont): Expr ⇀ (Value, St
         γ(VCode(ELet(x, e, body)), σ1)
     })
 
-def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
-  val opts = List(
-    reflectPSRing,
-    reflectPSCommMonoid,
-  )
+def optimizeRing(opAdd: String, opMul: String)(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  normalizeRing(opAdd, opMul, e, c) match
+    case Some(terms) =>
+      println("simplify ring expression: " + e + " to terms: " + terms)
 
+      reflectMultinomial(opAdd, opMul, terms, σ, c, k, γ)
+    case None => reflect(e, σ, c, k, γ)
+
+def optimizeCommMonoid(op: String)(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  normalizeCommMonoid(op, e, c) match
+    case Some((v, vars)) =>
+      println("simplify commutative monoid: " + e + " to vars: " + vars + ", const: " + v)
+
+      val ev = v match
+        case VNum(i) => ENum(i)
+        case VBool(b) => EBool(b)
+
+      if (v == identity(op))
+        reflectMonomials(op, vars, σ, c, k, γ)
+      else
+        reflectMonomials(op, vars, σ, c, {
+          case (VCode(e), σ1, c1, γ1) =>
+            if (e == identityExpr(op))
+              reflect(ev, σ1, c1, k, γ1)
+            else
+              reflect(EBinOp1(op, ev, e), σ1, c1, k, γ1)
+        }, γ)
+    case None => reflect(e, σ, c, k, γ)
+
+def same(e1: Expr, e2: Expr, c: Cache): Boolean =
+  (e1, e2) match
+    case (EUnit, EUnit) => true
+    case (ENum(i1), ENum(i2)) => i1 == i2
+    case (EBool(b1), EBool(b2)) => b1 == b2
+    case (EVar(x1), EVar(x2)) => x1 == x2 || (c.inv.contains(x1) && c.inv.contains(x2) && same(c.inv(x1), c.inv(x2), c))
+    case (EBinOp(op1, e11, e12, s1), EBinOp(op2, e21, e22, s2)) =>
+      op1 == op2 && s1 == s2 && same(e11, e21, c) && same(e12, e22, c)
+    case (EUnaryOp(op1, e1, s1), EUnaryOp(op2, e2, s2)) =>
+      op1 == op2 && s1 == s2 && same(e1, e2, c)
+    case _ => false
+
+val RingOps = List(
+  ("+", "*"),
+  ("-", "*"),
+)
+
+val CommMonoidOps = List("+", "*", "==", "!=")
+
+def reflectOpt(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
+  val opts = RingOps.map(optimizeRing) ++ CommMonoidOps.map(optimizeCommMonoid)
+
+  opts.foldRight(reflect) { (opt, acc) => (e1, σ1, c1, k1, γ1) =>
+    opt(e1, σ1, c1, {
+      case (VCode(e2), σ2, c2, γ2) =>
+        if (same(e1, e2, c2)) acc(e1, σ2, c2, k1, γ1)
+        else acc(e2, σ2, c2, k1, γ2)
+      }, γ1)
+  } (e, σ, c, k, γ)
+
+
+// A list of optimization functions. We apply each of them, until one of them can handle the current expression.
+// When the result is different from the input, we apply the result.
+def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
   val funs = List(
     reflectAtom,
     reflectLam,
@@ -560,18 +551,6 @@ def reflect(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
     reflectDce,
   )
 
-  (opts ++ funs).foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
-
-def reflectNoOpt(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
-  val funs = List(
-    reflectAtom,
-    reflectLam,
-    reflectInline,
-    reflectSimp,
-    reflectCondSimp,
-    reflectCse,
-    reflectDce
-  )
   funs.foldRight(reflectDefault(σ, c, k, γ)) { (f, acc) => f(σ, c, k, γ) orElse acc }(e)
 
 def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, c: Cache, γ: MCont): (Value, Store) =
@@ -738,7 +717,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, c: Cache, k: Cont, γ: MCont): 
     case EBinOp(op, e1, e2, s) if evalStVar(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, c, { case (VCode(x1), σ1, c1, γ1) =>
         eval(e2, ρ, ς, σ1, c1, { case (VCode(x2), σ2, c2, γ2) =>
-          reflect(EBinOp1(op, x1, x2), σ2, c2, k, γ2)
+          reflectOpt(EBinOp1(op, x1, x2), σ2, c2, k, γ2)
         }, γ1)
       }, γ)
     case EUnaryOp(op, e, s) if evalStVar(s, ς) == Sta =>
