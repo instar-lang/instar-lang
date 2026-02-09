@@ -521,7 +521,6 @@ def same(e1: Expr, e2: Expr, c: Cache): Boolean =
 
 val RingOps = List(
   ("+", "*"),
-  ("-", "*"),
 )
 
 val CommMonoidOps = List("+", "*", "==", "!=")
