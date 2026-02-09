@@ -271,8 +271,8 @@ object EBinOpStatic:
 def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EBinOpStatic(op, v1, v2) if Opt("rewriting") =>
     evalPrim(op, v1, v2) match
-      case VNum(i) => k(VCode(ENum(i)), σ, γ)
-      case VBool(b) => k(VCode(EBool(b)), σ, γ)
+      case VNum(i) => reflect(ENum(i), σ, k, γ)
+      case VBool(b) => reflect(EBool(b), σ, k, γ)
 
 def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EApp(f, arg, _) if Opt("fun-inline") && extractFun(f, c).isDefined =>
