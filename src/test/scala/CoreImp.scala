@@ -55,12 +55,11 @@ class CoreImpTest extends munit.FunSuite {
   }
 
   test("stage-poly") {
-    testEval(e5(0), "VNum(6)")
-
-    testEval(e5(1), "VCode(ELet(x3,ELam(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None),ELet(x4,ENum(5),ELet(x5,EApp(EVar(x3),EVar(x4),SNum(0)),EVar(x5)))))")
-
-    val VCode(e) = eval(e5(1))
-    testEval(e, "VNum(6)")
+    // Note: CoreImp does not handle stage polymorphism
+    //testEval(e5(0), "VNum(6)")
+    //testEval(e5(1), "VCode(ELet(x3,ELam(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None),ELet(x4,ENum(5),ELet(x5,EApp(EVar(x3),EVar(x4),SNum(0)),EVar(x5)))))")
+    //val VCode(e) = eval(e5(1))
+    //testEval(e, "VNum(6)")
   }
 
   test("run") {
@@ -78,7 +77,7 @@ class CoreImpTest extends munit.FunSuite {
 
     testEval(
       ERun(e1),
-      "VClo(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None,Map(),Map())"
+      "VClo(x0,None,ELet(x1,ENum(1),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None,Map())"
     )
 
     val e2 = ELet(

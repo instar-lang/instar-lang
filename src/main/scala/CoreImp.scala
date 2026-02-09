@@ -98,7 +98,8 @@ def lift(v: Value): Value =
     case VBool(b) => reflect(EBool(b))
     case VClo(x, argTy, body, retTy, ρf) =>
       val y = fresh()
-      val t = reify { eval(body, ρf + (x -> VCode(EVar(y)))) }
+      val t = reify:
+        eval(body, ρf + (x -> VCode(EVar(y))))
       reflect(ELam(y, argTy.erase, t, retTy.erase))
 
 def evalPrim(op: String, v1: Value, v2: Value): Value =

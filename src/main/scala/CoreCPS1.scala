@@ -76,11 +76,6 @@ type Env = Map[String, Value]
 type StEnv = Map[String, Stage]
 type Ans = Value
 
-type Cont = (Value, MCont) => Value
-type MCont = Value => Value
-
-var stBlock: List[(String, Expr)] = List()
-
 def reify(e: Expr, ρ: Env, ς: StEnv): Expr =
   // evaluate term under the identity continuation, and the term should return a code value
   val VCode(t) = eval(e, ρ, ς, v => v)
