@@ -527,7 +527,10 @@ val RingOps = List(
 val CommMonoidOps = List("+", "*", "==", "!=")
 
 def reflectOpt(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
-  val opts = RingOps.map(optimizeRing) ++ CommMonoidOps.map(optimizeCommMonoid)
+  val opts =
+    if (Opt("ps"))
+      RingOps.map(optimizeRing) ++ CommMonoidOps.map(optimizeCommMonoid)
+    else List()
 
   opts.foldRight(reflect) { (opt, acc) => (e1, σ1, c1, k1, γ1) =>
     opt(e1, σ1, c1, {
