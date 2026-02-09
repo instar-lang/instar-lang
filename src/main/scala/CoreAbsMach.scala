@@ -42,14 +42,15 @@ enum Cont:
   case KBinOpL(op: String, e: Expr, st: Stage, ρ: Env, k: Cont)
   case KBinOpR(op: String, v: Value, st: Stage, k: Cont)
   case KCond(e2: Expr, e3: Expr, st: Stage, ρ: Env, k: Cont)
+  case KLetc(x: String, rhs: Expr)
+  case KLamc(x: String, k: Cont)
+  case KRun(k: Cont)
+  case KCondL(v1: Value, e3: Expr, ρ: Env, k: Cont)
+  case KCondR(v1: Value, v2: Value, k: Cont)
 
 enum MCont:
   case MHalt
-  case MLetc(x: String, rhs: Expr, γ: MCont)
-  case MLamc(x: String, k: Cont, γ: MCont)
-  case MRun(k: Cont, γ: MCont)
-  case MCondL(v1: Value, e3: Expr, ρ: Env, k: Cont, γ: MCont)
-  case MCondR(v1: Value, v2: Value, k: Cont, γ: MCont)
+  case MCons (k: Cont, γ: MCont)
 
 enum State:
   case EState(e : Expr, ρ: Env, k: Cont, γ: MCont)
@@ -78,7 +79,7 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
 
 def reflect(e: Expr, k: Cont, γ: MCont): VState =
   val x = fresh()
-  VState(VCode(EVar(x)), k, MLetc(x, e, γ))
+  VState(VCode(EVar(x)), k, MCons(KLetc(x, e), γ))
 
 def step(s: State): State =
   s match
@@ -110,10 +111,14 @@ def step(s: State): State =
     // lift lambda
     case VState(VClo(x, body, ρ), KLift(k), γ) =>
       val y = fresh()
-      EState(body, ρ + (x -> VCode(EVar(y))), KHalt, MLamc(y, k, γ))
+      EState(body, ρ + (x -> VCode(EVar(y))), KHalt, MCons(KLamc(y, k), γ))
+    case VState(VCode(body), KLamc(x, k), γ) =>
+      reflect(ELam(x, body), k, γ)
     // run
     case EState(ERun(e), ρ, k, γ) =>
-      EState(e, ρ, KHalt, MRun(k, γ))
+      EState(e, ρ, KHalt, MCons(KRun(k), γ))
+    case VState(VCode(e), KRun(k), γ) =>
+      EState(e, Map(), k, γ)
     // let binding
     case EState(ELet(x, rhs, body), ρ, k, γ) =>
       EState(EApp(ELam(x, body), rhs, Sta), ρ, k, γ)
@@ -123,7 +128,11 @@ def step(s: State): State =
     case VState(VBool(b), KCond(e2, e3, Sta, ρ, k), γ) =>
       if b then EState(e2, ρ, k, γ) else EState(e3, ρ, k, γ)
     case VState(v1, KCond(e2, e3, Dyn, ρ, k), γ) =>
-      EState(e2, ρ, KHalt, MCondL(v1, e3, ρ, k, γ))
+      EState(e2, ρ, KHalt, MCons(KCondL(v1, e3, ρ, k), γ))
+    case VState(v2, KCondL(v1, e3, ρ, k), γ) =>
+      EState(e3, ρ, KHalt, MCons(KCondR(v1, v2, k), γ))
+    case VState(VCode(e3), KCondR(VCode(e1), VCode(e2), k), γ) =>
+      reflect(ECond1(e1, e2, e3), k, γ)
     // binary operation
     case EState(EBinOp(op, e1, e2, st), ρ, k, γ) =>
       EState(e1, ρ, KBinOpL(op, e2, st, ρ, k), γ)
@@ -134,17 +143,11 @@ def step(s: State): State =
     case VState(VCode(e2), KBinOpR(op, VCode(e1), Dyn, k), γ) =>
       reflect(EBinOp1(op, e1, e2), k, γ)
     // reify
-    case VState(v, KHalt, γ) => AState(v, γ)
-    case AState(VCode(body), MLetc(x, rhs, γ)) =>
+    case VState(VCode(body), KLetc(x, rhs), γ) =>
       AState(VCode(ELet(x, rhs, body)), γ)
-    case AState(VCode(body), MLamc(x, k, γ)) =>
-      reflect(ELam(x, body), k, γ)
-    case AState(VCode(e), MRun(k, γ)) =>
-      EState(e, Map(), k, γ)
-    case AState(v2, MCondL(v1, e3, ρ, k, γ)) =>
-      EState(e3, ρ, KHalt, MCondR(v1, v2, k, γ))
-    case AState(VCode(e3), MCondR(VCode(e1), VCode(e2), k, γ)) =>
-      reflect(ECond1(e1, e2, e3), k, γ)
+    // answer inclusion
+    case VState(v, KHalt, γ) => AState(v, γ)
+    case AState(v, MCons(k, γ)) => VState(v, k, γ)
     case _ => ???
 
 def isDone(s: State): Boolean =
