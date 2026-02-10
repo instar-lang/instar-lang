@@ -232,24 +232,12 @@ object StaticLam:
       case EVar(f) if c.inv.contains(f) => StaticLam.unapply(c.inv(f))
       case _ => None
 
-object EAppStatic:
-  def unapply(e: Expr)(using c: Cache): Option[(ELam, Expr)] =
-    e match
-      case EApp(StaticLam(f), e2, st) => Some((f, e2))
-      case _ => None
-
 object StaticConst:
   def unapply(e: Expr)(using c: Cache): Option[Value] =
     e match
       case e@ENum(i) => Some(VNum(i))
       case e@EBool(b) => Some(VBool(b))
       case EVar(x) if c.inv.contains(x) => StaticConst.unapply(c.inv(x))
-      case _ => None
-
-object EBinOpStatic:
-  def unapply(e: Expr)(using c: Cache): Option[(String, Value, Value)] =
-    e match
-      case EBinOp(op, StaticConst(v1), StaticConst(v2), st) => Some((op, v1, v2))
       case _ => None
 
 def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = e match
@@ -274,13 +262,13 @@ def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
 // - integrate equality saturation based simplification
 // Note: technically we could use reify here, but seems a bit overkill
 def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case EBinOpStatic(op, v1, v2) if Opt("rewriting") =>
+  case EBinOp(op, StaticConst(v1), StaticConst(v2), _) if Opt("rewriting") =>
     evalPrim(op, v1, v2) match
       case VNum(i) => reflect(ENum(i), σ, k, γ)
       case VBool(b) => reflect(EBool(b), σ, k, γ)
 
 def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case EAppStatic(ELam(x, _, body, _), arg) if Opt("fun-inline") =>
+  case EApp(StaticLam(ELam(x, _, body, _)), arg, _) if Opt("fun-inline") =>
     // Note: the function body is closed, as it may still refer to other second-stage variables,
     // so we cannot reuse reify to "partially evaluate" the body.
     // Naive inlining `reflect(body.subst(x, arg), σ, c, k, γ)` does not produce well-formed ANF.
