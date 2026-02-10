@@ -225,25 +225,39 @@ def evalStVar(s: Stage, ς: StEnv): Stage =
     case SVar(st) => ς(st)
     case _ => s
 
+object StaticLam:
+  def unapply(e: Expr)(using c: Cache): Option[ELam] =
+    e match
+      case e@ELam(_, _, _, _) => Some(e)
+      case EVar(f) if c.inv.contains(f) => StaticLam.unapply(c.inv(f))
+      case _ => None
+
+object EAppStatic:
+  def unapply(e: Expr)(using c: Cache): Option[(ELam, Expr)] =
+    e match
+      case EApp(StaticLam(f), e2, st) => Some((f, e2))
+      case _ => None
+
+object StaticConst:
+  def unapply(e: Expr)(using c: Cache): Option[Value] =
+    e match
+      case e@ENum(i) => Some(VNum(i))
+      case e@EBool(b) => Some(VBool(b))
+      case EVar(x) if c.inv.contains(x) => StaticConst.unapply(c.inv(x))
+      case _ => None
+
+object EBinOpStatic:
+  def unapply(e: Expr)(using c: Cache): Option[(String, Value, Value)] =
+    e match
+      case EBinOp(op, StaticConst(v1), StaticConst(v2), st) => Some((op, v1, v2))
+      case _ => None
+
 def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = e match
   case ELet(x, rhs, body) =>
     reflect(rhs, σ, { case (VCode(t), σ1, γ1) =>
       renormalize(body.subst(x, t), σ1, k, γ1)
     }, γ)
   case _ => k(VCode(e), σ, γ)
-
-def extractFun(e: Expr, c: Cache): Option[ELam] =
-  e match
-    case e@ELam(_, _, _, _) => Some(e) // this case will be triggered if "no-let-lam" is also enabled
-    case EVar(f) if c.inv.contains(f) => extractFun(c.inv(f), c)
-    case _ => None
-
-def extractConst(e: Expr, c: Cache): Option[Value] =
-  e match
-    case e@ENum(i) => Some(VNum(i))
-    case e@EBool(b) => Some(VBool(b))
-    case EVar(x) if c.inv.contains(x) => extractConst(c.inv(x), c)
-    case _ => None
 
 def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EUnit => k(VCode(EUnit), σ, γ)
@@ -253,16 +267,6 @@ def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value,
 def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case e@ELam(_, _, _, _) if Opt("no-let-lam") =>
     k(VCode(e), σ, γ)
-
-object EBinOpStatic:
-  def unapply(e: Expr)(using c: Cache): Option[(String, Value, Value)] =
-    e match
-      case EBinOp(op, e1, e2, st) =>
-        val v1 = extractConst(e1, c)
-        val v2 = extractConst(e2, c)
-        if (v1.isDefined && v2.isDefined) Some((op, v1.get, v2.get))
-        else None
-      case _ => None
 
 // TODO: we want to simplify 2 + (3 + x) to be 5 + x as well,
 // a few ideas:
@@ -275,15 +279,6 @@ def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value,
       case VNum(i) => reflect(ENum(i), σ, k, γ)
       case VBool(b) => reflect(EBool(b), σ, k, γ)
 
-object EAppStatic:
-  def unapply(e: Expr)(using c: Cache): Option[(ELam, Expr)] =
-    e match
-      case EApp(e1, e2, st) =>
-        val f = extractFun(e1, c)
-        if (f.isDefined) Some((f.get, e2))
-        else None
-      case _ => None
-
 def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EAppStatic(ELam(x, _, body, _), arg) if Opt("fun-inline") =>
     // Note: the function body is closed, as it may still refer to other second-stage variables,
@@ -294,8 +289,7 @@ def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Valu
     renormalize(body.subst(x, arg), σ, k, γ)
 
 def reflectCondSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case ECond(e1, e2, e3, _) if Opt("simp-cond") && extractConst(e1, c).isDefined =>
-    val VBool(b) = extractConst(e1, c).get
+  case ECond(StaticConst(VBool(b)), e2, e3, _) if Opt("simp-cond") =>
     if b then renormalize(e2, σ, k, γ)
     else renormalize(e3, σ, k, γ)
 
