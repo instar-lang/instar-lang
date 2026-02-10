@@ -152,6 +152,7 @@ extension (e: Expr)
       case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
       case EAscribe(e, _) => e.isPure
       case EFix(_, e, _) => e.isPure
+      case _ => false
 
   def freeVar: Set[String] =
     e match
@@ -274,9 +275,17 @@ def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value,
       case VNum(i) => reflect(ENum(i), σ, k, γ)
       case VBool(b) => reflect(EBool(b), σ, k, γ)
 
+object EAppStatic:
+  def unapply(e: Expr)(using c: Cache): Option[(ELam, Expr)] =
+    e match
+      case EApp(e1, e2, st) =>
+        val f = extractFun(e1, c)
+        if (f.isDefined) Some((f.get, e2))
+        else None
+      case _ => None
+
 def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case EApp(f, arg, _) if Opt("fun-inline") && extractFun(f, c).isDefined =>
-    val ELam(x, _, body, _) = extractFun(f, c).get
+  case EAppStatic(ELam(x, _, body, _), arg) if Opt("fun-inline") =>
     // Note: the function body is closed, as it may still refer to other second-stage variables,
     // so we cannot reuse reify to "partially evaluate" the body.
     // Naive inlining `reflect(body.subst(x, arg), σ, c, k, γ)` does not produce well-formed ANF.
@@ -290,9 +299,14 @@ def reflectCondSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Va
     if b then renormalize(e2, σ, k, γ)
     else renormalize(e3, σ, k, γ)
 
+object CachedExpr:
+  def unapply(e: Expr)(using c: Cache): Option[EVar] =
+    if (e.isPure && c.contains(e)) Some(EVar(c(e)))
+    else None
+
 def reflectCse(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case e if Opt("cse") && e.isPure && c.contains(e) =>
-    k(VCode(EVar(c(e))), σ, γ)
+  case CachedExpr(x) if Opt("cse") =>
+    k(VCode(x), σ, γ)
 
 def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case e if Opt("dce") && e.isPure =>
