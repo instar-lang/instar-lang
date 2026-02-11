@@ -527,7 +527,7 @@ class CoreEffOpt extends Base {
             EBinOp2("+", EVar("y"), ENum2(1))),
         None))),
       None))
-    testEval(e6, "VCode(ELet(x18,ELam(x0,None,ELet(x17,ELam(x7,None,ELet(x14,EBinOp(*,ENum(6),EVar(x0),SNum(0)),ELet(x16,EBinOp(+,ENum(3),EVar(x14),SNum(0)),EVar(x16))),None),EVar(x17)),None),EVar(x18)))", Set("ps", "dce"))
+    testEval(e6, "VCode(ELet(x16,ELam(x0,None,ELet(x15,ELam(x5,None,ELet(x12,EBinOp(*,ENum(6),EVar(x0),SNum(0)),ELet(x14,EBinOp(+,ENum(3),EVar(x12),SNum(0)),EVar(x14))),None),EVar(x15)),None),EVar(x16)))", Set("ps", "dce"))
 
     // λx. let y = x + x in let f= λz. λw. y + 1 + y + 1 in f y
     // ~> λ x0 . λ x4 . (2 + (4 * x0))
@@ -547,7 +547,7 @@ class CoreEffOpt extends Base {
           None)),
         EApp2(EVar("f"), EVar("y")))),
       None))
-    testEval(e7, "VCode(ELet(x18,ELam(x0,None,ELet(x1,EBinOp(*,ENum(2),EVar(x0),SNum(0)),ELet(x16,ELam(x4,None,ELet(x15,ELam(x5,None,ELet(x12,EBinOp(*,ENum(4),EVar(x0),SNum(0)),ELet(x14,EBinOp(+,ENum(2),EVar(x12),SNum(0)),EVar(x14))),None),EVar(x15)),None),ELet(x17,EApp(EVar(x16),EVar(x1),SNum(0)),EVar(x17)))),None),EVar(x18)))", Set("ps", "dce"))
+    testEval(e7, "VCode(ELet(x17,ELam(x0,None,ELet(x1,EBinOp(*,ENum(2),EVar(x0),SNum(0)),ELet(x15,ELam(x3,None,ELet(x14,ELam(x4,None,ELet(x11,EBinOp(*,ENum(4),EVar(x0),SNum(0)),ELet(x13,EBinOp(+,ENum(2),EVar(x11),SNum(0)),EVar(x13))),None),EVar(x14)),None),ELet(x16,EApp(EVar(x15),EVar(x1),SNum(0)),EVar(x16)))),None),EVar(x17)))", Set("ps", "dce"))
 
 
     // λx. (x + 1) * (x + 1)
