@@ -210,5 +210,5 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Cont, γ: MCont): Value =
     case EAscribe(e, _) => eval(e, ρ, ς, k, γ)
 
 def eval(e: Expr): Ans =
-  reset
+  clear
   eval(e, Map(), Map(), (x, γ) => γ(x), x => x)

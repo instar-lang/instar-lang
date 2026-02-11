@@ -520,5 +520,5 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
 
 def eval(e: Expr): (Value, Store) =
-  reset
+  clear
   eval(e, Map(), Map(), Map(), (x, σ, γ) => γ(x, σ), (x, σ) => (x, σ))(using BiMap())

@@ -186,5 +186,5 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Value => Value): Value =
       })
 
 def eval(e: Expr): Ans =
-  reset
+  clear
   eval(e, Map(), Map(), x => x)
