@@ -531,23 +531,23 @@ val RingOps = List(
 
 val CommMonoidOps = List("+", "*", "==", "!=")
 
+type Reflect = (Expr, Store, Cont, MCont) => Cache ?=> (Value, Store)
+
+def composeOpt(opt: Reflect, acc: Reflect): Reflect =
+  def composed(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+    opt(e, σ, { case (VCode(e1), σ1, γ1) =>
+      if (same(e, e1)) acc(e, σ1, k, γ)(using c)
+      else acc(e1, σ1, k, γ1)
+    }, γ)
+  composed
+
 def reflectOpt(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-  val opts: List[(Expr, Store, Cont, MCont) => Cache ?=> (Value, Store)] =
+  val opts: List[Reflect] =
     if (Opt("ps"))
       List(optimizeRing("+", "*"), optimizeCommMonoid("+"), optimizeCommMonoid("*"), optimizeCommMonoid("=="), optimizeCommMonoid("!="))
     else List()
 
-
-  opts.foldRight(reflect: (Expr, Store, Cont, MCont) => Cache ?=> (Value, Store)) {
-    case (opt, acc) => {
-      case (e1: Expr, σ1: Store, k1: Cont, γ1: MCont) =>
-        opt(e1, σ1, {
-          case (VCode(e2), σ2, γ2) =>
-            if (same(e1, e2)) acc(e1, σ2, k1, γ1)
-            else acc(e2, σ2, k1, γ2)
-          }, γ1)
-      }
-    } (e, σ, k, γ)
+  opts.foldRight(reflect: Reflect)(composeOpt)(e, σ, k, γ)
 
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
