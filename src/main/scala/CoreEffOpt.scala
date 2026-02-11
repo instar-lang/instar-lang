@@ -235,8 +235,8 @@ object StaticLam:
 object StaticConst:
   def unapply(e: Expr)(using c: Cache): Option[Value] =
     e match
-      case e@ENum(i) => Some(VNum(i))
-      case e@EBool(b) => Some(VBool(b))
+      case ENum(i) => Some(VNum(i))
+      case EBool(b) => Some(VBool(b))
       case EVar(x) if c.inv.contains(x) => StaticConst.unapply(c.inv(x))
       case _ => None
 
@@ -316,7 +316,7 @@ def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Sto
     reflectCse,
     reflectDce,
   )
-  funs.foldRight(reflectDefault(σ, k, γ)) { (f, acc) => f(σ, k, γ) orElse acc }(e)
+  funs.foldRight(reflectDefault(σ, k, γ)) { (f, acc) => f(σ, k, γ).orElse(acc) }(e)
 
 def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, γ: MCont)(using c: Cache): (Value, Store) =
   eval(e, ρ, ς, σ, (x, σ1, γ1) => γ1(x, σ1), γ)
