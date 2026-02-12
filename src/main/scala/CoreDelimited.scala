@@ -59,11 +59,9 @@ def reflect(e: Expr): Cont[Value, Value] =
     case EUnit | ENum(_) | EBool(_) => pure(VCode(e))
     case _ =>
       val x = fresh()
-      shift(k =>
-        for
-          case VCode(t) <- k(VCode(EVar(x)))
+      shift: k =>
+        for case VCode(t) <- k(VCode(EVar(x)))
         yield VCode(ELet(x, e, t))
-      )
 
 def reify(e: Expr, ρ: Env): Cont[Value, Value] =
   reset(eval(e, ρ))
