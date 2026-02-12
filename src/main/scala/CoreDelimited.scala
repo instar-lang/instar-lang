@@ -61,7 +61,7 @@ def reflect(e: Expr): Cont[Value, Value] =
       val x = fresh()
       shift(k =>
         for
-          case VCode(t) <- reset(k(VCode(EVar(x))))
+          case VCode(t) <- k(VCode(EVar(x)))
         yield VCode(ELet(x, e, t))
       )
 
