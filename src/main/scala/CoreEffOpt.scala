@@ -437,19 +437,20 @@ object AddMultRing extends Ring[MultinomialRepr]:
 
 // Normalize an expression to a representation according to the algebraic law that the representation stands for, when it's appliable,
 // When it's not appliable, we return None.
-trait PSOpt[Algebra[_], Repr]:
-  def normalize(e: Expr)(using c: Cache)(using Algebra[Repr]): Option[Repr]
+trait PSOpt[Algebra[_], Repr: Algebra]:
+  def normalize(e: Expr)(using c: Cache): Option[Repr]
 
   def residualize(repr: Repr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store)
 
-trait CMonoidOpt extends PSOpt[Monoid, MultinomialTermRepr]:
+abstract class CMonoidOpt(using Monoid[MultinomialTermRepr])
+  extends PSOpt[Monoid, MultinomialTermRepr]:
   // normalize an expression to a representation by treating opAdd as a commutative monoid operator.
   def opAdd: String
 
   // Can we merge these two identity functions? They are essentally inherit from same algebraic law.
   def identity: Value
 
-  def normalize(e: Expr)(using c: Cache)(using Monoid[MultinomialTermRepr]): Option[MultinomialTermRepr] = e match
+  def normalize(e: Expr)(using c: Cache): Option[MultinomialTermRepr] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
       for {
          t1 <- normalize(e1)
@@ -530,7 +531,7 @@ trait CMonoidOpt extends PSOpt[Monoid, MultinomialTermRepr]:
       }, γ)
 
 
-trait RingOpt extends PSOpt[Ring, MultinomialRepr]:
+abstract class RingOpt(using Ring[MultinomialRepr]) extends PSOpt[Ring, MultinomialRepr]:
   def zero: Value
 
   def one: Value
@@ -543,7 +544,7 @@ trait RingOpt extends PSOpt[Ring, MultinomialRepr]:
 
   def oneExpr: Expr
 
-  override def normalize(e: Expr)(using c: Cache)(using Ring[MultinomialRepr]): Option[MultinomialRepr] = e match
+  override def normalize(e: Expr)(using c: Cache): Option[MultinomialRepr] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
       for {
           t1 <- normalize(e1)
@@ -585,8 +586,9 @@ trait RingOpt extends PSOpt[Ring, MultinomialRepr]:
             }, γ1)
         }, γ)
 
+
 // Normalize an expression to a representation according to the commutative monoid law. Return None When the expression is not a commutative monoid expression.
-object CMonoidAddOpt extends CMonoidOpt:
+object CMonoidAddOpt extends CMonoidOpt(using AddCMonoid):
   // e could contain different commutative monoid operators: +, *, ==, !=.
   def opAdd = "+"
 
@@ -594,14 +596,15 @@ object CMonoidAddOpt extends CMonoidOpt:
 
   def identityExpr: Expr = ENum(0)
 
-object CMonoidMulOpt extends CMonoidOpt:
+
+object CMonoidMulOpt extends CMonoidOpt(using MulCMonoid):
   def opAdd = "*"
 
   def identity = VNum(1)
 
   def identityExpr: Expr = ENum(1)
 
-object RingAddMulOpt extends RingOpt:
+object RingAddMulOpt extends RingOpt(using AddMultRing):
   def opAdd = "+"
 
   def opMul = "*"
