@@ -330,26 +330,29 @@ def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Val
     })(using c + (e -> x))
 
 def optimizeRing(opAdd: String, opMul: String)(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-  summon[RingOpt[MultinomialRepr]].normalize(opAdd, opMul, e) match
+  given Ring[MultinomialRepr] = AddMultRing
+  RingAddMulOpt.normalize(e) match
     case Some(terms) =>
       println("simplify ring expression: " + e + " to terms: " + terms)
 
-      summon[RingOpt[MultinomialRepr]].residualize(opAdd, opMul, terms, σ, k, γ)
+      RingAddMulOpt.residualize(terms, σ, k, γ)
     case None => reflect(e, σ, k, γ)
 
 def optimizeCommMonoid(op: String)(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   op match
     case "+" =>
-      summon[CMonoidOpt[MultinomialTermRepr]].normalize(op, e)(using c)(using AddCMonoid) match
+      given Monoid[MultinomialTermRepr] = AddCMonoid
+      CMonoidAddOpt.normalize(e) match
         case Some(terms) =>
           println("simplify commutative monoid: " + e + " to: " + terms)
-          summon[CMonoidOpt[MultinomialTermRepr]].residualize(op, terms, σ, k, γ)
+          CMonoidAddOpt.residualize(terms, σ, k, γ)
         case None => reflect(e, σ, k, γ)
     case "*" =>
-      summon[CMonoidOpt[MultinomialTermRepr]].normalize(op, e)(using c)(using MulCMonoid) match
+      given Monoid[MultinomialTermRepr] = MulCMonoid
+      CMonoidMulOpt.normalize(e) match
         case Some(terms) =>
           println("simplify commutative monoid: " + e + " to: " + terms)
-          summon[CMonoidOpt[MultinomialTermRepr]].residualize(op, terms, σ, k, γ)
+          CMonoidMulOpt.residualize(terms, σ, k, γ)
         case None => reflect(e, σ, k, γ)
     case _ => reflect(e, σ, k, γ)
 
@@ -364,12 +367,6 @@ def same(e1: Expr, e2: Expr)(using c: Cache): Boolean =
     case (EUnaryOp(op1, e1, s1), EUnaryOp(op2, e2, s2)) =>
       op1 == op2 && s1 == s2 && same(e1, e2)
     case _ => false
-
-val RingOps = List(
-  ("+", "*"),
-)
-
-val CommMonoidOps = List("+", "*")
 
 type Reflect = (Expr, Store, Cont, MCont) => Cache ?=> (Value, Store)
 
@@ -396,6 +393,7 @@ trait Ring[T] extends Monoid[T]:
 // normalized representation.
 case class MultinomialTermRepr(value: Value, vars: Map[EVar, Int])
 
+// + is a commutative monoid
 object AddCMonoid extends Monoid[MultinomialTermRepr]:
   def identity: MultinomialTermRepr = MultinomialTermRepr(VNum(0), Map())
 
@@ -403,6 +401,7 @@ object AddCMonoid extends Monoid[MultinomialTermRepr]:
     def plus(rhs: MultinomialTermRepr): MultinomialTermRepr =
       MultinomialTermRepr(evalPrim("+", x.value, rhs.value), mergeMaps(x.vars, rhs.vars))
 
+// * is also a commutative monoid
 object MulCMonoid extends Monoid[MultinomialTermRepr]:
   def identity: MultinomialTermRepr = MultinomialTermRepr(VNum(1), Map())
 
@@ -423,7 +422,7 @@ def regroupMultinomialTerms(terms: List[MultinomialTermRepr]): MultinomialRepr =
       .toList
   )
 
-given Ring[MultinomialRepr] with
+object AddMultRing extends Ring[MultinomialRepr]:
   def identity: MultinomialRepr = MultinomialRepr(List())
   def one: MultinomialRepr = MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map())))
   extension (x: MultinomialRepr)
@@ -436,149 +435,185 @@ given Ring[MultinomialRepr] with
         t2 <- rhs.terms
       } yield MultinomialTermRepr(evalPrim("*", t1.value, t2.value), mergeMaps(t1.vars, t2.vars)))
 
-// given Repr[Expr.EBinOp] with
-//   extension (x: Expr.EBinOp)
-//     def residualize(k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-//       reflect(x, Map(), k, γ)
-
 // Normalize an expression to a representation according to the algebraic law that the representation stands for, when it's appliable,
 // When it's not appliable, we return None.
-trait CMonoidOpt[T]:
-  // TODO: Try to normalize an expression to a representation by treating opAdd as a commutative monoid operator.
-  def normalize(opAdd: String, e: Expr)(using c: Cache)(using Monoid[T]): Option[T]
+trait PSOpt[Algebra[_], Repr]:
+  def normalize(e: Expr)(using c: Cache)(using Algebra[Repr]): Option[Repr]
 
-  def residualize(opAdd: String, repr: T, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store)
+  def residualize(repr: Repr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store)
 
-trait RingOpt[T]:
-  def normalize(opAdd: String, opMul: String, e: Expr)(using c: Cache): Option[T]
+trait CMonoidOpt extends PSOpt[Monoid, MultinomialTermRepr]:
+  // normalize an expression to a representation by treating opAdd as a commutative monoid operator.
+  def opAdd: String
 
-  def residualize(opAdd: String, opMul: String, repr: T, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store)
+  // Can we merge these two identity functions? They are essentally inherit from same algebraic law.
+  def identity: Value
 
-
-// Normalize an expression to a representation according to the commutative monoid law. Return None When the expression is not a commutative monoid expression.
-given CMonoidOpt[MultinomialTermRepr] with
-  // e could contain different commutative monoid operators: +, *, ==, !=.
-  def normalize(op: String, e: Expr)(using c: Cache)(using Monoid[MultinomialTermRepr]): Option[MultinomialTermRepr] = e match
-    case EBinOp(`op`, e1, e2, Sta) =>
+  def normalize(e: Expr)(using c: Cache)(using Monoid[MultinomialTermRepr]): Option[MultinomialTermRepr] = e match
+    case EBinOp(op, e1, e2, Sta) if op == opAdd =>
       for {
-         t1 <- normalize(op, e1)
-         t2 <- normalize(op, e2)
+         t1 <- normalize(e1)
+         t2 <- normalize(e2)
       } yield t1.plus(t2)
     case ENum(i) =>
       Some(MultinomialTermRepr(VNum(i), Map()))
     case EVar(x) if c.inv.contains(x) =>
       c.inv(x) match
-        case ex@EBinOp(`op`, e1, e2, Sta) =>
-          normalize(op, ex)
-        case ENum(i) => normalize(op, ENum(i))
+        case ex@EBinOp(op, e1, e2, Sta) if op == opAdd=>
+          normalize(ex)
+        case ENum(i) => normalize(ENum(i))
         case _ =>
-          Some(MultinomialTermRepr(identity(op), Map(EVar(x) -> 1)))
+          Some(MultinomialTermRepr(identity, Map(EVar(x) -> 1)))
     case EVar(x) =>
-      Some(MultinomialTermRepr(identity(op), Map(EVar(x) -> 1)))
+      Some(MultinomialTermRepr(identity, Map(EVar(x) -> 1)))
     case _ => None
 
-  def residualize(op: String, repr: MultinomialTermRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-    println(s"residualizing: $repr")
+  def identityExpr: Expr
+
+  def residualize(repr: MultinomialTermRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
     val ev = ENum(repr.value match
       case VNum(i) => i
     )
 
-    if (ev == identityExpr(op))
-      reflectMonomials(op, repr.vars, σ, k, γ)
+    if (ev == identityExpr)
+      reflectMonomials(repr.vars, σ, k, γ)
     else
-      reflectMonomials(op, repr.vars, σ, {
+      reflectMonomials(repr.vars, σ, {
         case (VCode(e), σ1, γ1) =>
-          if (e == identityExpr(op))
+          if (e == identityExpr)
             reflect(ev, σ1, k, γ1)
           else
-            reflect(EBinOp1(op, ev, e), σ1, k, γ1)
+            reflect(EBinOp1(opAdd, ev, e), σ1, k, γ1)
       }, γ)
 
 
-  def reflectMonomials(op: String, vars: Map[EVar, Int], σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+  def reflectMonomials(vars: Map[EVar, Int], σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
     println(s"reflectMonomials: reflecting monomial with vars: $vars")
     vars.headOption match
       case Some((x, count)) =>
-        reflectMonomial(op, x, count, σ, {
+        reflectMonomial(x, count, σ, {
           case (VCode(e1), σ1, γ1) =>
-            reflectMonomials(op, vars - x, σ1, {
+            reflectMonomials(vars - x, σ1, {
               case (VCode(e2), σ2, γ2) =>
-                if (e1 == identityExpr(op))
+                if (e1 == identityExpr)
                   reflect(e2, σ2, k, γ2)
-                else if (e2 == identityExpr(op))
+                else if (e2 == identityExpr)
                   reflect(e1, σ2, k, γ2)
                 else
-                  reflect(EBinOp1(op, e1, e2), σ2, k, γ2)
+                  reflect(EBinOp1(opAdd, e1, e2), σ2, k, γ2)
             }, γ1)
         }, γ)
-      case None => reflect(identityExpr(op), σ, k, γ)
+      case None => reflect(identityExpr, σ, k, γ)
 
-  def reflectMonomial(op: String, x: EVar, count: Int, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = count match
-    case 0 => reflect(identityExpr(op), σ, k, γ)
+  def reflectMonomial(x: EVar, count: Int, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = count match
+    case 0 => reflect(identityExpr, σ, k, γ)
     case 1 =>
       reflect(x, σ, k, γ)
     case n if n > 1 =>
       val count1 = count / 2
       val count2 = count - (count1 * 2)
       assert(count1 * 2 + count2 == count)
-      reflectMonomial(op, x, count1, σ, {
+      reflectMonomial(x, count1, σ, {
         case (VCode(e1), σ1, γ1) =>
-          reflectMonomial(op, x, count2, σ1, {
+          reflectMonomial(x, count2, σ1, {
             case (VCode(e2), σ2, γ2) =>
-              if (e1 == identityExpr(op))
+              if (e1 == identityExpr)
                 reflect(e2, σ2, k, γ2)
-              else if (e2 == identityExpr(op))
-                reflect(EBinOp1(op, e1, e1), σ2, k, γ2)
+              else if (e2 == identityExpr)
+                reflect(EBinOp1(opAdd, e1, e1), σ2, k, γ2)
               else
-                reflect(EBinOp1(op, e1, e1), σ2, {
+                reflect(EBinOp1(opAdd, e1, e1), σ2, {
                   case (VCode(e3), σ3, γ3) =>
-                    reflect(EBinOp1(op, e3, e2), σ3, k, γ3)
+                    reflect(EBinOp1(opAdd, e3, e2), σ3, k, γ3)
                 }, γ2)
           }, γ1)
       }, γ)
 
-given RingOpt[MultinomialRepr] with
-  def normalize(opAdd: String, opMul: String, e: Expr)(using c: Cache): Option[MultinomialRepr] = e match
-    case EBinOp(`opAdd`, e1, e2, Sta) =>
+
+trait RingOpt extends PSOpt[Ring, MultinomialRepr]:
+  def zero: Value
+
+  def one: Value
+
+  def opAdd: String
+
+  def opMul: String
+
+  def zeroExpr: Expr
+
+  def oneExpr: Expr
+
+  override def normalize(e: Expr)(using c: Cache)(using Ring[MultinomialRepr]): Option[MultinomialRepr] = e match
+    case EBinOp(op, e1, e2, Sta) if op == opAdd =>
       for {
-          t1 <- normalize(opAdd, opMul, e1)
-          t2 <- normalize(opAdd, opMul, e2)
+          t1 <- normalize(e1)
+          t2 <- normalize(e2)
       } yield t1.plus(t2)
-    case EBinOp(`opMul`, e1, e2, Sta) =>
+    case EBinOp(op, e1, e2, Sta) if op == opMul =>
       for {
-          t1 <- normalize(opAdd, opMul, e1)
-          t2 <- normalize(opAdd, opMul, e2)
+          t1 <- normalize(e1)
+          t2 <- normalize(e2)
       } yield t1.mult(t2)
     case ENum(i) =>
       Some(MultinomialRepr(List(MultinomialTermRepr(VNum(i), Map()))))
     case EVar(x) if c.inv.contains(x) =>
       println(s"normalizeRing: variable $x is in cache, its expression is ${c.inv(x)}")
       c.inv(x) match
-        case ex@EBinOp(`opAdd`, e1, e2, Sta) =>
-          normalize(opAdd, opMul, ex)
-        case ex@EBinOp(`opMul`, e1, e2, Sta) =>
-          normalize(opAdd, opMul, ex)
+        case ex@EBinOp(op, e1, e2, Sta) if op == opAdd =>
+          normalize(ex)
+        case ex@EBinOp(op, e1, e2, Sta) if op == opMul =>
+          normalize(ex)
         case _ =>
           Some(MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map(EVar(x) -> 1)))))
     case EVar(x) =>
       Some(MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map(EVar(x) -> 1)))))
 
-  def residualize(opAdd: String, opMul: String, repr: MultinomialRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+  def residualize(repr: MultinomialRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
     repr.terms match
-      case Nil => reflect(identityExpr(opAdd), σ, k, γ)
+      case Nil => reflect(zeroExpr, σ, k, γ)
       case term :: rest =>
-        summon[CMonoidOpt[MultinomialTermRepr]].residualize(opMul, term, σ, {
+        CMonoidMulOpt.residualize(term, σ, {
           case (VCode(termExpr), σ1, γ1) =>
-            residualize(opAdd, opMul, MultinomialRepr(rest), σ1, {
+            residualize(MultinomialRepr(rest), σ1, {
               case (VCode(restExpr), σ2, γ2) =>
-                if (termExpr == identityExpr(opAdd))
+                if (termExpr == zeroExpr)
                   reflect(restExpr, σ2, k, γ2)
-                else if (restExpr == identityExpr(opAdd))
+                else if (restExpr == zeroExpr)
                   reflect(termExpr, σ2, k, γ2)
                 else
                   reflect(EBinOp1(opAdd, termExpr, restExpr), σ2, k, γ2)
             }, γ1)
         }, γ)
+
+// Normalize an expression to a representation according to the commutative monoid law. Return None When the expression is not a commutative monoid expression.
+object CMonoidAddOpt extends CMonoidOpt:
+  // e could contain different commutative monoid operators: +, *, ==, !=.
+  def opAdd = "+"
+
+  def identity = VNum(0)
+
+  def identityExpr: Expr = ENum(0)
+
+object CMonoidMulOpt extends CMonoidOpt:
+  def opAdd = "*"
+
+  def identity = VNum(1)
+
+  def identityExpr: Expr = ENum(1)
+
+object RingAddMulOpt extends RingOpt:
+  def opAdd = "+"
+
+  def opMul = "*"
+
+  def zero = VNum(0)
+
+  def one = VNum(1)
+
+  def zeroExpr: Expr = ENum(0)
+
+  def oneExpr: Expr = ENum(1)
+
 
 def reflectOpt(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val opts: List[Reflect] =
