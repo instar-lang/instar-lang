@@ -391,40 +391,48 @@ trait Ring[T] extends Monoid[T]:
     def mult(rhs: T): T
 
 // normalized representation.
-case class MultinomialTermRepr(value: Value, vars: Map[EVar, Int])
+case class MultinomialTermRepr(value: VNum, vars: Map[EVar, Int])
 
-// + is a commutative monoid
-object AddCMonoid extends Monoid[MultinomialTermRepr]:
-  def identity: MultinomialTermRepr = MultinomialTermRepr(VNum(0), Map())
+object VNumAddMonoid extends Monoid[VNum]:
+  def identity: VNum = VNum(0)
+  extension (x: VNum)
+    def plus(rhs: VNum): VNum = VNum(x.i + rhs.i)
+
+object VNumMulMonoid extends Monoid[VNum]:
+  def identity: VNum = VNum(1)
+  extension (x: VNum)
+    def plus(rhs: VNum): VNum = VNum(x.i * rhs.i)
+
+abstract class CMonoidRepr(using m: Monoid[VNum]) extends Monoid[MultinomialTermRepr]:
+  def identity: MultinomialTermRepr = MultinomialTermRepr(m.identity, Map())
 
   extension (x: MultinomialTermRepr)
     def plus(rhs: MultinomialTermRepr): MultinomialTermRepr =
-      MultinomialTermRepr(evalPrim("+", x.value, rhs.value), mergeMaps(x.vars, rhs.vars))
+      MultinomialTermRepr(x.value.plus(rhs.value), mergeMaps(x.vars, rhs.vars))
 
-// * is also a commutative monoid
-object MulCMonoid extends Monoid[MultinomialTermRepr]:
-  def identity: MultinomialTermRepr = MultinomialTermRepr(VNum(1), Map())
+object AddCMonoid extends CMonoidRepr(using VNumAddMonoid)
 
-  extension (x: MultinomialTermRepr)
-    def plus(rhs: MultinomialTermRepr): MultinomialTermRepr =
-      MultinomialTermRepr(evalPrim("*", x.value, rhs.value), mergeMaps(x.vars, rhs.vars))
+object MulCMonoid extends CMonoidRepr(using VNumMulMonoid)
 
 case class MultinomialRepr(terms: List[MultinomialTermRepr])
 
-def regroupMultinomialTerms(terms: List[MultinomialTermRepr]): MultinomialRepr =
-  MultinomialRepr(
-    terms
-      .groupBy(_.vars)
-      .flatMap { case (vars, terms) =>
-        val sum = terms.map(_.value).reduce(evalPrim("+", _, _))
-        if (sum != VNum(0)) Some(MultinomialTermRepr(sum, vars)) else None
-      }
-      .toList
-  )
 
 object AddMultRing extends Ring[MultinomialRepr]:
   def identity: MultinomialRepr = MultinomialRepr(List())
   def one: MultinomialRepr = MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map())))
+
+  def regroupMultinomialTerms(terms: List[MultinomialTermRepr]): MultinomialRepr =
+    given Monoid[VNum] = VNumAddMonoid
+    MultinomialRepr(
+      terms
+        .groupBy(_.vars)
+        .flatMap { case (vars, terms) =>
+          val sum = terms.map(_.value).reduce(_.plus(_))
+          if (sum != VNum(0)) Some(MultinomialTermRepr(sum, vars)) else None
+        }
+        .toList
+    )
+
   extension (x: MultinomialRepr)
     def plus(rhs: MultinomialRepr): MultinomialRepr =
       regroupMultinomialTerms(x.terms ++ rhs.terms)
@@ -433,7 +441,10 @@ object AddMultRing extends Ring[MultinomialRepr]:
       regroupMultinomialTerms(for {
         t1 <- x.terms
         t2 <- rhs.terms
-      } yield MultinomialTermRepr(evalPrim("*", t1.value, t2.value), mergeMaps(t1.vars, t2.vars)))
+        given Monoid[VNum] = VNumMulMonoid
+      } yield MultinomialTermRepr(t1.value.plus(t2.value), mergeMaps(t1.vars, t2.vars)))
+
+
 
 // Normalize an expression to a representation according to the algebraic law that the representation stands for, when it's appliable,
 // When it's not appliable, we return None.
@@ -448,7 +459,7 @@ abstract class CMonoidOpt(using Monoid[MultinomialTermRepr])
   def opAdd: String
 
   // Can we merge these two identity functions? They are essentally inherit from same algebraic law.
-  def identity: Value
+  def identity: VNum
 
   def normalize(e: Expr)(using c: Cache): Option[MultinomialTermRepr] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
