@@ -414,13 +414,14 @@ trait PSOpt[Algebra[_], Repr: Algebra]:
       case Some(repr) => residualize(repr, σ, k, γ)
       case None => reflect(e, σ, k, γ)
 
-abstract class CMonoidOpt(using Monoid[MultinomialTermRepr])
+abstract class CMonoidOpt(using Monoid[VNum])(using Monoid[MultinomialTermRepr])
   extends PSOpt[Monoid, MultinomialTermRepr]:
   // normalize an expression to a representation by treating opAdd as a commutative monoid operator.
   def opAdd: String
 
   // Can we merge these two identity functions? They are essentally inherit from same algebraic law.
-  def identity: VNum
+  def empty: VNum = summon[Monoid[VNum]].empty
+  def emptyExpr: ENum = ENum(empty.i)
 
   def normalize(e: Expr)(using c: Cache): Option[MultinomialTermRepr] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
@@ -436,24 +437,22 @@ abstract class CMonoidOpt(using Monoid[MultinomialTermRepr])
           normalize(ex)
         case ENum(i) => normalize(ENum(i))
         case _ =>
-          Some(MultinomialTermRepr(identity, Map(EVar(x) -> 1)))
+          Some(MultinomialTermRepr(empty, Map(EVar(x) -> 1)))
     case EVar(x) =>
-      Some(MultinomialTermRepr(identity, Map(EVar(x) -> 1)))
+      Some(MultinomialTermRepr(empty, Map(EVar(x) -> 1)))
     case _ => None
-
-  def identityExpr: Expr
 
   def residualize(repr: MultinomialTermRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
     val ev = ENum(repr.value match
       case VNum(i) => i
     )
 
-    if (ev == identityExpr)
+    if (ev == emptyExpr)
       reflectMonomials(repr.vars, σ, k, γ)
     else
       reflectMonomials(repr.vars, σ, {
         case (VCode(e), σ1, γ1) =>
-          if (e == identityExpr)
+          if (e == emptyExpr)
             reflect(ev, σ1, k, γ1)
           else
             reflect(EBinOp1(opAdd, ev, e), σ1, k, γ1)
@@ -468,18 +467,18 @@ abstract class CMonoidOpt(using Monoid[MultinomialTermRepr])
           case (VCode(e1), σ1, γ1) =>
             reflectMonomials(vars - x, σ1, {
               case (VCode(e2), σ2, γ2) =>
-                if (e1 == identityExpr)
+                if (e1 == emptyExpr)
                   reflect(e2, σ2, k, γ2)
-                else if (e2 == identityExpr)
+                else if (e2 == emptyExpr)
                   reflect(e1, σ2, k, γ2)
                 else
                   reflect(EBinOp1(opAdd, e1, e2), σ2, k, γ2)
             }, γ1)
         }, γ)
-      case None => reflect(identityExpr, σ, k, γ)
+      case None => reflect(emptyExpr, σ, k, γ)
 
   def reflectMonomial(x: EVar, count: Int, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = count match
-    case 0 => reflect(identityExpr, σ, k, γ)
+    case 0 => reflect(emptyExpr, σ, k, γ)
     case 1 =>
       reflect(x, σ, k, γ)
     case n if n > 1 =>
@@ -490,9 +489,9 @@ abstract class CMonoidOpt(using Monoid[MultinomialTermRepr])
         case (VCode(e1), σ1, γ1) =>
           reflectMonomial(x, count2, σ1, {
             case (VCode(e2), σ2, γ2) =>
-              if (e1 == identityExpr)
+              if (e1 == emptyExpr)
                 reflect(e2, σ2, k, γ2)
-              else if (e2 == identityExpr)
+              else if (e2 == emptyExpr)
                 reflect(EBinOp1(opAdd, e1, e1), σ2, k, γ2)
               else
                 reflect(EBinOp1(opAdd, e1, e1), σ2, {
@@ -503,18 +502,12 @@ abstract class CMonoidOpt(using Monoid[MultinomialTermRepr])
       }, γ)
 
 
-abstract class RingOpt(using Ring[MultinomialRepr]) extends PSOpt[Ring, MultinomialRepr]:
-  def zero: Value
-
-  def one: Value
-
+abstract class RingOpt(using Ring[VNum])(using Ring[MultinomialRepr]) extends PSOpt[Ring, MultinomialRepr]:
   def opAdd: String
 
   def opMul: String
 
-  def zeroExpr: Expr
-
-  def oneExpr: Expr
+  def zeroExpr = ENum(summon[Ring[VNum]].zero.i)
 
   override def normalize(e: Expr)(using c: Cache): Option[MultinomialRepr] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
@@ -560,33 +553,16 @@ abstract class RingOpt(using Ring[MultinomialRepr]) extends PSOpt[Ring, Multinom
 
 
 // Normalize an expression to a representation according to the commutative monoid law. Return None When the expression is not a commutative monoid expression.
-object CMonoidAddOpt extends CMonoidOpt(using AddCMonoid):
+object CMonoidAddOpt extends CMonoidOpt(using VNumAddMonoid)(using AddCMonoid):
   def opAdd = "+"
 
-  def identity = VNum(0)
-
-  def identityExpr: Expr = ENum(0)
-
-
-object CMonoidMulOpt extends CMonoidOpt(using MulCMonoid):
+object CMonoidMulOpt extends CMonoidOpt(using VNumMulMonoid)(using MulCMonoid):
   def opAdd = "*"
 
-  def identity = VNum(1)
-
-  def identityExpr: Expr = ENum(1)
-
-object RingAddMulOpt extends RingOpt(using AddMultRing):
+object RingAddMulOpt extends RingOpt(using VNumAddMulRing)(using AddMultRing):
   def opAdd = "+"
 
   def opMul = "*"
-
-  def zero = VNum(0)
-
-  def one = VNum(1)
-
-  def zeroExpr: Expr = ENum(0)
-
-  def oneExpr: Expr = ENum(1)
 
 type Reflect = (Expr, Store, Cont, MCont) => Cache ?=> (Value, Store)
 
