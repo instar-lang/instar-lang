@@ -68,6 +68,40 @@ class LamHoist extends Base {
     testEval(e, exp, Set("lam-hoist"))
   }
 
+  test("let-lam-hoist-2") {
+    /*
+      let a = 42 + 42
+      lift(λz. let x = z + 2 in let y = a + 2 in x * y)
+      =>
+      let x0 = 42 + 42
+      let x3 = 1 + 2
+      let x5 = λx1.
+        let x2 = x1 + 2
+        let x4 = x2 * x3
+        x4
+      x5
+    */
+    val e =
+      ELet("a", EBinOp2("+", ENum2(42), ENum2(42)),
+      ELift2(ELam("z", None,
+        ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
+          ELet("y", EBinOp2("+", EVar("a"), ENum2(2)),
+            EBinOp2("*", EVar("x"), EVar("y"))
+          )),
+        None)))
+    val exp = """
+    VCode(
+      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
+      ELet(x6,EBinOp(+,EVar(x0),ENum(2),SNum(0)),
+      ELet(x7,ELam(x1,None,
+        ELet(x2,EBinOp(+,EVar(x1),ENum(2),SNum(0)),
+        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),SNum(0)),
+        EVar(x4))),None),
+      EVar(x7)))))
+    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
+    testEval(e, exp, Set("lam-hoist"))
+  }
+
   test("let-lam-hoist-nested") {
     /*
     let a = 42 + 42

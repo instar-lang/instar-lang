@@ -359,7 +359,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
             // so we cannot directly pass it to the continuation, which would
             // expect variables/atomic expressions for ANF.
             renormalize(t1, σ3, k, γ)
-          })(using c + (EVar(y) -> y))
+          })(using BiMap((EVar(y) -> y)))
       })
     else
       reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
