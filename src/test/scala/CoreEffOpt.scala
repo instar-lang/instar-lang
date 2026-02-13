@@ -13,7 +13,7 @@ trait Base extends munit.FunSuite {
     assertEquals(v.toString, str)
 }
 
-class Playground extends Base {
+class LamHoist extends Base {
   test("let-lam-hoist-1") {
     val e =
       ELift2(ELam("z", None,
@@ -24,16 +24,29 @@ class Playground extends Base {
         None))
     val exp = """
     VCode(
-      ELet(x2,EBinOp(+,ENum(1),ENum(2),SNum(0)),
-      ELet(x4,ELam(x0,None,
+      ELet(x5,EBinOp(+,ENum(1),ENum(2),SNum(0)),
+      ELet(x6,ELam(x0,None,
         ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(0)),
-        ELet(x3,EBinOp(*,EVar(x1),EVar(x2),SNum(0)),EVar(x3))),None),
-      EVar(x4))))
+        ELet(x3,EBinOp(*,EVar(x1),EVar(x5),SNum(0)),
+        EVar(x3))),None),
+      EVar(x6))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
     testEval(e, exp, Set("lam-hoist"))
   }
 
   test("let-lam-hoist-2") {
+    /*
+      let a = 42 + 42
+      lift(λz. let x = z + 2 in let y = 1 + 2 in x * y)
+      =>
+      let x0 = 42 + 42
+      let x3 = 1 + 2
+      let x5 = λx1.
+        let x2 = x1 + 2
+        let x4 = x2 * x3
+        x4
+      x5
+    */
     val e =
       ELet("a", EBinOp2("+", ENum2(42), ENum2(42)),
       ELift2(ELam("z", None,
@@ -45,46 +58,66 @@ class Playground extends Base {
     val exp = """
     VCode(
       ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
-      ELet(x3,EBinOp(+,ENum(1),ENum(2),SNum(0)),
-      ELet(x5,ELam(x1,None,
+      ELet(x6,EBinOp(+,ENum(1),ENum(2),SNum(0)),
+      ELet(x7,ELam(x1,None,
         ELet(x2,EBinOp(+,EVar(x1),ENum(2),SNum(0)),
-        ELet(x4,EBinOp(*,EVar(x2),EVar(x3),SNum(0)),EVar(x4))),None),
-      EVar(x5)))))
+        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),SNum(0)),
+        EVar(x4))),None),
+      EVar(x7)))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
     testEval(e, exp, Set("lam-hoist"))
   }
 
-  test("let-lam-hoist-nested".only) {
+  test("let-lam-hoist-nested") {
+    /*
+    let a = 42 + 42
+    lift { λw.
+      let f = λz.
+        let x = z + a
+        let y = 1 + 2
+        x * y
+      f(w)
+    }
+    =>
+    let x0 = 42 + 42
+    let x11 = 1 + 2
+    let x12 = λx1.
+      let x8 = λx2.
+        let x3 = x2 + x0
+        let x5 = x3 * x11
+        x5
+      let x9 = x1 + x0
+      x9
+    x12
+    }
+    */
+
     val e =
       ELet("a", EBinOp2("+", ENum2(42), ENum2(42)),
-      ELift2(ELam("z", None,
+      ELift2(ELam("w", None,
         ELet("f", ELift2(ELam("z", None,
           ELet("x", EBinOp2("+", EVar("z"), EVar("a")),
             ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
               EBinOp2("*", EVar("x"), EVar("y"))
             )),
           None)),
-        EApp2(EVar("f"), EVar("z"))), None)))
+        EApp2(EVar("f"), EVar("w"))), None)))
+
+
     val exp = """
     VCode(
       ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
-      ELet(x4,EBinOp(+,ENum(1),ENum(2),SNum(0)),
-      ELet(x6,ELam(x2,None,
-        ELet(x3,EBinOp(+,EVar(x2),EVar(x0),SNum(0)),
-        ELet(x5,EBinOp(*,EVar(x3),EVar(x4),SNum(0)),EVar(x5))),None),
-      ELet(x8,ELam(x1,None,
-        ELet(x7,EApp(EVar(x6),EVar(x1),SNum(0)),
-        EVar(x7))),None),
-      EVar(x8)))))
+      ELet(x11,EBinOp(+,ENum(1),ENum(2),SNum(0)),
+      ELet(x12,ELam(x1,None,
+        ELet(x8,ELam(x2,None,
+          ELet(x3,EBinOp(+,EVar(x2),EVar(x0),SNum(0)),
+          ELet(x5,EBinOp(*,EVar(x3),EVar(x11),SNum(0)),
+          EVar(x5))),None),
+        ELet(x9,EApp(EVar(x8),EVar(x1),SNum(0)),
+        EVar(x9))),None),
+      EVar(x12)))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
 
-    """
-    VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
-      ELet(x8,ELam(x1,None,
-        ELet(x7,EApp(ELet(x4,EBinOp(+,ENum(1),ENum(2),SNum(0)),ELet(x6,ELam(x2,None,ELet(x3,EBinOp(+,EVar(x2),EVar(x0),SNum(0)),ELet(x5,EBinOp(*,EVar(x3),EVar(x4),SNum(0)),EVar(x5))),None),EVar(x6))),EVar(x1),SNum(0)),
-        EVar(x7)),None),EVar(x8))))
-    """
     testEval(e, exp, Set("lam-hoist"))
   }
 }

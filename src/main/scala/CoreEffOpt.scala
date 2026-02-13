@@ -321,51 +321,23 @@ def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Sto
 def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, γ: MCont)(using c: Cache): (Value, Store) =
   eval(e, ρ, ς, σ, (x, σ1, γ1) => γ1(x, σ1), γ)
 
-/*
-def hoistLam(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
-  println(s"HoistLam: e = $e")
-  e match
-    case ELam(x, argTy, body, retTy) =>
-      hoist(body, σ, BiMap(EVar(x) -> x), {
-        case (VCode(t1), σ1, c1, γ1) =>
-          //reflect(ELam(x, argTy.erase, t1, retTy.erase), σ1, c1, (x, σ1, c1, γ1) => γ1(x, σ1), γ1)
-          γ1(VCode(ELam(x, argTy.erase, t1, retTy.erase)), σ1)
-      }, {
-        case (VCode(t1), σ1) =>
-          k(VCode(t1), σ1, c, γ)
-        /*
-          //renormalize(t1, σ1, c, k, γ)
-        */
-      })
+def idK(v: Value, σ: Store, γ: MCont): (Value, Store) = γ(v, σ)
 
-def hoist(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
-  val allVars = c.allVals
-  println(s"Hoist: allVars = $allVars, e = $e")
+def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   e match
-    case ELet(x, rhs, body) if rhs.isPure && rhs.freeVar.intersect(allVars).isEmpty =>
-      // rhs is pure and does not depend on variables in the lambda's scope,
-      // so we can lift it out of the lambda
-      println(s"  Hoist let-binding: $x = $rhs")
-      // FIXME: this is still buggy
-      hoist(body, σ, c, k, { case (VCode(body1), σ1) =>
-          γ(VCode(ELet(x, rhs, body1)), σ1)
-      })
-      /*
-      hoist(body, σ, c, {
-        case (body1, σ1, c1, γ1) => k(body1, σ1, c1, {
-          case (VCode(body2), σ1) =>
-            γ1(VCode(ELet(x, rhs, body2)), σ1)
-        })
-      }, γ)
-      */
+    case ELet(x, rhs, body) if rhs.isPure && rhs.freeVar.intersect(c.allVals).isEmpty =>
+      println(s"Lift let-binding: $x = $rhs")
+      // split hoisted lets into meta-continuation, body1 is supposed to be wrapped with ELam
+      hoist(body, σ, k, { case (VCode(body1), σ1) =>
+        γ(VCode(ELet(x, rhs, body1)), σ1)
+      })(using c + (rhs -> x))
     case ELet(x, rhs, body) =>
-      println(s"  Drop let-binding: $x = $rhs")
-      hoist(body, σ, c + (rhs -> x), {
-        case (VCode(body1), σ1, c1, γ1) => k(VCode(ELet(x, rhs, body1)), σ1, c1, γ1)
-      }, γ)
-    case _ =>
-      k(VCode(e), σ, c, γ)
-*/
+      println(s"Sink let-binding: $x = $rhs")
+      // split sunk lets into continuation
+      hoist(body, σ, { case (VCode(body1), σ1, γ1) =>
+        k(VCode(ELet(x, rhs, body1)), σ1, γ1)
+      }, γ)(using c + (rhs -> x))
+    case _ => k(VCode(e), σ, γ)
 
 def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
   case VUnit => reflect(EUnit, σ, k, γ)
@@ -376,35 +348,31 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
     val l = σ.size
     val y = fresh()
     if (Opt("lam-hoist"))
-      /*
-      //eval(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), c, (x, σ1, c1, γ1) => γ1(x, σ1), {
-      reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), c, {
+      reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
         case (VCode(t), σ2) =>
-          hoistLam(ELam(y, argTy.erase, t, retTy.erase), σ2, c, k, γ)
-          /*
-          k(cd, σ2, c, γ)
-          hoist(t, σ2, BiMap(EVar(y) -> y), {
-            case (VCode(t1), σ1, c1, γ1) =>
-              reflect(ELam(y, argTy.erase, t1, retTy.erase), σ1, c1, k, γ1)
-          }, γ)
-          */
-          /*
-          hoist(t, σ2, BiMap(EVar(y) -> y), {
-            case (VCode(t1), σ1, c1, γ1) =>
-              reflect(ELam(y, argTy.erase, t1, retTy.erase), σ1, c1, (x, σ1, c1, γ1) => γ1(x, σ1), γ1)
-          }, {
-            case (VCode(t1), σ1) =>
-              k(VCode(t1), σ1, c, γ)
-          })
-          */
+          hoist(t, σ2, { case (VCode(t1), σ3, γ1) =>
+            println(s"Hoisted lambda body: $t1")
+            reflect(ELam(y, argTy.erase, t1, retTy.erase), σ3, idK, γ1)
+          }, { case (VCode(t1), σ3) =>
+            println(s"Hoisted whole term: $t1")
+            // now we need to renormalize the whole term, as it may contain lifted bindings,
+            // so we cannot directly pass it to the continuation, which would
+            // expect variables/atomic expressions for ANF.
+            renormalize(t1, σ3, k, γ)
+          })(using c + (EVar(y) -> y))
       })
-      */
-      ???
     else
       reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
         case (VCode(t), σ2) =>
           reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, k, γ)
       })
+
+def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
+  case VCode(EVar(x)) =>
+    c.inv(x) match
+      case EApp(_, _, _) => k(VBool(true), σ, γ)
+      case _ => k(VBool(false), σ, γ)
+  case VCode(_) => k(VBool(false), σ, γ)
 
 // Note: fst-stage side effect will break semantics-preservation,
 // but we won't be handle/prevent that in the dynamic interpreter.
@@ -549,15 +517,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
         reflect(EFix(g, x, Sta), σ2, k, γ)
       })
-    case EIsApp(e) =>
-      eval(e, ρ, ς, σ, {
-        case (VCode(EVar(x)), σ1, γ1) =>
-          summon[Cache].inv(x) match
-            case EApp(_, _, _) => k(VBool(true), σ1, γ1)
-            case _ => k(VBool(false), σ1, γ1)
-        case (VCode(_), σ1, γ1) =>
-          k(VBool(false), σ1, γ1)
-      }, γ)
+    case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
 
 def eval(e: Expr): (Value, Store) =
   reset
