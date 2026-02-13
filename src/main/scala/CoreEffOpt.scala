@@ -329,12 +329,15 @@ def same(e1: Expr, e2: Expr)(using c: Cache): Boolean =
       op1 == op2 && s1 == s2 && same(e1, e2)
     case _ => false
 
+
+// 1. Monoid
 trait Monoid[T]:
   def empty: T
 
   extension (x: T)
     def combine(rhs: T): T
 
+// 2. Concrete addition and multiplication are clearly monoid
 object VNumAddMonoid extends Monoid[VNum]:
   def empty: VNum = VNum(0)
   extension (x: VNum)
@@ -345,18 +348,17 @@ object VNumMulMonoid extends Monoid[VNum]:
   extension (x: VNum)
     def combine(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
+// 3. Use multinomial to represent normal forms of commutative expressions
 case class MultinomialTermRepr(value: VNum, vars: Map[EVar, Int])
 
-abstract class CMonoidRepr(using m: Monoid[VNum]) extends Monoid[MultinomialTermRepr]:
-  def empty: MultinomialTermRepr = MultinomialTermRepr(m.empty, Map())
+// 4. If we have a monoid over VNum, and we know it's commutative, its normal form MultinomialTermRepr is also a monoid.
+given (using cm: Monoid[VNum]): Monoid[MultinomialTermRepr] with
+  def empty: MultinomialTermRepr = MultinomialTermRepr(cm.empty, Map())
 
   extension (x: MultinomialTermRepr)
     def combine(rhs: MultinomialTermRepr): MultinomialTermRepr =
       MultinomialTermRepr(x.value.combine(rhs.value), mergeMaps(x.vars, rhs.vars))
 
-object AddCMonoid extends CMonoidRepr(using VNumAddMonoid)
-
-object MulCMonoid extends CMonoidRepr(using VNumMulMonoid)
 
 case class MultinomialRepr(terms: List[MultinomialTermRepr])
 
@@ -375,7 +377,7 @@ object VNumAddMulRing extends Ring[VNum]:
     def combine(rhs: VNum): VNum = VNum(x.i + rhs.i)
     def times(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
-abstract class RingRepr(using r: Ring[VNum]) extends Ring[MultinomialRepr]:
+given (using r: Ring[VNum]): Ring[MultinomialRepr] with
   def empty: MultinomialRepr = MultinomialRepr(List())
   def one: MultinomialRepr = MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map())))
 
@@ -383,7 +385,7 @@ abstract class RingRepr(using r: Ring[VNum]) extends Ring[MultinomialRepr]:
     MultinomialRepr(
       terms
         .groupBy(_.vars)
-        .flatMap { case (vars, terms) =>
+        .flatMap { (vars, terms) =>
           val sum = terms.map(_.value).reduce(_.plus(_))
           if (sum != VNum(0)) Some(MultinomialTermRepr(sum, vars)) else None
         }
@@ -400,10 +402,12 @@ abstract class RingRepr(using r: Ring[VNum]) extends Ring[MultinomialRepr]:
         t2 <- rhs.terms
       } yield MultinomialTermRepr(t1.value.times(t2.value), mergeMaps(t1.vars, t2.vars)))
 
-object AddMultRing extends RingRepr(using VNumAddMulRing)
-
 // Normalize an expression to a representation according to the algebraic law that the representation stands for, when it's appliable,
 // When it's not appliable, we return None.
+// 5. The interface for partially-static optiimization.
+//    - parameterized by an algebra and a representation implements the interfaces of the algebra.
+//    - given an representation, we can residualize it, the residualized expression should be more efficient than the input of normalize
+//    - optimize function combines normalize and residualize. When normalize fails, it falls back to reflect
 trait PSOpt[Algebra[_], Repr: Algebra]:
   def normalize(e: Expr)(using c: Cache): Option[Repr]
 
@@ -414,8 +418,8 @@ trait PSOpt[Algebra[_], Repr: Algebra]:
       case Some(repr) => residualize(repr, σ, k, γ)
       case None => reflect(e, σ, k, γ)
 
-abstract class CMonoidOpt(using Monoid[VNum])(using Monoid[MultinomialTermRepr])
-  extends PSOpt[Monoid, MultinomialTermRepr]:
+// 6. If we have a monoid, we can choose to treat an operator opAdd as the monoid operator, and normalize expressions against the operator.
+abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialTermRepr]:
   // normalize an expression to a representation by treating opAdd as a commutative monoid operator.
   def opAdd: String
 
@@ -443,9 +447,7 @@ abstract class CMonoidOpt(using Monoid[VNum])(using Monoid[MultinomialTermRepr])
     case _ => None
 
   def residualize(repr: MultinomialTermRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-    val ev = ENum(repr.value match
-      case VNum(i) => i
-    )
+    val ev = ENum(repr.value.i)
 
     if (ev == emptyExpr)
       reflectMonomials(repr.vars, σ, k, γ)
@@ -502,12 +504,15 @@ abstract class CMonoidOpt(using Monoid[VNum])(using Monoid[MultinomialTermRepr])
       }, γ)
 
 
-abstract class RingOpt(using Ring[VNum])(using Ring[MultinomialRepr]) extends PSOpt[Ring, MultinomialRepr]:
+abstract class RingOpt(using Ring[VNum]) extends PSOpt[Ring, MultinomialRepr]:
   def opAdd: String
 
   def opMul: String
 
   def zeroExpr = ENum(summon[Ring[VNum]].zero.i)
+
+  object LocalCMonoidMulOpt extends CMonoidOpt(using VNumMulMonoid):
+    def opAdd = opMul
 
   override def normalize(e: Expr)(using c: Cache): Option[MultinomialRepr] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
@@ -538,7 +543,7 @@ abstract class RingOpt(using Ring[VNum])(using Ring[MultinomialRepr]) extends PS
     repr.terms match
       case Nil => reflect(zeroExpr, σ, k, γ)
       case term :: rest =>
-        CMonoidMulOpt.residualize(term, σ, {
+        LocalCMonoidMulOpt.residualize(term, σ, {
           case (VCode(termExpr), σ1, γ1) =>
             residualize(MultinomialRepr(rest), σ1, {
               case (VCode(restExpr), σ2, γ2) =>
@@ -551,15 +556,15 @@ abstract class RingOpt(using Ring[VNum])(using Ring[MultinomialRepr]) extends PS
             }, γ1)
         }, γ)
 
-
+// 7. By giving the operator names and the concrete algebra, we instantiate the optimization.
 // Normalize an expression to a representation according to the commutative monoid law. Return None When the expression is not a commutative monoid expression.
-object CMonoidAddOpt extends CMonoidOpt(using VNumAddMonoid)(using AddCMonoid):
+object CMonoidAddOpt extends CMonoidOpt(using VNumAddMonoid):
   def opAdd = "+"
 
-object CMonoidMulOpt extends CMonoidOpt(using VNumMulMonoid)(using MulCMonoid):
+object CMonoidMulOpt extends CMonoidOpt(using VNumMulMonoid):
   def opAdd = "*"
 
-object RingAddMulOpt extends RingOpt(using VNumAddMulRing)(using AddMultRing):
+object RingAddMulOpt extends RingOpt(using VNumAddMulRing):
   def opAdd = "+"
 
   def opMul = "*"
