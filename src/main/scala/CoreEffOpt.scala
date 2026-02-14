@@ -349,18 +349,18 @@ object VNumMulMonoid extends Monoid[VNum]:
     def combine(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
 // 3. Use multinomial to represent normal forms of commutative expressions
-case class MultinomialTermRepr(value: VNum, vars: Map[EVar, Int])
-
+case class MultinomialTermRepr[T: Monoid](value: T, vars: Map[EVar, Int])
+// Case class Multinomial[T: Monoid](v: T, vars: Map[EVar, Int])
 // 4. If we have a monoid over VNum, and we know it's commutative, its normal form MultinomialTermRepr is also a monoid.
-given (using cm: Monoid[VNum]): Monoid[MultinomialTermRepr] with
-  def empty: MultinomialTermRepr = MultinomialTermRepr(cm.empty, Map())
+given [T](using cm: Monoid[T]): Monoid[MultinomialTermRepr[T]] with
+  def empty: MultinomialTermRepr[T] = MultinomialTermRepr(cm.empty, Map())
 
-  extension (x: MultinomialTermRepr)
-    def combine(rhs: MultinomialTermRepr): MultinomialTermRepr =
+  extension (x: MultinomialTermRepr[T])
+    def combine(rhs: MultinomialTermRepr[T]): MultinomialTermRepr[T] =
       MultinomialTermRepr(x.value.combine(rhs.value), mergeMaps(x.vars, rhs.vars))
 
 
-case class MultinomialRepr(terms: List[MultinomialTermRepr])
+case class MultinomialRepr[T: Ring](terms: List[MultinomialTermRepr[T]])
 
 trait Ring[T]:
   def zero: T
@@ -377,11 +377,18 @@ object VNumAddMulRing extends Ring[VNum]:
     def plus(rhs: VNum): VNum = VNum(x.i + rhs.i)
     def times(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
-given (using r: Ring[VNum]): Ring[MultinomialRepr] with
-  def zero: MultinomialRepr = MultinomialRepr(List())
-  def one: MultinomialRepr = MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map())))
+given [T](using r: Ring[T]): Ring[MultinomialRepr[T]] with
+  def zero: MultinomialRepr[T] = MultinomialRepr(List())
 
-  def regroupMultinomialTerms(terms: List[MultinomialTermRepr]): MultinomialRepr =
+  given Monoid[T] with
+    def empty: T = r.zero
+
+    extension (x: T)
+      def combine(rhs: T): T = x.plus(rhs)
+
+  def one: MultinomialRepr[T] = MultinomialRepr(List(MultinomialTermRepr(r.one, Map())))
+
+  def regroupMultinomialTerms(terms: List[MultinomialTermRepr[T]]): MultinomialRepr[T] =
     MultinomialRepr(
       terms
         .groupBy(_.vars)
@@ -392,11 +399,11 @@ given (using r: Ring[VNum]): Ring[MultinomialRepr] with
         .toList
     )
 
-  extension (x: MultinomialRepr)
-    def plus(rhs: MultinomialRepr): MultinomialRepr =
+  extension (x: MultinomialRepr[T])
+    def plus(rhs: MultinomialRepr[T]): MultinomialRepr[T] =
       regroupMultinomialTerms(x.terms ++ rhs.terms)
 
-    def times(rhs: MultinomialRepr): MultinomialRepr =
+    def times(rhs: MultinomialRepr[T]): MultinomialRepr[T] =
       regroupMultinomialTerms(for {
         t1 <- x.terms
         t2 <- rhs.terms
@@ -419,22 +426,22 @@ trait PSOpt[Algebra[_], Repr: Algebra]:
       case None => reflect(e, σ, k, γ)
 
 // 6. If we have a monoid, we can choose to treat an operator opAdd as the monoid operator, and normalize expressions against the operator.
-abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialTermRepr]:
+abstract class CMonoidOpt[T: Monoid] extends PSOpt[Monoid, MultinomialTermRepr[T]]:
   // normalize an expression to a representation by treating opAdd as a commutative monoid operator.
   def opAdd: String
 
   // Can we merge these two identity functions? They are essentally inherit from same algebraic law.
-  def empty: VNum = summon[Monoid[VNum]].empty
-  def emptyExpr: ENum = ENum(empty.i)
+  def empty: T = summon[Monoid[T]].empty
+  def emptyExpr: ENum = ENum(empty.asInstanceOf[VNum].i) // TODO: remove this casting
 
-  def normalize(e: Expr)(using c: Cache): Option[MultinomialTermRepr] = e match
+  def normalize(e: Expr)(using c: Cache): Option[MultinomialTermRepr[T]] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
       for {
          t1 <- normalize(e1)
          t2 <- normalize(e2)
       } yield t1.combine(t2)
     case ENum(i) =>
-      Some(MultinomialTermRepr(VNum(i), Map()))
+      Some(MultinomialTermRepr(VNum(i).asInstanceOf[T], Map())) // TODO: remove this casting
     case EVar(x) if c.inv.contains(x) =>
       c.inv(x) match
         case ex@EBinOp(op, e1, e2, Sta) if op == opAdd=>
@@ -446,8 +453,8 @@ abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialT
       Some(MultinomialTermRepr(empty, Map(EVar(x) -> 1)))
     case _ => None
 
-  def residualize(repr: MultinomialTermRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-    val ev = ENum(repr.value.i)
+  def residualize(repr: MultinomialTermRepr[T], σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+    val ev = ENum(repr.value.asInstanceOf[VNum].i) // TODO: remove this casting
 
     if (ev == emptyExpr)
       reflectMonomials(repr.vars, σ, k, γ)
@@ -504,17 +511,23 @@ abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialT
       }, γ)
 
 
-abstract class RingOpt(using Ring[VNum]) extends PSOpt[Ring, MultinomialRepr]:
+abstract class RingOpt[T: Ring] extends PSOpt[Ring, MultinomialRepr[T]]:
   def opAdd: String
 
   def opMul: String
 
-  def zeroExpr = ENum(summon[Ring[VNum]].zero.i)
+  def zeroExpr = ENum(summon[Ring[T]].zero.asInstanceOf[VNum].i) // TODO: remove this casting
 
-  object LocalCMonoidMulOpt extends CMonoidOpt(using VNumMulMonoid):
+  given Monoid[T] with
+    def empty: T = summon[Ring[T]].one
+
+    extension (x: T)
+      def combine(rhs: T): T = x.times(rhs)
+
+  object LocalCMonoidMulOpt extends CMonoidOpt:
     def opAdd = opMul
 
-  override def normalize(e: Expr)(using c: Cache): Option[MultinomialRepr] = e match
+  override def normalize(e: Expr)(using c: Cache): Option[MultinomialRepr[T]] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
       for {
           t1 <- normalize(e1)
@@ -526,7 +539,7 @@ abstract class RingOpt(using Ring[VNum]) extends PSOpt[Ring, MultinomialRepr]:
           t2 <- normalize(e2)
       } yield t1.times(t2)
     case ENum(i) =>
-      Some(MultinomialRepr(List(MultinomialTermRepr(VNum(i), Map()))))
+      Some(MultinomialRepr(List(MultinomialTermRepr(VNum(i).asInstanceOf[T], Map()))))
     case EVar(x) if c.inv.contains(x) =>
       println(s"normalizeRing: variable $x is in cache, its expression is ${c.inv(x)}")
       c.inv(x) match
@@ -535,11 +548,11 @@ abstract class RingOpt(using Ring[VNum]) extends PSOpt[Ring, MultinomialRepr]:
         case ex@EBinOp(op, e1, e2, Sta) if op == opMul =>
           normalize(ex)
         case _ =>
-          Some(MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map(EVar(x) -> 1)))))
+          Some(MultinomialRepr(List(MultinomialTermRepr(VNum(1).asInstanceOf[T], Map(EVar(x) -> 1)))))
     case EVar(x) =>
-      Some(MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map(EVar(x) -> 1)))))
+      Some(MultinomialRepr(List(MultinomialTermRepr(VNum(1).asInstanceOf[T], Map(EVar(x) -> 1)))))
 
-  def residualize(repr: MultinomialRepr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+  def residualize(repr: MultinomialRepr[T], σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
     repr.terms match
       case Nil => reflect(zeroExpr, σ, k, γ)
       case term :: rest =>
