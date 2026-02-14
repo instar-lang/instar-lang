@@ -448,7 +448,6 @@ abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialT
 
   // Can we merge these two identity functions? They are essentally inherit from same algebraic law.
   def empty = summon[Monoid[VNum]].empty
-  def emptyExpr: Expr = ENum(empty.i)
 
   def normalize(e: Expr)(using c: Cache): Option[MultinomialTermRepr[VNum]] = e match
     case EBinOp(op, e1, e2, Sta) if op == opAdd =>
@@ -469,22 +468,23 @@ abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialT
       Some(MultinomialTermRepr(empty, Map(EVar(x) -> 1)))
     case _ => None
 
+  // residualize is a user of Monoid[Expr]
+  given Monoid[Expr]:
+    def op: String = opAdd
+    def empty: Expr = ENum(summon[Monoid[VNum]].empty.i)
+
+    extension (x: Expr)
+      def combine(rhs: Expr): Expr =
+        if (x == empty) rhs
+        else if (rhs == empty) x
+        else EBinOp(opAdd, x, rhs, Sta)
+
   def residualize(repr: MultinomialTermRepr[VNum], σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
     val ev = ENum(repr.value.i)
-    if (ev == emptyExpr)
-      reflectMonomials(repr.vars, σ, k, γ)
-    else
-      // x^4
-      // let y = x * x
-      // let z = y * y
-      // z
-      reflectMonomials(repr.vars, σ, {
-        case (VCode(e), σ1, γ1) =>
-          if (e == emptyExpr)
-            reflect(ev, σ1, k, γ1)
-          else
-            reflect(EBinOp1(opAdd, ev, e), σ1, k, γ1)
-      }, γ)
+    reflectMonomials(repr.vars, σ, {
+      case (VCode(e), σ1, γ1) =>
+        reflect(ev.combine(e), σ1, k, γ1)
+    }, γ)
 
 
   def reflectMonomials(vars: Map[EVar, Int], σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
@@ -495,18 +495,13 @@ abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialT
           case (VCode(e1), σ1, γ1) =>
             reflectMonomials(vars - x, σ1, {
               case (VCode(e2), σ2, γ2) =>
-                if (e1 == emptyExpr)
-                  reflect(e2, σ2, k, γ2)
-                else if (e2 == emptyExpr)
-                  reflect(e1, σ2, k, γ2)
-                else
-                  reflect(EBinOp1(opAdd, e1, e2), σ2, k, γ2)
+                reflect(e1.combine(e2), σ2, k, γ2)
             }, γ1)
         }, γ)
-      case None => reflect(emptyExpr, σ, k, γ)
+      case None => reflect(summon[Monoid[Expr]].empty, σ, k, γ)
 
   def reflectMonomial(x: EVar, count: Int, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = count match
-    case 0 => reflect(emptyExpr, σ, k, γ)
+    case 0 => reflect(summon[Monoid[Expr]].empty, σ, k, γ)
     case 1 =>
       reflect(x, σ, k, γ)
     case n if n > 1 =>
@@ -517,15 +512,10 @@ abstract class CMonoidOpt(using Monoid[VNum]) extends PSOpt[Monoid, MultinomialT
         case (VCode(e1), σ1, γ1) =>
           reflectMonomial(x, count2, σ1, {
             case (VCode(e2), σ2, γ2) =>
-              if (e1 == emptyExpr)
-                reflect(e2, σ2, k, γ2)
-              else if (e2 == emptyExpr)
-                reflect(EBinOp1(opAdd, e1, e1), σ2, k, γ2)
-              else
-                reflect(EBinOp1(opAdd, e1, e1), σ2, {
-                  case (VCode(e3), σ3, γ3) =>
-                    reflect(EBinOp1(opAdd, e3, e2), σ3, k, γ3)
-                }, γ2)
+              reflect(e1.combine(e1), σ2, {
+                case (VCode(e3), σ3, γ3) =>
+                  reflect(e3.combine(e2), σ3, k, γ3)
+              }, γ2)
           }, γ1)
       }, γ)
 
