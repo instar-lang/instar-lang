@@ -362,23 +362,23 @@ given (using cm: Monoid[VNum]): Monoid[MultinomialTermRepr] with
 
 case class MultinomialRepr(terms: List[MultinomialTermRepr])
 
-trait Ring[T] extends Monoid[T]:
-  def zero: T = empty
+trait Ring[T]:
+  def zero: T
   def one: T
   extension (x: T)
-    def plus(rhs: T): T = x.combine(rhs)
+    def plus(rhs: T): T
     def times(rhs: T): T
 
 object VNumAddMulRing extends Ring[VNum]:
-  def empty: VNum = VNum(0)
+  def zero: VNum = VNum(0)
   def one: VNum = VNum(1)
 
   extension (x: VNum)
-    def combine(rhs: VNum): VNum = VNum(x.i + rhs.i)
+    def plus(rhs: VNum): VNum = VNum(x.i + rhs.i)
     def times(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
 given (using r: Ring[VNum]): Ring[MultinomialRepr] with
-  def empty: MultinomialRepr = MultinomialRepr(List())
+  def zero: MultinomialRepr = MultinomialRepr(List())
   def one: MultinomialRepr = MultinomialRepr(List(MultinomialTermRepr(VNum(1), Map())))
 
   def regroupMultinomialTerms(terms: List[MultinomialTermRepr]): MultinomialRepr =
@@ -393,7 +393,7 @@ given (using r: Ring[VNum]): Ring[MultinomialRepr] with
     )
 
   extension (x: MultinomialRepr)
-    def combine(rhs: MultinomialRepr): MultinomialRepr =
+    def plus(rhs: MultinomialRepr): MultinomialRepr =
       regroupMultinomialTerms(x.terms ++ rhs.terms)
 
     def times(rhs: MultinomialRepr): MultinomialRepr =
@@ -519,7 +519,7 @@ abstract class RingOpt(using Ring[VNum]) extends PSOpt[Ring, MultinomialRepr]:
       for {
           t1 <- normalize(e1)
           t2 <- normalize(e2)
-      } yield t1.combine(t2)
+      } yield t1.plus(t2)
     case EBinOp(op, e1, e2, Sta) if op == opMul =>
       for {
           t1 <- normalize(e1)
