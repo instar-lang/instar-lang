@@ -175,7 +175,7 @@ def eval(e: Expr, ρ: Env): Value =
     case EAscribe(e, _) => eval(e, ρ)
 
 def eval(e: Expr): Ans =
-  reset
+  clear
   stBlock = List()
   val v = eval(e, Map())
   if stBlock.isEmpty then v

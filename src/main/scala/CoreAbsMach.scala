@@ -160,7 +160,7 @@ def stepn(s: State): State =
   else stepn(step(s))
 
 def eval(e: Expr): Value =
-  reset
+  clear
   stepn(EState(e, Map(), KHalt, MHalt)) match
     case AState(v, MHalt) => v
     case _ => ???

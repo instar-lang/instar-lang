@@ -293,5 +293,5 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont): (Value, St
       })
 
 def eval(e: Expr): (Value, Store) =
-  reset
+  clear
   eval(e, Map(), Map(), Map(), (x, σ, γ) => γ(x, σ), (x, σ) => (x, σ))
