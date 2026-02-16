@@ -350,10 +350,8 @@ object VNumMulMonoid extends Monoid[VNum]:
   extension (x: VNum)
     def combine(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
-trait Repr
-
 // 3. Use monomial to represent normal forms of commutative expressions
-case class MonomialRepr[T: Monoid](value: T, vars: Map[EVar, Int]) extends Repr
+case class MonomialRepr[T: Monoid](value: T, vars: Map[EVar, Int])
 // Case class MonomialRepr[T: Monoid](v: T, vars: Map[EVar, Int])
 // 4. If we have a monoid over VNum, and we know it's commutative, its normal form MultinomialTermRepr is also a monoid.
 given [T](using cm: Monoid[T]): Monoid[MonomialRepr[T]] with
@@ -364,7 +362,7 @@ given [T](using cm: Monoid[T]): Monoid[MonomialRepr[T]] with
       MonomialRepr(x.value.combine(rhs.value), mergeMaps(x.vars, rhs.vars))
 
 
-case class MultinomialRepr[T: Ring](terms: List[MonomialRepr[T]]) extends Repr
+case class MultinomialRepr[T: Ring](terms: List[MonomialRepr[T]])
 
 trait Ring[T]:
   def zero: T
@@ -624,12 +622,61 @@ def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, S
   case CMonoidMulOpt(repr) =>
     CMonoidMulOpt.residualize(repr, σ, k, γ)
 
+trait Coproduct[Algebra[_], A: Algebra, B: Algebra]:
+  type Coprod
+  given ac: Algebra[Coprod]
+  def inl(a: A): Coprod
+  def inr(b: B): Coprod
+  // The eliminator of a coproduct
+  def eva[C: Algebra](fa: A => C)(fb: B => C)(co: Coprod): C
 
-  // Monoid + => Monoid * => ringop
-  // x1 + x2
-  // x1 = Monoid op1
-  // x2 = Monoid op2
+// Given an algebra of type T, we can construct a free algebra
+trait Free[Algebra[_], T]:
 
+  // The free algebra must contain a type: FreeA
+  type FreeA
+  // note: passing Algebra to FreeA is not necessary in scala
+  // The type itself must also be a same algebra type
+  given af: Algebra[FreeA]
+  // We must know how to construct a value of the free algebra
+  def pvar(x: T): FreeA
+  // We must know how to convert free algebra to another type C with same algebra if we know how to convert T to C.
+  def pbind[C: Algebra](freeA: FreeA)(f: T => C): C
+
+// What the code should be?
+type Code
+
+def sta[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
+                               (using c: Coproduct[Algebra, A, f.FreeA])
+                               (a: A): c.Coprod =
+  c.inl(a)
+
+def dyn[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
+                               (using c: Coproduct[Algebra, A, f.FreeA])
+                               (code: Code): c.Coprod =
+  c.inr(f.pvar(code))
+
+def evaCode[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
+                                   (using c: Coproduct[Algebra, A, f.FreeA])
+                                   (using Algebra[Code])
+                                   (f1: A => Code)
+                                   (f2: f.FreeA => Code)
+                                   (co: c.Coprod): Code =
+  c.eva(f1)(f2)(co)
+
+def tlift[T](v: T): Code = ???
+
+def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
+                              (using Algebra[Code])
+                              (using c: Coproduct[Algebra, A, f.FreeA])
+                              (co: c.Coprod) =
+  c.eva(tlift)((frc) => f.pbind(frc)(identity))(co)
+  //      |    |
+  //      |    |
+  //      |    Tell us how to convert Free[Algebra, Code].FreeA to Code
+  //      |
+  //      |
+  // Tell us how to construct a code
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.
