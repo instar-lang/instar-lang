@@ -22,6 +22,7 @@ import spmp.Counter.*
 import spmp.BiMap
 import collection.mutable.{HashSet, HashMap}
 import spmp.eff.opt.Opt.opt
+import scala.annotation.init
 
 enum Stage:
   case SNum(n: Int)
@@ -306,7 +307,7 @@ def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
       else γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
 
-def mergeMaps(m1: Map[EVar, Int], m2: Map[EVar, Int]): Map[EVar, Int] =
+def mergeMaps[T](m1: Map[T, Int], m2: Map[T, Int]): Map[T, Int] =
   (m1.keySet ++ m2.keySet).map { k =>
     k -> (m1.getOrElse(k, 0) + m2.getOrElse(k, 0))
   }.toMap
@@ -638,13 +639,134 @@ trait Free[Algebra[_], T]:
   // note: passing Algebra to FreeA is not necessary in scala
   // The type itself must also be a same algebra type
   given af: Algebra[FreeA]
-  // We must know how to construct a value of the free algebra
+  // We know how to construct a value of the free algebra
   def pvar(x: T): FreeA
-  // We must know how to convert free algebra to another type C with same algebra if we know how to convert T to C.
+  // We know how to convert free algebra to another type C with same algebra if we know how to convert T to C.
   def pbind[C: Algebra](freeA: FreeA)(f: T => C): C
 
-// What the code should be?
-type Code
+// code x + code x -> code (x + x)
+
+given [T]: Free[Monoid, T] with
+  case class FreeA(l: List[T])
+
+  given af: Monoid[FreeA] with
+    def empty: FreeA = FreeA(List())
+    extension (x: FreeA)
+      def combine(rhs: FreeA): FreeA = FreeA(x.l ++ rhs.l)
+
+  def pvar(x: T): FreeA = FreeA(List(x))
+
+  def pbind[C: Monoid](freeA: FreeA)(f: T => C): C =
+    freeA.l.map(f).reduce(_.combine(_))
+case class Multinomial[X, A](terms: Map[Map[X, Int], A])
+
+def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring[A], r2: Ring[B]): B =
+  def power(a: B, n: Int)(using r2: Ring[B]): B = n match
+    case 0 => r2.one
+    case 1 => a
+    case n if n % 2 == 1 =>
+      val x = power(a, (n - 1) / 2)
+      x.times(x).times(a)
+    case _ =>
+      val x = power(a, n / 2)
+      x.times(x)
+
+  m.terms.foldLeft(r2.zero) { case (sum, (xs, a)) =>
+    sum.plus(
+      xs.foldLeft(f1(a)) { case (prod, (x, n)) =>
+        prod.times(power(f2(x), n))
+      }
+    )
+  }
+
+// Multinomial itself is a ring structure
+class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
+  def zero: Multinomial[X, T] = Multinomial(Map())
+  def one: Multinomial[X, T] = Multinomial(Map(Map() -> r.one))
+
+  extension (x: Multinomial[X, T])
+    def plus(rhs: Multinomial[X, T]): Multinomial[X, T] =
+      Multinomial(
+        (x.terms.keySet ++ rhs.terms.keySet).map { k =>
+          k -> (x.terms.getOrElse(k, r.zero).plus(rhs.terms.getOrElse(k, r.zero)))
+        }.toMap
+      )
+
+    def times(rhs: Multinomial[X, T]): Multinomial[X, T] =
+      x.terms.foldLeft(zero) { case (acc, (xs, c)) =>
+        acc.plus(mul(rhs, xs, c))
+      }
+
+  private def mul(rhs: Multinomial[X, T], xs: Map[X, Int], c: T): Multinomial[X, T] =
+    rhs.terms.foldLeft(zero) { case (Multinomial(acc), (rxs, coeff)) =>
+      Multinomial(acc + (mergeMaps(rxs, xs) -> c.times(coeff)))
+    }
+
+given [X, T](using r: Ring[T]): Ring[Multinomial[X, T]] = new MultinomialRing[X, T]
+
+given Ring[Int] with
+  def zero: Int = 0
+  def one: Int = 1
+
+  extension (x: Int)
+    def plus(rhs: Int): Int = x + rhs
+    def times(rhs: Int): Int = x * rhs
+
+// Multinomial can be served as free extension of ring for any type
+class FreeRing [T] extends Free[Ring, T]:
+  case class FreeA(terms: Multinomial[T, Int])
+
+  given af: Ring[FreeA] with
+    def zero: FreeA = FreeA(Multinomial(Map()))
+    def one: FreeA = FreeA(Multinomial(Map(Map() -> 1)))
+
+    extension (x: FreeA)
+      def plus(rhs: FreeA): FreeA =
+        FreeA(Multinomial(
+          (x.terms.terms.keySet ++ rhs.terms.terms.keySet).map { k =>
+            k -> (x.terms.terms.getOrElse(k, 0) + rhs.terms.terms.getOrElse(k, 0))
+          }.toMap
+        ))
+
+      def times(rhs: FreeA): FreeA =
+        FreeA(Multinomial(
+          for {
+            (vars1, coeff1) <- x.terms.terms
+            (vars2, coeff2) <- rhs.terms.terms
+          } yield {
+            val combinedVars = mergeMaps(vars1, vars2)
+            combinedVars -> (coeff1 * coeff2)
+          }
+        ))
+
+  def pvar(x: T): FreeA = FreeA(Multinomial(Map(Map(x -> 1) -> 1)))
+
+  def pbind[C: Ring](freeA: FreeA)(f: T => C): C =
+    val ring = summon[Ring[C]]
+    evalMN(initMN)(f)(freeA.terms)
+
+  private def coeffToC[C: Ring](coeff: Int): C =
+    val ring = summon[Ring[C]]
+    if (coeff == 0) ring.zero
+    else if (coeff == 1) ring.one
+    else ring.one.plus(coeffToC(coeff - 1))
+
+  private def power[C: Ring](a: C, n: Int): C =
+    val ring = summon[Ring[C]]
+    n match
+      case 0 => ring.one
+      case 1 => a
+      case _ if n % 2 == 1 =>
+        val x = power(a, (n - 1) / 2)
+        x.times(x).times(a)
+      case _ =>
+        val x = power(a, n / 2)
+        x.times(x)
+
+given [T]: Free[Ring, T] = new FreeRing[T]
+
+// Let Code be a monomorphic type Expr
+type Code = Expr
 
 def sta[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
                                (using c: Coproduct[Algebra, A, f.FreeA])
@@ -664,8 +786,49 @@ def evaCode[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
                                    (co: c.Coprod): Code =
   c.eva(f1)(f2)(co)
 
+given Ring[VNum] with
+  def zero: VNum = VNum(0)
+  def one: VNum = VNum(1)
+
+  extension (x: VNum)
+    def plus(rhs: VNum): VNum = VNum(x.i + rhs.i)
+    def times(rhs: VNum): VNum = VNum(x.i * rhs.i)
+
+def sta1[Algebra[_]](using Algebra[VNum])
+                    (using f: Free[Algebra, Code])
+                    (using c: Coproduct[Algebra, VNum, f.FreeA])
+                    (a: VNum): c.Coprod =
+  c.inl(a)
+
+def dyn1[Algebra[_]](using Algebra[VNum])
+                    (using f: Free[Algebra, Code])
+                    (using c: Coproduct[Algebra, VNum, f.FreeA])
+                    (code: Code): c.Coprod =
+  c.inr(f.pvar(code))
+
+def evaCode1[Algebra[_]](using Algebra[VNum])
+                        (using Algebra[Code]) // In haskell they don't need this somehow, maybe in template haskell, every code a is automatically an instance of the algebra when a is an instance of the algebra
+                        (using f: Free[Algebra, Code])
+                        (using c: Coproduct[Algebra, VNum, f.FreeA])
+                        (f1: VNum => Code)
+                        (f2: f.FreeA => Code)
+                        (co: c.Coprod): Code =
+  c.eva(f1)(f2)(co)
+
+
+def tlift1(v: VNum): Code = ENum(v.i).withNormalized
+
+def cd1[Algebra[_]](using f: Free[Algebra, Code])
+                   (using Algebra[Code])
+                   (using c: Coproduct[Algebra, VNum, f.FreeA])
+                   (co: c.Coprod) =
+  c.eva(tlift1)((frc) => f.pbind(frc)(identity))(co)
+
+// In haskell, convert any type `a` to `code a`
 def tlift[T](v: T): Code = ???
 
+// Q: Why we even need Free[Algebra, Code]? And can not just Algebra[Code]?
+// A: Algebra[Code] itself only says we can do operations defined in Algebra to Code, doesn't say anything about the free algebra of Code (Free[Algebra, Code])
 def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
                               (using Algebra[Code])
                               (using c: Coproduct[Algebra, A, f.FreeA])
@@ -677,6 +840,95 @@ def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
   //      |
   //      |
   // Tell us how to construct a code
+
+// Node: How they did this in Haskell? It seems to be too verbose.
+
+// Code is a monoid of addition
+object CodeAddMonoid extends Monoid[Code]:
+  def empty: Code = ENum(0).withNormalized
+  extension (x: Code)
+    def combine(rhs: Code): Code =
+      EBinOp("+", x, rhs, Sta).withNormalized
+
+object CodeMulMonoid extends Monoid[Code]:
+  def empty: Code = ENum(1).withNormalized
+  extension (x: Code)
+    def combine(rhs: Code): Code =
+      EBinOp("*", x, rhs, Sta).withNormalized
+
+object CodeAddMulRing extends Ring[Code]:
+
+  def zero: Code = ENum(0).withNormalized
+
+  def one: Code = ENum(1).withNormalized
+
+  extension (x: Code)
+    def plus(rhs: Code): Code =
+      EBinOp("+", x, rhs, Sta).withNormalized
+
+  extension (x: Code)
+    def times(rhs: Code): Code =
+      EBinOp("*", x, rhs, Sta).withNormalized
+
+case class MonomialRepr1[T: Monoid](value: T, vars: Map[T, Int])
+
+// We can create free cmonoid for **any** type that that has a cmonoid, not necessarily be code type.
+class FreeCMonoid[T](using r: Monoid[T]) extends Free[Monoid, T]:
+  type FreeA = MonomialRepr1[T]
+
+  given af: Monoid[FreeA] with
+    def empty = MonomialRepr1(r.empty, Map())
+    extension (x: FreeA)
+      def combine(rhs: FreeA): FreeA =
+        MonomialRepr1(x.value.combine(rhs.value), mergeMaps(x.vars, rhs.vars))
+
+  def pvar(x: T): FreeA = MonomialRepr1(x, Map())
+
+  def pbind[C: Monoid](freeA: FreeA)(f: T => C): C =
+    freeA.vars.foldLeft(f(freeA.value)) { case (acc, (v, count)) =>
+      val term = List.fill(count)(f(v)).reduce(_.combine(_))
+      acc.combine(term)
+    }
+
+// For any monoid, we can create a free monoid
+given [T](using r: Monoid[T]): Monoid[MonomialRepr1[T]] with
+  def empty: MonomialRepr1[T] = MonomialRepr1(r.empty, Map())
+  extension (x: MonomialRepr1[T])
+    def combine(rhs: MonomialRepr1[T]): MonomialRepr1[T] =
+      MonomialRepr1(x.value.combine(rhs.value), mergeMaps(x.vars, rhs.vars))
+
+given algebraFromFree[Alg[_], T, B](using f: Free[Alg, T] { type FreeA = B }): Alg[B] =
+  f.af
+
+def initMN[R](n: Int)(using r: Ring[R]): R = n match
+  case 0 => r.zero
+  case 1 => r.one
+  case n if n < 0 => ???
+  case n if n % 2 == 0 => r.one.plus(r.one).times(initMN(n / 2))
+  case n if n % 2 == 1 => r.one.plus(r.one).times(initMN(n / 2)).plus(r.one)
+
+def coproductFromFreeRing[A, B](using r: Ring[A])(using f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
+  new Coproduct[Ring, A, f.FreeA]:
+    case class Coprod(m: Multinomial[B, A])
+    given ac: Ring[Coprod] with
+      def zero: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].zero)
+      def one: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].one)
+      extension (x: Coprod)
+        def plus(rhs: Coprod): Coprod =
+          Coprod(x.m.plus(rhs.m))
+
+        def times(rhs: Coprod): Coprod =
+          Coprod(x.m.times(rhs.m))
+
+    def inl(a: A): Coprod = Coprod(Multinomial(Map(Map.empty[B, Int] -> a)))
+
+    def inr(b: f.FreeA): Coprod = Coprod(Multinomial(b.terms.terms.map( { case (vars, coeff) =>
+      vars -> initMN(coeff)(using r)
+    })))
+
+    def eva[C: Ring](fa: A => C)(fb: f.FreeA => C)(co: Coprod): C =
+      evalMN(fa)((b: B) => fb(f.pvar(b)))(co.m)
+
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.
