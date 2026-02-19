@@ -62,6 +62,7 @@ enum Expr:
   // Experimental:
   // extend the language to allow programmers to inspect code values
   case EIsApp(e: Expr)
+  case ECBNApp(e1: Expr, e2: Expr)
   // TODO: what's the general pattern matching form on Code?
 
 val Sta = Stage.SNum(0)
@@ -98,6 +99,7 @@ enum Value:
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
+  case VThunk(e: Expr, ρ: Env, ς: StEnv)
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -162,6 +164,7 @@ extension (e: Expr)
       case ESApp(e, _) => e.freeVar
       case ELam(x, _, body, _) => body.freeVar - x
       case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
+      case ECBNApp(e1, e2) => e1.freeVar ++ e2.freeVar
       case ELift(t, _) => t.freeVar
       case ERun(t) => t.freeVar
       case ELet(x, rhs, body) => rhs.freeVar ++ (body.freeVar - x)
@@ -323,9 +326,13 @@ def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, γ: MCont)(using c: Cache): (V
 
 def idK(v: Value, σ: Store, γ: MCont): (Value, Store) = γ(v, σ)
 
+def hoistable(e: Expr)(using c: Cache): Boolean =
+  e.isPure && e.freeVar.intersect(c.allVals).isEmpty
+
+// TODO: how to handle if with two branches?
 def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   e match
-    case ELet(x, rhs, body) if rhs.isPure && rhs.freeVar.intersect(c.allVals).isEmpty =>
+    case ELet(x, rhs, body) if hoistable(rhs) =>
       println(s"Lift let-binding: $x = $rhs")
       // split hoisted lets into meta-continuation, body1 is supposed to be wrapped with ELam
       hoist(body, σ, k, { case (VCode(body1), σ1) =>
@@ -347,12 +354,12 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
   case VClo(x, argTy, body, retTy, ρf, ςf) =>
     val l = σ.size
     val y = fresh()
-    if (Opt("lam-hoist"))
-      reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
-        case (VCode(t), σ2) =>
+    reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
+      case (VCode(t), σ2) =>
+        if (Opt("lam-hoist"))
           hoist(t, σ2, { case (VCode(t1), σ3, γ1) =>
             println(s"Hoisted lambda body: $t1")
-            reflect(ELam(y, argTy.erase, t1, retTy.erase), σ3, idK, γ1)
+            reflect(ELam(y, argTy.erase, t1, retTy.erase), σ3, (v, σ3, γ1) => γ1(v, σ3), γ1)
           }, { case (VCode(t1), σ3) =>
             println(s"Hoisted whole term: $t1")
             // now we need to renormalize the whole term, as it may contain lifted bindings,
@@ -360,10 +367,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
             // expect variables/atomic expressions for ANF.
             renormalize(t1, σ3, k, γ)
           })(using BiMap((EVar(y) -> y)))
-      })
-    else
-      reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
-        case (VCode(t), σ2) =>
+        else
           reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, k, γ)
       })
 
@@ -387,7 +391,9 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
     case ELoc(l) =>
       k(VLoc(l), σ, γ)
     case EVar(x) =>
-      k(σ(ρ(x)), σ, γ)
+      σ(ρ(x)) match
+        case VThunk(e, ρ, ς) => eval(e, ρ, ς, σ, k, γ)
+        case v => k(v, σ, γ)
     case ESLam(x, body) =>
       k(VSClo(x, body, ρ, ς), σ, γ)
     case ESApp(e, st) =>
@@ -518,6 +524,12 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
         reflect(EFix(g, x, Sta), σ2, k, γ)
       })
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
+    case ECBNApp(e1, e2) =>
+      eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
+        val v2 = VThunk(e2, ρ, ς)
+        val l = σ1.size
+        eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
+      }, γ)
 
 def eval(e: Expr): (Value, Store) =
   clear

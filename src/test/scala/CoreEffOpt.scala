@@ -13,6 +13,24 @@ trait Base extends munit.FunSuite {
     assertEquals(v.toString, str)
 }
 
+class Playground extends Base {
+  test("cbn") {
+    val e1 = ECBNApp(ELam("x", None, EBinOp("+", EVar("x"), EVar("x"), Dyn), None),
+             EBinOp2("*", ENum2(21), ENum2(2)))
+    testEval(e1, """
+    VCode(
+      ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),
+      ELet(x1,EBinOp(*,ENum(21),ENum(2),SNum(0)),
+      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2)))))
+     """.stripMargin.replaceAll("\n", "").replaceAll(" ", ""))
+
+    val e2 = EApp1(ELam("x", None, EBinOp("+", EVar("x"), EVar("x"), Dyn), None),
+             EBinOp2("*", ENum2(21), ENum2(2)))
+    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),EVar(x1))))")
+  }
+
+}
+
 class LamHoist extends Base {
   test("let-lam-hoist-1") {
     val e =
@@ -74,7 +92,7 @@ class LamHoist extends Base {
       lift(λz. let x = z + 2 in let y = a + 2 in x * y)
       =>
       let x0 = 42 + 42
-      let x3 = 1 + 2
+      let x3 = x0 + 2
       let x5 = λx1.
         let x2 = x1 + 2
         let x4 = x2 * x3
