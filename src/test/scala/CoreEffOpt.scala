@@ -29,6 +29,21 @@ class Playground extends Base {
     testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),EVar(x1))))")
   }
 
+  test("cbn-lam") {
+    val e1 = EApp(EBNLam("x", None, EBinOp("+", EVar("x"), EVar("x"), Dyn), None),
+             EBinOp2("*", ENum2(21), ENum2(2)), Sta)
+    testEval(e1, """
+    VCode(
+      ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),
+      ELet(x1,EBinOp(*,ENum(21),ENum(2),SNum(0)),
+      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2)))))
+     """.stripMargin.replaceAll("\n", "").replaceAll(" ", ""))
+
+    val e2 = EApp1(ELam("x", None, EBinOp("+", EVar("x"), EVar("x"), Dyn), None),
+             EBinOp2("*", ENum2(21), ENum2(2)))
+    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),EVar(x1))))")
+  }
+
 }
 
 class LamHoist extends Base {

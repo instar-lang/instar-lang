@@ -44,6 +44,7 @@ enum Expr:
   case ESLam(x: String, body: Expr)
   case ESApp(e: Expr, st: Stage)
   case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
+  case EBNLam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
   case EApp(e1: Expr, e2: Expr, st: Stage)
   case ELift(t: Expr, to: Stage)
   case ERun(t: Expr)
@@ -98,6 +99,7 @@ enum Value:
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
+  case VBNClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
   case VThunk(e: Expr, ρ: Env, ς: StEnv)
 
@@ -143,7 +145,7 @@ extension (e: Expr)
   def isPure: Boolean =
     e match
       case EUnit | ENum(_) | EBool(_) | EVar(_) => true
-      case ESLam(_, _) | ELam(_, _, _, _) => true
+      case ESLam(_, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
       case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
       case ESApp(_, _) | EApp(_, _, _) => false
       case ELift(t, _) => false
@@ -402,12 +404,19 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       }, γ)
     case ELam(x, argTy, e, retTy) =>
       k(VClo(x, argTy, e, retTy, ρ, ς), σ, γ)
+    case EBNLam(x, argTy, e, retTy) =>
+      k(VBNClo(x, argTy, e, retTy, ρ, ς), σ, γ)
     case EApp(e1, e2, s) if evalStVar(s, ς) == Sta =>
-      eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
-        eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
-          val l = σ2.size
-          eval(body, ρf + (x -> l), ςf, σ2 + (l -> v2), k, γ2)
-        }, γ1)
+      eval(e1, ρ, ς, σ, {
+        case (VBNClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
+          val v2 = VThunk(e2, ρ, ς)
+          val l = σ1.size
+          eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
+        case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
+          eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
+            val l = σ2.size
+            eval(body, ρf + (x -> l), ςf, σ2 + (l -> v2), k, γ2)
+          }, γ1)
       }, γ)
     case EApp(e1, e2, s) if evalStVar(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
