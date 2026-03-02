@@ -23,6 +23,7 @@ import spmp.BiMap
 import collection.mutable.{HashSet, HashMap}
 import spmp.eff.opt.Opt.opt
 import scala.annotation.init
+import scala.Conversion
 
 enum Stage:
   case SNum(n: Int)
@@ -735,6 +736,10 @@ def liftAddCToRing(value: AddCMonoidCoproductImpl.Coprod): AddMulRingCoproductIm
       }
   )(value)
 
+given addCMonoidToRingCoproduct: Conversion[AddCMonoidCoproductImpl.Coprod, AddMulRingCoproductImpl.Coprod] with
+  def apply(value: AddCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
+    liftAddCToRing(value)
+
 def liftMulCToRing(value: MulCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
   given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
   given Monoid[AddMulRingCoproductImpl.Coprod] with
@@ -751,6 +756,10 @@ def liftMulCToRing(value: MulCMonoidCoproductImpl.Coprod): AddMulRingCoproductIm
         AddMulRingCoproductImpl.inr(freeRingCode.pvar(code))
       }
   )(value)
+
+given mulCMonoidToRingCoproduct: Conversion[MulCMonoidCoproductImpl.Coprod, AddMulRingCoproductImpl.Coprod] with
+  def apply(value: MulCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
+    liftMulCToRing(value)
 
 class AddMulRingRepr(val ringRepr: AddMulRingCoproductImpl.Coprod) extends TopCoproduct:
   override def +(rhs: TopCoproduct): TopCoproduct = rhs match
@@ -786,7 +795,7 @@ class AddMulRingRepr(val ringRepr: AddMulRingCoproductImpl.Coprod) extends TopCo
   override def code: Expr =
     cd(using freeRingCode)(using AddMulRingExprImpl)(using AddMulRingCoproductImpl)(ringRepr)
 
-class AddCMonoidRepr(val cmonoidRepr: AddCMonoidCoproductImpl.Coprod) extends AddMulRingRepr(liftAddCToRing(cmonoidRepr)):
+class AddCMonoidRepr(val cmonoidRepr: AddCMonoidCoproductImpl.Coprod) extends AddMulRingRepr(cmonoidRepr):
   override def +(rhs: TopCoproduct): TopCoproduct = rhs match
     case rhsAdd: AddCMonoidRepr =>
       given Monoid[AddCMonoidCoproductImpl.Coprod] = AddCMonoidCoproductImpl.ac
@@ -805,7 +814,7 @@ class AddCMonoidRepr(val cmonoidRepr: AddCMonoidCoproductImpl.Coprod) extends Ad
     given Monoid[VNum] = VNumAddMonoid
     cd(using freeMonoidCode)(using AddCMonoidExprImpl)(using AddCMonoidCoproductImpl)(cmonoidRepr)
 
-class MulCMonoidRepr(val cmonoidRepr: MulCMonoidCoproductImpl.Coprod) extends AddMulRingRepr(liftMulCToRing(cmonoidRepr)):
+class MulCMonoidRepr(val cmonoidRepr: MulCMonoidCoproductImpl.Coprod) extends AddMulRingRepr(cmonoidRepr):
   override def *(rhs: TopCoproduct): TopCoproduct = rhs match
     case rhsMul: MulCMonoidRepr =>
       given Monoid[MulCMonoidCoproductImpl.Coprod] = MulCMonoidCoproductImpl.ac
