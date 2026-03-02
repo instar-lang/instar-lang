@@ -334,8 +334,6 @@ trait Ring[T]:
     def plus(rhs: T): T
     def times(rhs: T): T
 
-
-// 2. Concrete addition and multiplication are clearly monoid
 object VNumAddMonoid extends Monoid[VNum]:
   def empty: VNum = VNum(0)
   extension (x: VNum)
@@ -561,19 +559,19 @@ def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
 // Code is a monoid of addition
 
 
-case class MonomialRepr1[T](vars: Map[T, Int])
+case class MonomialRepr[T](vars: Map[T, Int])
 
 // We can create free cmonoid for **any** type.
 class FreeCMonoid[T] extends Free[Monoid, T]:
-  type FreeA = MonomialRepr1[T]
+  type FreeA = MonomialRepr[T]
 
   given af: Monoid[FreeA] with
-    def empty = MonomialRepr1(Map())
+    def empty = MonomialRepr(Map())
     extension (x: FreeA)
       def combine(rhs: FreeA): FreeA =
-        MonomialRepr1(mergeMaps(x.vars, rhs.vars))
+        MonomialRepr(mergeMaps(x.vars, rhs.vars))
 
-  def pvar(x: T): FreeA = MonomialRepr1(Map(x -> 1))
+  def pvar(x: T): FreeA = MonomialRepr(Map(x -> 1))
 
   def pbind[C: Monoid](freeA: FreeA)(f: T => C): C =
     freeA.vars.foldLeft(summon[Monoid[C]].empty) { case (acc, (v, count)) =>

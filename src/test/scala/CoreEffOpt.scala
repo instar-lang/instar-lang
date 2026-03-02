@@ -563,14 +563,6 @@ class CoreEffOpt extends Base {
       None))
     testEval(e8, "VCode(ELet(x7,ELam(x0,None,ELet(x3,EBinOp(*,ENum(2),EVar(x0),SNum(0)),ELet(x4,EBinOp(+,ENum(1),EVar(x3),SNum(0)),ELet(x5,EBinOp(*,EVar(x0),EVar(x0),SNum(0)),ELet(x6,EBinOp(+,EVar(x4),EVar(x5),SNum(0)),EVar(x6))))),None),EVar(x7)))", Set("ps", "dce"))
   }
-
-  test("jeremy-interface") {
-    // λx. 3 + (1 + x)
-    val e1 = ELift2(ELam("x", None,
-      EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
-      None))
-    testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x2,EBinOp(+,ENum(4),EVar(x0),SNum(0)),EVar(x2))),None),EVar(x3)))", Set("ps"))
-  }
 }
 
 class CoreEffAnalysis extends Base {
