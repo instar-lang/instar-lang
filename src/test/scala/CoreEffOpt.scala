@@ -529,7 +529,7 @@ class CoreEffOpt extends Base {
         None))),
       None))
     // testEval(e6, "VCode(ELet(x11,ELam(x0,None,ELet(x10,ELam(x3,None,ELet(x8,EBinOp(*,ENum(6),EVar(x0),SNum(0)),ELet(x9,EBinOp(+,ENum(3),EVar(x8),SNum(0)),EVar(x9))),None),EVar(x10)),None),EVar(x11)))", Set("ps", "dce"))
-    testEval(e6, "VCode(ELet(x12,ELam(x0,None,ELet(x2,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x11,ELam(x4,None,ELet(x5,EBinOp(+,EVar(x2),EVar(x0),SNum(0)),ELet(x7,EBinOp(+,EVar(x2),EVar(x0),SNum(0)),ELet(x9,EBinOp(+,EVar(x5),EVar(x7),SNum(0)),ELet(x10,EBinOp(+,ENum(3),EVar(x9),SNum(0)),EVar(x10))))),None),EVar(x11))),None),EVar(x12)))", Set("ps", "dce"))
+    testEval(e6, "VCode(ELet(x14,ELam(x0,None,ELet(x2,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x13,ELam(x4,None,ELet(x9,EBinOp(+,EVar(x2),EVar(x2),SNum(0)),ELet(x10,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x11,EBinOp(+,EVar(x9),EVar(x10),SNum(0)),ELet(x12,EBinOp(+,ENum(3),EVar(x11),SNum(0)),EVar(x12))))),None),EVar(x13))),None),EVar(x14)))", Set("ps", "dce"))
 
     // Another example that combines both ring and commutative monoid laws.
     // λx. let y = x + x in let f= λz. λw. y + 1 + y + 1 in f y
@@ -551,7 +551,7 @@ class CoreEffOpt extends Base {
         EApp2(EVar("f"), EVar("y")))),
       None))
     // testEval(e7, "VCode(ELet(x13,ELam(x0,None,ELet(x1,EBinOp(*,ENum(2),EVar(x0),SNum(0)),ELet(x11,ELam(x2,None,ELet(x10,ELam(x3,None,ELet(x8,EBinOp(*,ENum(4),EVar(x0),SNum(0)),ELet(x9,EBinOp(+,ENum(2),EVar(x8),SNum(0)),EVar(x9))),None),EVar(x10)),None),ELet(x12,EApp(EVar(x11),EVar(x1),SNum(0)),EVar(x12)))),None),EVar(x13)))", Set("ps", "dce"))
-    testEval(e7, "VCode(ELet(x13,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x11,ELam(x2,None,ELet(x10,ELam(x3,None,ELet(x4,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x6,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x8,EBinOp(+,EVar(x4),EVar(x6),SNum(0)),ELet(x9,EBinOp(+,ENum(2),EVar(x8),SNum(0)),EVar(x9))))),None),EVar(x10)),None),ELet(x12,EApp(EVar(x11),EVar(x1),SNum(0)),EVar(x12)))),None),EVar(x13)))", Set("ps", "dce"))
+    testEval(e7, "VCode(ELet(x15,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x13,ELam(x2,None,ELet(x12,ELam(x3,None,ELet(x8,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x9,EBinOp(+,EVar(x8),EVar(x0),SNum(0)),ELet(x10,EBinOp(+,EVar(x9),EVar(x0),SNum(0)),ELet(x11,EBinOp(+,ENum(2),EVar(x10),SNum(0)),EVar(x11))))),None),EVar(x12)),None),ELet(x14,EApp(EVar(x13),EVar(x1),SNum(0)),EVar(x14)))),None),EVar(x15)))", Set("ps", "dce"))
 
 
     // λx. (x + 1) * (x + 1)
