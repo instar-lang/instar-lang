@@ -929,53 +929,12 @@ object MulCMonoidCoproductImpl
   override def eva[C: Monoid](fa: VNum => C)(fb: freeMonoidCode.FreeA => C)(co: Coprod): C =
     inst.eva(fa)(fb)(co)
 
-trait TopCoproduct:
-  def +(rhs: TopCoproduct): TopCoproduct
-  def *(rhs: TopCoproduct): TopCoproduct
-  def -(rhs: TopCoproduct): TopCoproduct
-  def /(rhs: TopCoproduct): TopCoproduct
-  def code: Expr
+trait TopCoproduct
 
-case class AddMulRingRepr(value: AddMulRingCoproductImpl.Coprod) extends TopCoproduct:
-
-  override def +(rhs: TopCoproduct): TopCoproduct = rhs match
-    case AddMulRingRepr(rhsValue) => AddMulRingRepr(value.plus(rhsValue))
-    case _ => DynRepr(EBinOp("+", this.code, rhs.code, Sta))
-
-  override def *(rhs: TopCoproduct): TopCoproduct = rhs match
-    case AddMulRingRepr(rhsValue) => AddMulRingRepr(value.times(rhsValue))
-    case MulCMonoidRepr(rhsValue) => ??? // TODO: lift the monoid representation to ring representation and then do multiplication
-    // Maybe make addmulring repr a super type of monoid repr?
-    case _ => DynRepr(EBinOp("*", this.code, rhs.code, Sta))
-
-  override def -(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("-", this.code, rhs.code, Sta))
-
-  override def /(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("/", this.code, rhs.code, Sta))
-
-  override def code =
-    cd(using freeRingCode)(using AddMulRingExprImpl)(using AddMulRingCoproductImpl)(value)
-
-
-case class AddCMonoidRepr(value: AddCMonoidCoproductImpl.Coprod) extends TopCoproduct:
-
-  override def +(rhs: TopCoproduct): TopCoproduct = rhs match
-    case AddCMonoidRepr(rhsValue) => AddCMonoidRepr(value.combine(rhsValue))
-    case _ => DynRepr(EBinOp("+", this.code, rhs.code, Sta))
-
-  override def *(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("*", this.code, rhs.code, Sta))
-
-  override def -(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("-", this.code, rhs.code, Sta))
-
-  override def /(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("/", this.code, rhs.code, Sta))
-
-  override def code =
-    given Monoid[VNum] = VNumAddMonoid
-    cd(using freeMonoidCode)(using AddCMonoidExprImpl)(using AddCMonoidCoproductImpl)(value)
+case class AddMulRingRepr(value: AddMulRingCoproductImpl.Coprod) extends TopCoproduct
+case class AddCMonoidRepr(value: AddCMonoidCoproductImpl.Coprod) extends TopCoproduct
+case class MulCMonoidRepr(value: MulCMonoidCoproductImpl.Coprod) extends TopCoproduct
+case class DynRepr(expr: Expr) extends TopCoproduct
 
 object AddMulRingExprImpl extends Ring[Expr]:
   def zero: Expr = ENum(0).withNormalized
@@ -1011,85 +970,144 @@ object MulCMonoidExprImpl extends Monoid[Expr]:
       else if (rhs == empty) x.withNormalized
       else EBinOp("*", x, rhs, Sta).withNormalized
 
-case class MulCMonoidRepr(value: MulCMonoidCoproductImpl.Coprod) extends TopCoproduct:
+def liftAddCToRing(value: AddCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
+  given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
+  given Monoid[AddMulRingCoproductImpl.Coprod] with
+    def empty: AddMulRingCoproductImpl.Coprod = summon[Ring[AddMulRingCoproductImpl.Coprod]].zero
+    extension (x: AddMulRingCoproductImpl.Coprod)
+      def combine(rhs: AddMulRingCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
+        x.plus(rhs)
 
-  override def +(rhs: TopCoproduct): TopCoproduct =
-    // TODO: Lift to ring representation and then do addition
-    DynRepr(EBinOp("+", this.code, rhs.code, Sta))
+  AddCMonoidCoproductImpl.eva[AddMulRingCoproductImpl.Coprod](
+    (v: VNum) => AddMulRingCoproductImpl.inl(v)
+  )(
+    (freeA: freeMonoidCode.FreeA) =>
+      freeMonoidCode.pbind(freeA) { (code: Code) =>
+        AddMulRingCoproductImpl.inr(freeRingCode.pvar(code))
+      }
+  )(value)
 
-  override def *(rhs: TopCoproduct): TopCoproduct =
-    rhs match
-      case MulCMonoidRepr(rhsValue) => MulCMonoidRepr(value.combine(rhsValue))
-      case _ => DynRepr(EBinOp("*", this.code, rhs.code, Sta))
+def liftMulCToRing(value: MulCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
+  given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
+  given Monoid[AddMulRingCoproductImpl.Coprod] with
+    def empty: AddMulRingCoproductImpl.Coprod = summon[Ring[AddMulRingCoproductImpl.Coprod]].one
+    extension (x: AddMulRingCoproductImpl.Coprod)
+      def combine(rhs: AddMulRingCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
+        x.times(rhs)
 
-  override def -(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("-", this.code, rhs.code, Sta))
+  MulCMonoidCoproductImpl.eva[AddMulRingCoproductImpl.Coprod](
+    (v: VNum) => AddMulRingCoproductImpl.inl(v)
+  )(
+    (freeA: freeMonoidCode.FreeA) =>
+      freeMonoidCode.pbind(freeA) { (code: Code) =>
+        AddMulRingCoproductImpl.inr(freeRingCode.pvar(code))
+      }
+  )(value)
 
-  override def /(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("/", this.code, rhs.code, Sta))
-
-  override def code =
-    given Monoid[VNum] = VNumMulMonoid
-    cd(using freeMonoidCode)(using MulCMonoidExprImpl)(using MulCMonoidCoproductImpl)(value)
-
-case class DynRepr(expr: Expr) extends TopCoproduct:
-  override def +(rhs: TopCoproduct): TopCoproduct =
-    (expr, rhs) match
-      case (ENum(i), DynRepr(ENum(j))) =>
+extension (x: TopCoproduct)
+  def +(rhs: TopCoproduct): TopCoproduct =
+    given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
+    given Monoid[AddCMonoidCoproductImpl.Coprod] = AddCMonoidCoproductImpl.ac
+    (x, rhs) match
+      case (AddMulRingRepr(value), AddMulRingRepr(rhsValue)) => AddMulRingRepr(value.plus(rhsValue))
+      case (AddMulRingRepr(value), AddCMonoidRepr(rhsValue)) =>
+        AddMulRingRepr(value.plus(liftAddCToRing(rhsValue)))
+      case (AddMulRingRepr(_), _) => DynRepr(EBinOp("+", x.code, rhs.code, Sta))
+      case (AddCMonoidRepr(value), AddMulRingRepr(rhsValue)) =>
+        AddMulRingRepr(liftAddCToRing(value).plus(rhsValue))
+      case (AddCMonoidRepr(value), AddCMonoidRepr(rhsValue)) => AddCMonoidRepr(value.combine(rhsValue))
+      case (AddCMonoidRepr(_), _) => DynRepr(EBinOp("+", x.code, rhs.code, Sta))
+      case (MulCMonoidRepr(_), _) => DynRepr(EBinOp("+", x.code, rhs.code, Sta))
+      case (DynRepr(ENum(i)), DynRepr(ENum(j))) =>
         AddCMonoidRepr(AddCMonoidCoproductImpl.inl(VNum(i)).combine(AddCMonoidCoproductImpl.inl(VNum(j))))
-      case (ENum(i), DynRepr(EVar(rhsName))) =>
+      case (DynRepr(ENum(i)), DynRepr(EVar(rhsName))) =>
         val lhs = AddCMonoidCoproductImpl.inl(VNum(i))
-        val rhs = AddCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(rhsName)))
-        AddCMonoidRepr(lhs.combine(rhs))
-      case (ENum(i), AddCMonoidRepr(rhsValue)) =>
+        val rhsC = AddCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(rhsName)))
+        AddCMonoidRepr(lhs.combine(rhsC))
+      case (DynRepr(ENum(i)), AddCMonoidRepr(rhsValue)) =>
         given Monoid[AddCMonoidCoproductImpl.Coprod] = AddCMonoidCoproductImpl.ac
         val lhs = AddCMonoidCoproductImpl.inl(VNum(i))
         AddCMonoidRepr(lhs.combine(rhsValue))
-      case (EVar(name), DynRepr(ENum(i))) =>
+      case (DynRepr(EVar(name)), DynRepr(ENum(i))) =>
         val lhs = AddCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
-        val rhs = AddCMonoidCoproductImpl.inl(VNum(i))
-        AddCMonoidRepr(lhs.combine(rhs))
-      case (EVar(name), DynRepr(EVar(rhsName))) =>
+        val rhsC = AddCMonoidCoproductImpl.inl(VNum(i))
+        AddCMonoidRepr(lhs.combine(rhsC))
+      case (DynRepr(EVar(name)), DynRepr(EVar(rhsName))) =>
         val lhs = AddCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
-        val rhs = AddCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(rhsName)))
-        AddCMonoidRepr(lhs.combine(rhs))
-      case (EVar(name), AddCMonoidRepr(rhsValue)) =>
+        val rhsC = AddCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(rhsName)))
+        AddCMonoidRepr(lhs.combine(rhsC))
+      case (DynRepr(EVar(name)), AddCMonoidRepr(rhsValue)) =>
         given Monoid[AddCMonoidCoproductImpl.Coprod] = AddCMonoidCoproductImpl.ac
         val lhs = AddCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
         AddCMonoidRepr(lhs.combine(rhsValue))
-      case (EVar(name), AddMulRingRepr(rhsValue)) =>
+      case (DynRepr(EVar(name)), AddMulRingRepr(rhsValue)) =>
         given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
         val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
         AddMulRingRepr(lhs.plus(rhsValue))
-      case _ => DynRepr(EBinOp("+", expr, rhs.code, Sta))
+      case (DynRepr(expr), _) => DynRepr(EBinOp("+", expr, rhs.code, Sta))
 
-  override def *(rhs: TopCoproduct): TopCoproduct =
-    (expr, rhs) match
-      case (EVar(name), DynRepr(ENum(i))) =>
-        val lhs = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
-        val rhs = MulCMonoidCoproductImpl.inl(VNum(i))
-        MulCMonoidRepr(lhs.combine(rhs))
-      case (EVar(name), DynRepr(EVar(rhsName))) =>
-        val lhs = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
-        val rhs = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(rhsName)))
-        MulCMonoidRepr(lhs.combine(rhs))
-      case (EVar(name), MulCMonoidRepr(rhsValue)) =>
-        given Monoid[MulCMonoidCoproductImpl.Coprod] = MulCMonoidCoproductImpl.ac
-        val lhs = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
-        MulCMonoidRepr(lhs.combine(rhsValue))
-      case (EVar(name), AddMulRingRepr(rhsValue)) =>
-        given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-        val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-        AddMulRingRepr(lhs.times(rhsValue))
-      case _ => DynRepr(EBinOp("*", expr, rhs.code, Sta))
+  def *(rhs: TopCoproduct): TopCoproduct = (x, rhs) match
+    case (AddMulRingRepr(value), AddMulRingRepr(rhsValue)) => AddMulRingRepr(value.times(rhsValue))
+    case (AddMulRingRepr(value), MulCMonoidRepr(rhsValue)) =>
+      AddMulRingRepr(value.times(liftMulCToRing(rhsValue)))
+    case (AddMulRingRepr(_), _) => DynRepr(EBinOp("*", x.code, rhs.code, Sta))
+    case (AddCMonoidRepr(_), _) => DynRepr(EBinOp("*", x.code, rhs.code, Sta))
+    case (MulCMonoidRepr(value), AddMulRingRepr(rhsValue)) =>
+      AddMulRingRepr(liftMulCToRing(value).times(rhsValue))
+    case (MulCMonoidRepr(value), MulCMonoidRepr(rhsValue)) => MulCMonoidRepr(value.combine(rhsValue))
+    case (MulCMonoidRepr(_), _) => DynRepr(EBinOp("*", x.code, rhs.code, Sta))
+    case (DynRepr(ENum(i)), DynRepr(ENum(j))) =>
+      MulCMonoidRepr(MulCMonoidCoproductImpl.inl(VNum(i)).combine(MulCMonoidCoproductImpl.inl(VNum(j))))
+    case (DynRepr(ENum(i)), DynRepr(EVar(rhsName))) =>
+      val lhs = MulCMonoidCoproductImpl.inl(VNum(i))
+      val rhsC = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(rhsName)))
+      MulCMonoidRepr(lhs.combine(rhsC))
+    case (DynRepr(ENum(i)), MulCMonoidRepr(rhsValue)) =>
+      given Monoid[MulCMonoidCoproductImpl.Coprod] = MulCMonoidCoproductImpl.ac
+      val lhs = MulCMonoidCoproductImpl.inl(VNum(i))
+      MulCMonoidRepr(lhs.combine(rhsValue))
+    case (DynRepr(ENum(i)), AddMulRingRepr(rhsValue)) =>
+      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
+      val lhs = AddMulRingCoproductImpl.inl(VNum(i))
+      AddMulRingRepr(lhs.times(rhsValue))
+    case (DynRepr(EVar(name)), DynRepr(ENum(i))) =>
+      val lhs = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
+      val rhsC = MulCMonoidCoproductImpl.inl(VNum(i))
+      MulCMonoidRepr(lhs.combine(rhsC))
+    case (DynRepr(EVar(name)), DynRepr(EVar(rhsName))) =>
+      val lhs = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
+      val rhsC = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(rhsName)))
+      MulCMonoidRepr(lhs.combine(rhsC))
+    case (DynRepr(EVar(name)), MulCMonoidRepr(rhsValue)) =>
+      given Monoid[MulCMonoidCoproductImpl.Coprod] = MulCMonoidCoproductImpl.ac
+      val lhs = MulCMonoidCoproductImpl.inr(freeMonoidCode.pvar(EVar(name)))
+      MulCMonoidRepr(lhs.combine(rhsValue))
+    case (DynRepr(EVar(name)), AddMulRingRepr(rhsValue)) =>
+      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
+      val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
+      AddMulRingRepr(lhs.times(rhsValue))
+    case (DynRepr(expr), _) => DynRepr(EBinOp("*", expr, rhs.code, Sta))
 
-  override def -(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("-", expr, rhs.code, Sta))
+  def -(rhs: TopCoproduct): TopCoproduct = (x, rhs) match
+    case (DynRepr(ENum(i)), DynRepr(ENum(j))) => DynRepr(ENum(i - j).withNormalized)
+    case (DynRepr(expr), _) => DynRepr(EBinOp("-", expr, rhs.code, Sta))
+    case _ => DynRepr(EBinOp("-", x.code, rhs.code, Sta))
 
-  override def /(rhs: TopCoproduct): TopCoproduct =
-    DynRepr(EBinOp("/", expr, rhs.code, Sta))
+  def /(rhs: TopCoproduct): TopCoproduct = (x, rhs) match
+    case (DynRepr(ENum(i)), DynRepr(ENum(j))) if j != 0 => DynRepr(ENum(i / j).withNormalized)
+    case (DynRepr(expr), _) => DynRepr(EBinOp("/", expr, rhs.code, Sta))
+    case _ => DynRepr(EBinOp("/", x.code, rhs.code, Sta))
 
-  override def code: Expr = expr
+  def code: Expr = x match
+    case AddMulRingRepr(value) =>
+      cd(using freeRingCode)(using AddMulRingExprImpl)(using AddMulRingCoproductImpl)(value)
+    case AddCMonoidRepr(value) =>
+      given Monoid[VNum] = VNumAddMonoid
+      cd(using freeMonoidCode)(using AddCMonoidExprImpl)(using AddCMonoidCoproductImpl)(value)
+    case MulCMonoidRepr(value) =>
+      given Monoid[VNum] = VNumMulMonoid
+      cd(using freeMonoidCode)(using MulCMonoidExprImpl)(using MulCMonoidCoproductImpl)(value)
+    case DynRepr(expr) => expr
 
 def dyn(expr: Expr)(using c: Cache): TopCoproduct =
   if (c.contains(expr)) DynRepr(EVar(c(expr)))
@@ -1104,11 +1122,11 @@ def evalPS(expr: Expr)(using c: Cache): TopCoproduct = expr match
   case e => dyn(e)
 
 def residualizePS(repr: TopCoproduct, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-  println(s"residualizePS: residualizing ${repr.code} with repr = ${repr}")
-  reflectDefault(σ, k, γ)(repr.code) // TODO: Call reflect here
+  // println(s"residualizePS: residualizing ${repr.code} with repr = ${repr}")
+  reflect(repr.code, σ, k, γ)
 
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case e@EBinOp(_, _, _, _) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
+  case e@EBinOp(_, _, _, _) if Opt("ps") && !e.normalized => residualizePS(evalPS(e), σ, k, γ)
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.
