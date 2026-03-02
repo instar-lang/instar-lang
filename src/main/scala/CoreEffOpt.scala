@@ -1051,6 +1051,8 @@ extension (x: TopCoproduct)
     case (AddMulRingRepr(value), MulCMonoidRepr(rhsValue)) =>
       AddMulRingRepr(value.times(liftMulCToRing(rhsValue)))
     case (AddMulRingRepr(_), _) => DynRepr(EBinOp("*", x.code, rhs.code, Sta))
+    case (AddCMonoidRepr(value), AddCMonoidRepr(rhsValue)) =>
+      AddMulRingRepr(liftAddCToRing(value).times(liftAddCToRing(rhsValue)))
     case (AddCMonoidRepr(_), _) => DynRepr(EBinOp("*", x.code, rhs.code, Sta))
     case (MulCMonoidRepr(value), AddMulRingRepr(rhsValue)) =>
       AddMulRingRepr(liftMulCToRing(value).times(rhsValue))
@@ -1122,8 +1124,18 @@ def evalPS(expr: Expr)(using c: Cache): TopCoproduct = expr match
   case e => dyn(e)
 
 def residualizePS(repr: TopCoproduct, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-  // println(s"residualizePS: residualizing ${repr.code} with repr = ${repr}")
-  reflect(repr.code, σ, k, γ)
+  println(s"residualizePS: residualizing ${repr.code} with repr = ${repr}")
+  def residualizeExpr(e: Expr, σ: Store, k: Cont, γ: MCont): (Value, Store) =
+    // This is basically an eval function
+    e match
+      case EBinOp(op, e1, e2, _) =>
+        residualizeExpr(e1, σ, { case (VCode(v1), σ1, γ1) =>
+          residualizeExpr(e2, σ1, { case (VCode(v2), σ2, γ2) =>
+            reflect(EBinOp(op, v1, v2, Sta).withNormalized, σ2, k, γ2)
+          }, γ1)
+        }, γ)
+      case e => reflect(e, σ, k, γ)
+  residualizeExpr(repr.code, σ, k, γ)
 
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case e@EBinOp(_, _, _, _) if Opt("ps") && !e.normalized => residualizePS(evalPS(e), σ, k, γ)
