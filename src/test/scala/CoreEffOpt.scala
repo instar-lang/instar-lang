@@ -561,21 +561,11 @@ class CoreEffOpt extends Base {
   }
 
   test("jeremy-interface") {
-    val f = new FreeRing[Code]
-    given Free[Ring, Code] = f
-    given Coproduct[Ring, VNum, f.FreeA] = coproductFromFreeRing[VNum, Code](using summon[Ring[VNum]])(using f)
-    // Coproduct[Ring, VNum, given_Free_Ring_Code.FreeA]
-    val one = sta1[Ring](using summon[Ring[VNum]])(using f)(VNum(1))
-
-    val x = dyn1[Ring](using summon[Ring[VNum]])(using f)(EVar("x"))
-
-    val y = dyn1[Ring](using summon[Ring[VNum]])(using f)(EVar("y"))
-
-    println(one.plus(one))
-
-    println(one.plus(one).plus(x).plus(y))
-    given Ring[Code] = CodeAddMulRing
-    println(cd1(using f)(one.plus(one).plus(x).plus(y)))
+    // λx. 3 + (1 + x)
+    val e1 = ELift2(ELam("x", None,
+      EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
+      None))
+    testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x2,EBinOp(+,ENum(4),EVar(x0),SNum(0)),EVar(x2))),None),EVar(x3)))", Set("ps"))
   }
 }
 
