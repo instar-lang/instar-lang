@@ -490,22 +490,14 @@ given [T]: Free[Ring, T] = new FreeRing[T]
 // Let Code be a monomorphic type Expr
 type Code = EVar
 
-def sta[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
-                               (using c: Coproduct[Algebra, A, f.FreeA])
-                               (a: A): c.Coprod =
+def sta[Algebra[_], A: Algebra](a: A)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA]): c.Coprod =
   c.inl(a)
 
-def dyn[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
-                               (using c: Coproduct[Algebra, A, f.FreeA])
-                               (code: Code): c.Coprod =
+def dyn[Algebra[_], A: Algebra](code: Code)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA]): c.Coprod =
   c.inr(f.pvar(code))
 
-def evaCode[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
-                                   (using c: Coproduct[Algebra, A, f.FreeA])
-                                   (using Algebra[Code])
-                                   (f1: A => Code)
-                                   (f2: f.FreeA => Code)
-                                   (co: c.Coprod): Code =
+def evaCode[Algebra[_], A: Algebra](f1: A => Code)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA])
+                                   (f2: f.FreeA => Code, co: c.Coprod)(using Algebra[Code]): Code =
   c.eva(f1)(f2)(co)
 
 given Ring[VNum] with
@@ -516,36 +508,12 @@ given Ring[VNum] with
     def plus(rhs: VNum): VNum = VNum(x.i + rhs.i)
     def times(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
-def sta1[Algebra[_]](using Algebra[VNum])
-                    (using f: Free[Algebra, Code])
-                    (using c: Coproduct[Algebra, VNum, f.FreeA])
-                    (a: VNum): c.Coprod =
-  c.inl(a)
-
-def dyn1[Algebra[_]](using Algebra[VNum])
-                    (using f: Free[Algebra, Code])
-                    (using c: Coproduct[Algebra, VNum, f.FreeA])
-                    (code: Code): c.Coprod =
-  c.inr(f.pvar(code))
-
-def evaCode1[Algebra[_]](using Algebra[VNum])
-                        (using Algebra[Code]) // In haskell they don't need this somehow, maybe in template haskell, every code a is automatically an instance of the algebra when a is an instance of the algebra
-                        (using f: Free[Algebra, Code])
-                        (using c: Coproduct[Algebra, VNum, f.FreeA])
-                        (f1: VNum => Code)
-                        (f2: f.FreeA => Code)
-                        (co: c.Coprod): Code =
-  c.eva(f1)(f2)(co)
-
 given Conversion[VNum, Expr] with
   def apply(v: VNum): Expr = ENum1(v.i)
 
 // Q: Why we even need Free[Algebra, Code]? And can not just Algebra[Code]?
 // A: Algebra[Code] itself only says we can do operations defined in Algebra to Code, doesn't say anything about the free algebra of Code (Free[Algebra, Code])
-def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code])
-                              (using Algebra[Expr])
-                              (using c: Coproduct[Algebra, A, f.FreeA])
-                              (using lift: Conversion[A, Expr])
+def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code], a: Algebra[Expr], c: Coproduct[Algebra, A, f.FreeA], lift: Conversion[A, Expr])
                               (co: c.Coprod) =
   c.eva(lift)((frc) => f.pbind(frc)((x => x:Expr)))(co)
   //      |    |
@@ -793,7 +761,7 @@ class AddMulRingRepr(val ringRepr: AddMulRingCoproductImpl.Coprod) extends TopCo
     new DynRepr(EBinOp("/", code, rhs.code, Sta))
 
   override def code: Expr =
-    cd(using freeRingCode)(using AddMulRingExprImpl)(using AddMulRingCoproductImpl)(ringRepr)
+    cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(ringRepr)
 
 class AddCMonoidRepr(val cmonoidRepr: AddCMonoidCoproductImpl.Coprod) extends AddMulRingRepr(cmonoidRepr):
   override def +(rhs: TopCoproduct): TopCoproduct = rhs match
@@ -812,7 +780,7 @@ class AddCMonoidRepr(val cmonoidRepr: AddCMonoidCoproductImpl.Coprod) extends Ad
 
   override def code: Expr =
     given Monoid[VNum] = VNumAddMonoid
-    cd(using freeMonoidCode)(using AddCMonoidExprImpl)(using AddCMonoidCoproductImpl)(cmonoidRepr)
+    cd(using freeMonoidCode, AddCMonoidExprImpl, AddCMonoidCoproductImpl)(cmonoidRepr)
 
 class MulCMonoidRepr(val cmonoidRepr: MulCMonoidCoproductImpl.Coprod) extends AddMulRingRepr(cmonoidRepr):
   override def *(rhs: TopCoproduct): TopCoproduct = rhs match
@@ -827,7 +795,7 @@ class MulCMonoidRepr(val cmonoidRepr: MulCMonoidCoproductImpl.Coprod) extends Ad
 
   override def code: Expr =
     given Monoid[VNum] = VNumMulMonoid
-    cd(using freeMonoidCode)(using MulCMonoidExprImpl)(using MulCMonoidCoproductImpl)(cmonoidRepr)
+    cd(using freeMonoidCode, MulCMonoidExprImpl, MulCMonoidCoproductImpl)(cmonoidRepr)
 
 case class DynRepr(val expr: Expr) extends TopCoproduct:
   override def +(rhs: TopCoproduct): TopCoproduct = (expr, rhs) match
