@@ -1,0 +1,204 @@
+package spmp.eff.opt
+
+trait Monoid[T]:
+  def empty: T
+
+  extension (x: T)
+    def combine(rhs: T): T
+
+trait Ring[T]:
+  def zero: T
+  def one: T
+
+  extension (x: T)
+    def plus(rhs: T): T
+    def times(rhs: T): T
+
+trait Coproduct[Algebra[_], A: Algebra, B: Algebra]:
+  type Coprod
+  given ac: Algebra[Coprod]
+  def inl(a: A): Coprod
+  def inr(b: B): Coprod
+  def eva[C: Algebra](fa: A => C)(fb: B => C)(co: Coprod): C
+
+trait Free[Algebra[_], T]:
+  type FreeA
+  given af: Algebra[FreeA]
+  def pvar(x: T): FreeA
+  def pbind[C: Algebra](freeA: FreeA)(f: T => C): C
+
+def sta[Algebra[_], A: Algebra](a: A)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA]): c.Coprod =
+  c.inl(a)
+
+def code[Algebra[_], A: Algebra](code: Code)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA]): c.Coprod =
+  c.inr(f.pvar(code))
+
+def evaCode[Algebra[_], A: Algebra](f1: A => Code)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA])
+                                   (f2: f.FreeA => Code, co: c.Coprod)(using Algebra[Code]): Code =
+  c.eva(f1)(f2)(co)
+
+def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code], a: Algebra[Expr], c: Coproduct[Algebra, A, f.FreeA], lift: Conversion[A, Expr])
+                              (co: c.Coprod) =
+  c.eva(lift)((frc) => f.pbind(frc)((x => x: Expr)))(co)
+
+case class MonomialRepr[T](vars: Map[T, Int])
+
+// We can create free cmonoid for **any** type.
+class FreeCMonoid[T] extends Free[Monoid, T]:
+  type FreeA = MonomialRepr[T]
+
+  given af: Monoid[FreeA] with
+    def empty = MonomialRepr(Map())
+    extension (x: FreeA)
+      def combine(rhs: FreeA): FreeA =
+        MonomialRepr(mergeMaps(x.vars, rhs.vars))
+
+  def pvar(x: T): FreeA = MonomialRepr(Map(x -> 1))
+
+  def pbind[C: Monoid](freeA: FreeA)(f: T => C): C =
+    freeA.vars.foldLeft(summon[Monoid[C]].empty) { case (acc, (v, count)) =>
+      val term = List.fill(count)(f(v)).reduce(_.combine(_))
+      acc.combine(term)
+    }
+
+def initMN[R](n: Int)(using r: Ring[R]): R = n match
+  case 0 => r.zero
+  case 1 => r.one
+  case n if n < 0 => ???
+  case n if n % 2 == 0 => r.one.plus(r.one).times(initMN(n / 2))
+  case n if n % 2 == 1 => r.one.plus(r.one).times(initMN(n / 2)).plus(r.one)
+
+case class Multinomial[X, A](terms: Map[Map[X, Int], A])
+
+def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring[A], r2: Ring[B]): B =
+  def power(a: B, n: Int)(using r2: Ring[B]): B = n match
+    case 0 => r2.one
+    case 1 => a
+    case n if n % 2 == 1 =>
+      val x = power(a, (n - 1) / 2)
+      x.times(x).times(a)
+    case _ =>
+      val x = power(a, n / 2)
+      x.times(x)
+
+  m.terms.foldLeft(r2.zero) { case (sum, (xs, a)) =>
+    sum.plus(
+      xs.foldLeft(f1(a)) { case (prod, (x, n)) =>
+        prod.times(power(f2(x), n))
+      }
+    )
+  }
+
+// Multinomial itself is a ring structure
+class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
+  def zero: Multinomial[X, T] = Multinomial(Map())
+  def one: Multinomial[X, T] = Multinomial(Map(Map() -> r.one))
+
+  extension (x: Multinomial[X, T])
+    def plus(rhs: Multinomial[X, T]): Multinomial[X, T] =
+      Multinomial(
+        (x.terms.keySet ++ rhs.terms.keySet).map { k =>
+          k -> (x.terms.getOrElse(k, r.zero).plus(rhs.terms.getOrElse(k, r.zero)))
+        }.toMap
+      )
+
+    def times(rhs: Multinomial[X, T]): Multinomial[X, T] =
+      x.terms.foldLeft(zero) { case (acc, (xs, c)) =>
+        acc.plus(mul(rhs, xs, c))
+      }
+
+  private def mul(rhs: Multinomial[X, T], xs: Map[X, Int], c: T): Multinomial[X, T] =
+    rhs.terms.foldLeft(zero) { case (Multinomial(acc), (rxs, coeff)) =>
+      Multinomial(acc + (mergeMaps(rxs, xs) -> c.times(coeff)))
+    }
+
+// Multinomial can be served as free extension of ring for any type
+class FreeRing [T] extends Free[Ring, T]:
+  case class FreeA(terms: Multinomial[T, Int])
+
+  given af: Ring[FreeA] with
+    def zero: FreeA = FreeA(Multinomial(Map()))
+    def one: FreeA = FreeA(Multinomial(Map(Map() -> 1)))
+
+    extension (x: FreeA)
+      def plus(rhs: FreeA): FreeA =
+        FreeA(Multinomial(
+          (x.terms.terms.keySet ++ rhs.terms.terms.keySet).map { k =>
+            k -> (x.terms.terms.getOrElse(k, 0) + rhs.terms.terms.getOrElse(k, 0))
+          }.toMap
+        ))
+
+      def times(rhs: FreeA): FreeA =
+        FreeA(Multinomial(
+          for {
+            (vars1, coeff1) <- x.terms.terms
+            (vars2, coeff2) <- rhs.terms.terms
+          } yield {
+            val combinedVars = mergeMaps(vars1, vars2)
+            combinedVars -> (coeff1 * coeff2)
+          }
+        ))
+
+  def pvar(x: T): FreeA = FreeA(Multinomial(Map(Map(x -> 1) -> 1)))
+
+  def pbind[C: Ring](freeA: FreeA)(f: T => C): C =
+    val ring = summon[Ring[C]]
+    evalMN(initMN)(f)(freeA.terms)
+
+  private def coeffToC[C: Ring](coeff: Int): C =
+    val ring = summon[Ring[C]]
+    if (coeff == 0) ring.zero
+    else if (coeff == 1) ring.one
+    else ring.one.plus(coeffToC(coeff - 1))
+
+  private def power[C: Ring](a: C, n: Int): C =
+    val ring = summon[Ring[C]]
+    n match
+      case 0 => ring.one
+      case 1 => a
+      case _ if n % 2 == 1 =>
+        val x = power(a, (n - 1) / 2)
+        x.times(x).times(a)
+      case _ =>
+        val x = power(a, n / 2)
+        x.times(x)
+
+// We can create a Coproduct of Monoid and FreeCMonoid.
+def coproductFromFreeMonoid[A, B](using m: Monoid[A], f: Free[Monoid, B]): Coproduct[Monoid, A, f.FreeA] =
+  new Coproduct[Monoid, A, f.FreeA]:
+    case class Coprod(a: A, b: f.FreeA)
+    given ac: Monoid[Coprod] with
+      def empty: Coprod = Coprod(m.empty, summon[Monoid[f.FreeA]].empty)
+      extension (x: Coprod)
+        def combine(rhs: Coprod): Coprod =
+          Coprod(x.a.combine(rhs.a), x.b.combine(rhs.b))
+
+    def inl(a: A): Coprod = Coprod(a, summon[Monoid[f.FreeA]].empty)
+    def inr(b: f.FreeA): Coprod = Coprod(m.empty, b)
+
+    def eva[C: Monoid](fa: A => C)(fb: f.FreeA => C)(co: Coprod): C =
+      fa(co.a).combine(fb(co.b))
+
+// We can create a Coproduct of Ring and FreeRing.
+def coproductFromFreeRing[A, B](using r: Ring[A])(using f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
+  new Coproduct[Ring, A, f.FreeA]:
+    case class Coprod(m: Multinomial[B, A])
+    given ac: Ring[Coprod] with
+      def zero: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].zero)
+      def one: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].one)
+      extension (x: Coprod)
+        def plus(rhs: Coprod): Coprod =
+          Coprod(x.m.plus(rhs.m))
+
+        def times(rhs: Coprod): Coprod =
+          Coprod(x.m.times(rhs.m))
+
+    def inl(a: A): Coprod = Coprod(Multinomial(Map(Map.empty[B, Int] -> a)))
+
+    def inr(b: f.FreeA): Coprod = Coprod(Multinomial(b.terms.terms.map( { case (vars, coeff) =>
+      vars -> initMN(coeff)(using r)
+    })))
+
+    def eva[C: Ring](fa: A => C)(fb: f.FreeA => C)(co: Coprod): C =
+      evalMN(fa)((b: B) => fb(f.pvar(b)))(co.m)
+
