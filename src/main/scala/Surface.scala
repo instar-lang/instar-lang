@@ -1,5 +1,7 @@
 package instar.surf
 
+/*
+
 import instar.eff.opt
 import instar.eff.opt.Type
 import instar.eff.opt.Stage
@@ -35,3 +37,4 @@ enum Expr:
   case EPut(e1: Expr, e2: Expr) // put t1 t2
 
   case EAscribe(e: Expr, ty: Type) // (t : τ)
+*/

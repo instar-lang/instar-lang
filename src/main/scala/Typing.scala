@@ -1,5 +1,7 @@
 package instar.tyck
 
+/*
+
 import instar.eff.opt
 import instar.eff.opt.Type
 import instar.eff.opt.Stage
@@ -51,3 +53,5 @@ def check(env: Env, term: Expr, expected: Type): Expr =
     case Expr.EPut(e1, e2)          =>
     case Expr.EAscribe(e, ty)       =>
   ???
+
+*/
