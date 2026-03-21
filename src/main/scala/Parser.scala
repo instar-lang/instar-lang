@@ -49,6 +49,7 @@ object Lexer:
     case Assign
     case IsApp
     case Forall
+    case Run
     case EOF
 
   case class Token(kind: Kind, lexeme: String, line: Int, col: Int)
@@ -73,6 +74,7 @@ object Lexer:
     "assign" -> Kind.Assign,
     "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
+    "run" -> Kind.Run,
   )
 
   def lex(input: String): Vector[Token] =
@@ -293,12 +295,13 @@ object Parser:
 
     private def parseIf(): Expr =
       expect(Kind.If, "`if`")
+      val stage = parseOptionalStageValue(default = Sta)
       val cond = parseExpr()
       expect(Kind.Then, "`then`")
       val thn = parseExpr()
       expect(Kind.Else, "`else`")
       val els = parseExpr()
-      ECond(cond, thn, els, Sta)
+      ECond(cond, thn, els, stage)
 
     private def parseComparison(): Expr =
       var expr = parseAdditive()
@@ -308,31 +311,35 @@ object Parser:
           case _ => false
       do
         val op = advance().lexeme
+        val stage = parseOptionalStageValue(default = Sta)
         val rhs = parseAdditive()
-        expr = EBinOp(op, expr, rhs, Sta)
+        expr = EBinOp(op, expr, rhs, stage)
       expr
 
     private def parseAdditive(): Expr =
       var expr = parseMultiplicative()
       while at(Kind.Plus) || at(Kind.Minus) do
         val op = advance().lexeme
+        val stage = parseOptionalStageValue(default = Sta)
         val rhs = parseMultiplicative()
-        expr = EBinOp(op, expr, rhs, Sta)
+        expr = EBinOp(op, expr, rhs, stage)
       expr
 
     private def parseMultiplicative(): Expr =
       var expr = parseUnary()
       while at(Kind.Star) || at(Kind.Slash) do
         val op = advance().lexeme
+        val stage = parseOptionalStageValue(default = Sta)
         val rhs = parseUnary()
-        expr = EBinOp(op, expr, rhs, Sta)
+        expr = EBinOp(op, expr, rhs, stage)
       expr
 
     private def parseUnary(): Expr =
       if at(Kind.Minus) then
         advance()
+        val stage = parseOptionalStageValue(default = Sta)
         if at(Kind.IntLit) then ENum(-advance().lexeme.toInt)
-        else EUnaryOp("-", parseUnary(), Sta)
+        else EUnaryOp("-", parseUnary(), stage)
       else
         parsePostfix()
 
@@ -348,7 +355,7 @@ object Parser:
             advance()
             val arg = parseExpr()
             expect(Kind.RParen, "`)`")
-            expr = EApp(expr, arg, Sta)
+            expr = EApp(expr, arg, parseOptionalStageValue(default = Sta))
           case _ =>
             keepGoing = false
       expr
@@ -375,6 +382,8 @@ object Parser:
           parseAssign()
         case Kind.IsApp =>
           parseIsApp()
+        case Kind.Run =>
+          parseRun()
         case Kind.LParen =>
           parseParenExpr()
         case _ =>
@@ -420,6 +429,13 @@ object Parser:
       val expr = parseExpr()
       expect(Kind.RParen, "`)`")
       EIsApp(expr)
+
+    private def parseRun(): Expr =
+      expect(Kind.Run, "`run`")
+      expect(Kind.LParen, "`(`")
+      val expr = parseExpr()
+      expect(Kind.RParen, "`)`")
+      ERun(expr)
 
     private def parseParenExpr(): Expr =
       expect(Kind.LParen, "`(`")
