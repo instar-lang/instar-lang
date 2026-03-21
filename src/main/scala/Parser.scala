@@ -32,23 +32,23 @@ object CoreEffOptLexer:
     case Greater
     case EqEq
     case BangEq
-    case KwTrue
-    case KwFalse
-    case KwFun
-    case KwSFun
-    case KwLift
-    case KwLet
-    case KwIn
-    case KwLetRec
-    case KwFix
-    case KwIf
-    case KwThen
-    case KwElse
-    case KwRef
-    case KwDeref
-    case KwAssign
-    case KwIsApp
-    case KwForall
+    case True
+    case False
+    case Fun
+    case SFun
+    case Lift
+    case Let
+    case In
+    case LetRec
+    case Fix
+    case If
+    case Then
+    case Else
+    case Ref
+    case Deref
+    case Assign
+    case IsApp
+    case Forall
     case EOF
 
   case class Token(kind: Kind, lexeme: String, line: Int, col: Int)
@@ -56,23 +56,23 @@ object CoreEffOptLexer:
   final class LexerException(message: String) extends RuntimeException(message)
 
   private val keywords: Map[String, Kind] = Map(
-    "true" -> Kind.KwTrue,
-    "false" -> Kind.KwFalse,
-    "fun" -> Kind.KwFun,
-    "sfun" -> Kind.KwSFun,
-    "lift" -> Kind.KwLift,
-    "let" -> Kind.KwLet,
-    "in" -> Kind.KwIn,
-    "letrec" -> Kind.KwLetRec,
-    "fix" -> Kind.KwFix,
-    "if" -> Kind.KwIf,
-    "then" -> Kind.KwThen,
-    "else" -> Kind.KwElse,
-    "ref" -> Kind.KwRef,
-    "deref" -> Kind.KwDeref,
-    "assign" -> Kind.KwAssign,
-    "isApp" -> Kind.KwIsApp,
-    "forall" -> Kind.KwForall,
+    "true" -> Kind.True,
+    "false" -> Kind.False,
+    "fun" -> Kind.Fun,
+    "sfun" -> Kind.SFun,
+    "lift" -> Kind.Lift,
+    "let" -> Kind.Let,
+    "in" -> Kind.In,
+    "letrec" -> Kind.LetRec,
+    "fix" -> Kind.Fix,
+    "if" -> Kind.If,
+    "then" -> Kind.Then,
+    "else" -> Kind.Else,
+    "ref" -> Kind.Ref,
+    "deref" -> Kind.Deref,
+    "assign" -> Kind.Assign,
+    "isApp" -> Kind.IsApp,
+    "forall" -> Kind.Forall,
   )
 
   def lex(input: String): Vector[Token] =
@@ -230,33 +230,33 @@ object CoreEffOptParser:
 
     private def parseExpr(): Expr =
       current.kind match
-        case Kind.KwLet => parseLet()
-        case Kind.KwLetRec => parseLetRec()
-        case Kind.KwFun => parseFun()
-        case Kind.KwSFun => parseSFun()
-        case Kind.KwFix => parseFix()
-        case Kind.KwIf => parseIf()
+        case Kind.Let => parseLet()
+        case Kind.LetRec => parseLetRec()
+        case Kind.Fun => parseFun()
+        case Kind.SFun => parseSFun()
+        case Kind.Fix => parseFix()
+        case Kind.If => parseIf()
         case _ => parseComparison()
 
     private def parseLet(): Expr =
-      expect(Kind.KwLet, "`let`")
+      expect(Kind.Let, "`let`")
       val name = parseIdentifier("binding name")
       val ann = parseOptionalTypeAnnotation()
       expect(Kind.Equal, "`=`")
       val rhs = parseExpr()
-      expect(Kind.KwIn, "`in`")
+      expect(Kind.In, "`in`")
       val body = parseExpr()
       ann match
         case Some(ty) => ELet(name, EAscribe(rhs, ty), body)
         case None => ELet(name, rhs, body)
 
     private def parseLetRec(): Expr =
-      expect(Kind.KwLetRec, "`letrec`")
+      expect(Kind.LetRec, "`letrec`")
       val name = parseIdentifier("recursive binding name")
       val ann = parseOptionalTypeAnnotation()
       expect(Kind.Equal, "`=`")
       val rhs = parseExpr()
-      expect(Kind.KwIn, "`in`")
+      expect(Kind.In, "`in`")
       val body = parseExpr()
       ann match
         case Some(ty) => ELetRec(name, ty, rhs, body)
@@ -264,7 +264,7 @@ object CoreEffOptParser:
           fail("`letrec` needs a type annotation because CoreEffOpt.ELetRec stores the function type explicitly")
 
     private def parseFun(): Expr =
-      expect(Kind.KwFun, "`fun`")
+      expect(Kind.Fun, "`fun`")
       expect(Kind.LParen, "`(`")
       val arg = parseIdentifier("parameter name")
       val argTy = parseOptionalTypeAnnotation()
@@ -274,7 +274,7 @@ object CoreEffOptParser:
       ELam(arg, argTy, parseExpr(), retTy)
 
     private def parseSFun(): Expr =
-      expect(Kind.KwSFun, "`sfun`")
+      expect(Kind.SFun, "`sfun`")
       expect(Kind.LBracket, "`[`")
       val st = parseIdentifier("stage variable")
       expect(Kind.RBracket, "`]`")
@@ -285,18 +285,18 @@ object CoreEffOptParser:
       lam
 
     private def parseFix(): Expr =
-      expect(Kind.KwFix, "`fix`")
+      expect(Kind.Fix, "`fix`")
       val stage = parseBracketedStage()
       val name = parseIdentifier("fixpoint name")
       expect(Kind.Dot, "`.`")
       EFix(name, parseExpr(), stage)
 
     private def parseIf(): Expr =
-      expect(Kind.KwIf, "`if`")
+      expect(Kind.If, "`if`")
       val cond = parseExpr()
-      expect(Kind.KwThen, "`then`")
+      expect(Kind.Then, "`then`")
       val thn = parseExpr()
-      expect(Kind.KwElse, "`else`")
+      expect(Kind.Else, "`else`")
       val els = parseExpr()
       ECond(cond, thn, els, Sta)
 
@@ -357,23 +357,23 @@ object CoreEffOptParser:
       current.kind match
         case Kind.IntLit =>
           ENum(advance().lexeme.toInt)
-        case Kind.KwTrue =>
+        case Kind.True =>
           advance()
           EBool(true)
-        case Kind.KwFalse =>
+        case Kind.False =>
           advance()
           EBool(false)
         case Kind.Identifier =>
           EVar(advance().lexeme)
-        case Kind.KwLift =>
+        case Kind.Lift =>
           parseLift()
-        case Kind.KwRef =>
+        case Kind.Ref =>
           parseRef()
-        case Kind.KwDeref =>
+        case Kind.Deref =>
           parseDeref()
-        case Kind.KwAssign =>
+        case Kind.Assign =>
           parseAssign()
-        case Kind.KwIsApp =>
+        case Kind.IsApp =>
           parseIsApp()
         case Kind.LParen =>
           parseParenExpr()
@@ -381,7 +381,7 @@ object CoreEffOptParser:
           fail(s"Unexpected token `${current.lexeme}`")
 
     private def parseLift(): Expr =
-      expect(Kind.KwLift, "`lift`")
+      expect(Kind.Lift, "`lift`")
       val stage = parseBracketedStage()
       expect(Kind.LParen, "`(`")
       val expr = parseExpr()
@@ -389,7 +389,7 @@ object CoreEffOptParser:
       ELift(expr, stage)
 
     private def parseRef(): Expr =
-      expect(Kind.KwRef, "`ref`")
+      expect(Kind.Ref, "`ref`")
       val stage = parseOptionalStageValue(default = Sta)
       expect(Kind.LParen, "`(`")
       val expr = parseExpr()
@@ -397,7 +397,7 @@ object CoreEffOptParser:
       EAlloc(expr, stage)
 
     private def parseDeref(): Expr =
-      expect(Kind.KwDeref, "`deref`")
+      expect(Kind.Deref, "`deref`")
       val stage = parseOptionalStageValue(default = Sta)
       expect(Kind.LParen, "`(`")
       val expr = parseExpr()
@@ -405,7 +405,7 @@ object CoreEffOptParser:
       EDeref(expr, stage)
 
     private def parseAssign(): Expr =
-      expect(Kind.KwAssign, "`assign`")
+      expect(Kind.Assign, "`assign`")
       val stage = parseOptionalStageValue(default = Sta)
       expect(Kind.LParen, "`(`")
       val lhs = parseExpr()
@@ -415,7 +415,7 @@ object CoreEffOptParser:
       EAssign(lhs, rhs, stage)
 
     private def parseIsApp(): Expr =
-      expect(Kind.KwIsApp, "`isApp`")
+      expect(Kind.IsApp, "`isApp`")
       expect(Kind.LParen, "`(`")
       val expr = parseExpr()
       expect(Kind.RParen, "`)`")
@@ -439,7 +439,7 @@ object CoreEffOptParser:
 
     private def parseTypeExpr(): Type =
       current.kind match
-        case Kind.KwForall =>
+        case Kind.Forall =>
           advance()
           expect(Kind.LBracket, "`[`")
           val st = parseIdentifier("stage variable")
