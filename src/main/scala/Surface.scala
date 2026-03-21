@@ -1,8 +1,8 @@
-package spmp.surf
+package instar.surf
 
-import spmp.core
-import spmp.core.Type
-import spmp.core.Stage
+import instar.core
+import instar.core.Type
+import instar.core.Stage
 
 type StageVar = String
 type BinOp = String

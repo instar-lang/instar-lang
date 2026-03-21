@@ -1,4 +1,4 @@
-package spmp
+package instar
 
 object Counter:
   var x: Int = 0

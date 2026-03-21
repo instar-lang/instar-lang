@@ -1,6 +1,6 @@
-package spmp.core.absmach
+package instar.core.absmach
 
-import spmp.Counter.*
+import instar.Counter.*
 
 enum Stage:
   case Sta, Dyn

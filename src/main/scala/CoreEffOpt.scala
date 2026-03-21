@@ -1,4 +1,4 @@
-package spmp.eff.opt
+package instar.eff.opt
 
 // On top of the Core language, additionally supports
 // - mutable references
@@ -18,8 +18,8 @@ package spmp.eff.opt
 // - TODO: lambda lifting https://link.springer.com/chapter/10.1007/3-540-45788-7_8
 // - TODO: deforestation, loop fusion, and domain-specific optimizations
 
-import spmp.Counter.*
-import spmp.BiMap
+import instar.Counter.*
+import instar.BiMap
 import collection.mutable.HashSet
 
 enum Stage:

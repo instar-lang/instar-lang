@@ -1,4 +1,4 @@
-package spmp.core
+package instar.core
 
 // The core language:
 // - After inference and elaboration phases, assuming programs are now well-typed.
@@ -7,7 +7,7 @@ package spmp.core
 // - `Stage` annotates can be either a stage index/number or a stage variable.
 //   Stage variables are introduced by `ESLam` e.g. Λs. app(t1, t2, s).
 
-import spmp.Counter.*
+import instar.Counter.*
 
 enum Stage:
   case SNum(n: Int)

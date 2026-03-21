@@ -1,10 +1,10 @@
-package spmp.tyck
+package instar.tyck
 
-import spmp.core
-import spmp.core.Type
-import spmp.core.Stage
+import instar.core
+import instar.core.Type
+import instar.core.Stage
 
-import spmp.surf.*
+import instar.surf.*
 
 type Env = Map[String, Type]
 

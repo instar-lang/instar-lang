@@ -1,7 +1,7 @@
-package spmp.core.delimited
+package instar.core.delimited
 
-import spmp.Counter.*
-import spmp.Cont.*
+import instar.Counter.*
+import instar.Cont.*
 
 enum Stage:
   case Sta, Dyn

@@ -1,4 +1,4 @@
-package spmp.core.imp.cps1
+package instar.core.imp.cps1
 
 import Stage.*
 import Expr.*

@@ -1,4 +1,4 @@
-package spmp
+package instar
 
 trait Monad[F[_]]:
   def pure[A](a: A): F[A]

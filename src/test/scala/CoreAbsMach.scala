@@ -1,4 +1,4 @@
-package spmp.core.absmach
+package instar.core.absmach
 
 import Stage.*
 import Expr.*

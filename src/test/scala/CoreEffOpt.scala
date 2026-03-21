@@ -1,4 +1,4 @@
-package spmp.eff.opt
+package instar.eff.opt
 
 import Stage.*
 import Expr.*

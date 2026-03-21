@@ -1,4 +1,4 @@
-package spmp.core.imp
+package instar.core.imp
 
 import Stage.*
 import Expr.*

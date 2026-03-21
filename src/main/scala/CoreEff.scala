@@ -1,10 +1,10 @@
-package spmp.eff
+package instar.eff
 
 // On top of the Core language, additionally supports
 // - mutable references
 // - letrec for defining recursive functions
 
-import spmp.Counter.*
+import instar.Counter.*
 
 enum Stage:
   case SNum(n: Int)

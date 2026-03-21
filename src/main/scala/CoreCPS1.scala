@@ -1,10 +1,10 @@
-package spmp.core.imp.cps1
+package instar.core.imp.cps1
 
 // Note: this version uses global mutable states to manage scope and inserted let-bindings,
 // pretty much close to the POPL 18 paper's big-step evaluator.
 // This version is mainly for easier comparison with the 2CPS version (Core.scala).
 
-import spmp.Counter.*
+import instar.Counter.*
 
 enum Stage:
   case SNum(n: Int)
