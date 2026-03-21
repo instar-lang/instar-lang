@@ -18,6 +18,7 @@ package instar.interp
 // - TODO: lambda lifting https://link.springer.com/chapter/10.1007/3-540-45788-7_8
 // - TODO: deforestation, loop fusion, and domain-specific optimizations
 
+import instar.syntax.*
 import instar.Counter.*
 import instar.BiMap
 import collection.mutable.HashSet
@@ -45,7 +46,6 @@ import Expr.*
 import Type.*
 import Value.*
 
-type Loc = Int
 type Env = Map[String, Loc]
 type Store = Map[Loc, Value]
 type StEnv = Map[String, Stage]

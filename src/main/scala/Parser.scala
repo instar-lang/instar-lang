@@ -1,7 +1,8 @@
-package instar.eff.opt
+package instar.parser
 
 import scala.collection.mutable.ArrayBuffer
 
+import instar.syntax.*
 import Expr.*
 import Stage.*
 import Type.*

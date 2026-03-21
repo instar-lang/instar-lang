@@ -1,7 +1,8 @@
-package instar.eff.opt
+package instar.parser
 
 import munit.FunSuite
 
+import instar.syntax.*
 import Expr.*
 import Stage.*
 import Type.*

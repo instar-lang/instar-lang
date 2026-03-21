@@ -1,4 +1,4 @@
-package instar.eff
+package instar.experiment.eff
 
 import Stage.*
 import Expr.*

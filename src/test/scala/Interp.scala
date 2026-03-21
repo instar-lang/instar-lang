@@ -1,5 +1,6 @@
-package instar.eff.opt
+package instar.interp
 
+import instar.syntax.*
 import Stage.*
 import Expr.*
 import Type.*
