@@ -97,14 +97,14 @@ class CoreEffOptParserTest extends FunSuite:
   }
 
   test("parses stage-polymorphic letrec without explicit type when rhs exposes one") {
-    val input = "letrec id = sfun[s] => fun(x: Int @ s): Int @ s => x in id[0](3)"
+    val input = "letrec id = sfun[s] => fun(x: Int @ s): Int @ s => x in id[1](3)"
     val parsed = Parser.parse(input)
 
     val expected =
       ELetRec(
         "id",
         ESLam("s", ELam("x", Some(TAt(TInt, SVar("s"))), EVar("x"), Some(TAt(TInt, SVar("s"))))),
-        EApp(ESApp(EVar("id"), SNum(0)), ENum(3), Sta),
+        EApp(ESApp(EVar("id"), SNum(1)), ENum(3), Sta),
       )
 
     assertEquals(parsed, expected)

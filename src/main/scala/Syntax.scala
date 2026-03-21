@@ -46,8 +46,8 @@ enum Expr:
   case ECBNApp(e1: Expr, e2: Expr)
   // TODO: what's the general pattern matching form on Code?
 
-val Sta = Stage.SNum(0)
-val Dyn = Stage.SNum(1)
+val Sta = Stage.SNum(1)
+val Dyn = Stage.SNum(2)
 
 import Type.*
 import Expr.*

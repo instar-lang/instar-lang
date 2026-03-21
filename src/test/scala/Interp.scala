@@ -20,14 +20,14 @@ class Playground extends Base {
              EBinOp2("*", ENum2(21), ENum2(2)))
     testEval(e1, """
     VCode(
-      ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),
-      ELet(x1,EBinOp(*,ENum(21),ENum(2),SNum(0)),
-      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2)))))
+      ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(1)),
+      ELet(x1,EBinOp(*,ENum(21),ENum(2),SNum(1)),
+      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(1)),EVar(x2)))))
      """.stripMargin.replaceAll("\n", "").replaceAll(" ", ""))
 
     val e2 = EApp1(ELam("x", None, EBinOp("+", EVar("x"), EVar("x"), Dyn), None),
              EBinOp2("*", ENum2(21), ENum2(2)))
-    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),EVar(x1))))")
+    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(1)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(1)),EVar(x1))))")
   }
 
   test("cbn-lam") {
@@ -35,14 +35,14 @@ class Playground extends Base {
              EBinOp2("*", ENum2(21), ENum2(2)), Sta)
     testEval(e1, """
     VCode(
-      ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),
-      ELet(x1,EBinOp(*,ENum(21),ENum(2),SNum(0)),
-      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2)))))
+      ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(1)),
+      ELet(x1,EBinOp(*,ENum(21),ENum(2),SNum(1)),
+      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(1)),EVar(x2)))))
      """.stripMargin.replaceAll("\n", "").replaceAll(" ", ""))
 
     val e2 = EApp1(ELam("x", None, EBinOp("+", EVar("x"), EVar("x"), Dyn), None),
              EBinOp2("*", ENum2(21), ENum2(2)))
-    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(0)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),EVar(x1))))")
+    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),SNum(1)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(1)),EVar(x1))))")
   }
 
 }
@@ -58,10 +58,10 @@ class LamHoist extends Base {
         None))
     val exp = """
     VCode(
-      ELet(x5,EBinOp(+,ENum(1),ENum(2),SNum(0)),
+      ELet(x5,EBinOp(+,ENum(1),ENum(2),SNum(1)),
       ELet(x6,ELam(x0,None,
-        ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(0)),
-        ELet(x3,EBinOp(*,EVar(x1),EVar(x5),SNum(0)),
+        ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(1)),
+        ELet(x3,EBinOp(*,EVar(x1),EVar(x5),SNum(1)),
         EVar(x3))),None),
       EVar(x6))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -91,11 +91,11 @@ class LamHoist extends Base {
         None)))
     val exp = """
     VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
-      ELet(x6,EBinOp(+,ENum(1),ENum(2),SNum(0)),
+      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(1)),
+      ELet(x6,EBinOp(+,ENum(1),ENum(2),SNum(1)),
       ELet(x7,ELam(x1,None,
-        ELet(x2,EBinOp(+,EVar(x1),ENum(2),SNum(0)),
-        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),SNum(0)),
+        ELet(x2,EBinOp(+,EVar(x1),ENum(2),SNum(1)),
+        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),SNum(1)),
         EVar(x4))),None),
       EVar(x7)))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -125,11 +125,11 @@ class LamHoist extends Base {
         None)))
     val exp = """
     VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
-      ELet(x6,EBinOp(+,EVar(x0),ENum(2),SNum(0)),
+      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(1)),
+      ELet(x6,EBinOp(+,EVar(x0),ENum(2),SNum(1)),
       ELet(x7,ELam(x1,None,
-        ELet(x2,EBinOp(+,EVar(x1),ENum(2),SNum(0)),
-        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),SNum(0)),
+        ELet(x2,EBinOp(+,EVar(x1),ENum(2),SNum(1)),
+        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),SNum(1)),
         EVar(x4))),None),
       EVar(x7)))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -174,14 +174,14 @@ class LamHoist extends Base {
 
     val exp = """
     VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
-      ELet(x11,EBinOp(+,ENum(1),ENum(2),SNum(0)),
+      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(1)),
+      ELet(x11,EBinOp(+,ENum(1),ENum(2),SNum(1)),
       ELet(x12,ELam(x1,None,
         ELet(x8,ELam(x2,None,
-          ELet(x3,EBinOp(+,EVar(x2),EVar(x0),SNum(0)),
-          ELet(x5,EBinOp(*,EVar(x3),EVar(x11),SNum(0)),
+          ELet(x3,EBinOp(+,EVar(x2),EVar(x0),SNum(1)),
+          ELet(x5,EBinOp(*,EVar(x3),EVar(x11),SNum(1)),
           EVar(x5))),None),
-        ELet(x9,EApp(EVar(x8),EVar(x1),SNum(0)),
+        ELet(x9,EApp(EVar(x8),EVar(x1),SNum(1)),
         EVar(x9))),None),
       EVar(x12)))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -208,7 +208,7 @@ class CoreEffOpt extends Base {
             EBinOp2("*", EVar("x"), EVar("y"))
           )),
         None))
-    testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(0)),ELet(x2,EBinOp(*,EVar(x1),ENum(3),SNum(0)),EVar(x2))),None),EVar(x3)))", Set("rewriting"))
+    testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(1)),ELet(x2,EBinOp(*,EVar(x1),ENum(3),SNum(1)),EVar(x2))),None),EVar(x3)))", Set("rewriting"))
   }
 
   test("opt-dce") {
@@ -229,7 +229,7 @@ class CoreEffOpt extends Base {
 
     // generated code:
     // let x2 = app (lam x0. let x1 = x0 + 2 in x1) 3
-    testEval(e3, "VCode(ELet(x2,EApp(ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(0)),EVar(x1)),None),ENum(3),SNum(0)),EVar(x2)))", Set("no-let-lam"))
+    testEval(e3, "VCode(ELet(x2,EApp(ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(1)),EVar(x1)),None),ENum(3),SNum(1)),EVar(x2)))", Set("no-let-lam"))
   }
 
   test("opt-app-inline-1") {
@@ -248,7 +248,7 @@ class CoreEffOpt extends Base {
     // We have performed "renormalization" here to ensure ANF:
     // let x1 = 3 + 2
     // x1
-    testEval(e4, "VCode(ELet(x2,EBinOp(+,ENum(3),ENum(2),SNum(0)),EVar(x2)))", Set("fun-inline", "no-let-lam"))
+    testEval(e4, "VCode(ELet(x2,EBinOp(+,ENum(3),ENum(2),SNum(1)),EVar(x2)))", Set("fun-inline", "no-let-lam"))
   }
 
   test("opt-app-inline-2") {
@@ -260,12 +260,12 @@ class CoreEffOpt extends Base {
 
     // Not let-inserting lambdas is okay as well, since "fun-inline" can query the corresponding lambda by its let-bound name.
     // But in this case, we need DCE to remove the unused lambda after inlining.
-    testEval(e4, "VCode(ELet(x3,EBinOp(+,ENum(3),ENum(2),SNum(0)),EVar(x3)))", Set("fun-inline", "dce"))
+    testEval(e4, "VCode(ELet(x3,EBinOp(+,ENum(3),ENum(2),SNum(1)),EVar(x3)))", Set("fun-inline", "dce"))
   }
 
   test("opt-app-inline-3") {
     val e = ELift2(ELam("z", None, EApp2(EVar("z"), ENum2(3)), None))
-    testEval(e, "VCode(ELet(x2,ELam(x0,None,ELet(x1,EApp(EVar(x0),ENum(3),SNum(0)),EVar(x1)),None),EVar(x2)))", Set("fun-inline"))
+    testEval(e, "VCode(ELet(x2,ELam(x0,None,ELet(x1,EApp(EVar(x0),ENum(3),SNum(1)),EVar(x1)),None),EVar(x2)))", Set("fun-inline"))
   }
 
   test("opt-app-inline-4") {
@@ -281,15 +281,15 @@ class CoreEffOpt extends Base {
         EApp2(EVar("f"), EVar("z"))), None)))
     val exp = """
     VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(0)),
+      ELet(x0,EBinOp(+,ENum(42),ENum(42),SNum(1)),
       ELet(x10,ELam(x1,None,
         ELet(x6,ELam(x2,None,
-          ELet(x3,EBinOp(+,EVar(x2),EVar(x0),SNum(0)),
-          ELet(x4,EBinOp(+,ENum(1),ENum(2),SNum(0)),
-          ELet(x5,EBinOp(*,EVar(x3),EVar(x4),SNum(0)),EVar(x5)))),None),
-        ELet(x7,EBinOp(+,EVar(x1),EVar(x0),SNum(0)),
-        ELet(x8,EBinOp(+,ENum(1),ENum(2),SNum(0)),
-        ELet(x9,EBinOp(*,EVar(x7),EVar(x8),SNum(0)),
+          ELet(x3,EBinOp(+,EVar(x2),EVar(x0),SNum(1)),
+          ELet(x4,EBinOp(+,ENum(1),ENum(2),SNum(1)),
+          ELet(x5,EBinOp(*,EVar(x3),EVar(x4),SNum(1)),EVar(x5)))),None),
+        ELet(x7,EBinOp(+,EVar(x1),EVar(x0),SNum(1)),
+        ELet(x8,EBinOp(+,ENum(1),ENum(2),SNum(1)),
+        ELet(x9,EBinOp(*,EVar(x7),EVar(x8),SNum(1)),
         EVar(x9))))),None),
       EVar(x10))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -308,7 +308,7 @@ class CoreEffOpt extends Base {
     /*
     (lift(λz. (lift(λy.y+2)) z) 3 => code { let x6 = 3 + 2 in x6 }
     */
-    testEval(e, "VCode(ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(0)),EVar(x6)))" , Set("fun-inline", "dce"))
+    testEval(e, "VCode(ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(1)),EVar(x6)))" , Set("fun-inline", "dce"))
   }
 
   test("opt-app-inline-cse") {
@@ -326,12 +326,12 @@ class CoreEffOpt extends Base {
     val expNoOpt = """
     |VCode(ELet(x4,
     |  ELam(x0,None,
-    |    ELet(x1,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |    ELet(x2,EBinOp(+,EVar(x0),ENum(2),SNum(0)),
-    |    ELet(x3,EBinOp(+,EVar(x1),EVar(x2),SNum(0)),EVar(x3)))),None),
-    |ELet(x5,EApp(EVar(x4),ENum(3),SNum(0)),
-    |ELet(x6,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |ELet(x7,EBinOp(/,EVar(x5),EVar(x6),SNum(0)),
+    |    ELet(x1,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |    ELet(x2,EBinOp(+,EVar(x0),ENum(2),SNum(1)),
+    |    ELet(x3,EBinOp(+,EVar(x1),EVar(x2),SNum(1)),EVar(x3)))),None),
+    |ELet(x5,EApp(EVar(x4),ENum(3),SNum(1)),
+    |ELet(x6,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |ELet(x7,EBinOp(/,EVar(x5),EVar(x6),SNum(1)),
     |EVar(x7))))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
     testEval(e, expNoOpt)
@@ -339,42 +339,42 @@ class CoreEffOpt extends Base {
     val expInline = """
     |VCode(ELet(x4,
     |  ELam(x0,None,
-    |  ELet(x1,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |  ELet(x2,EBinOp(+,EVar(x0),ENum(2),SNum(0)),
-    |  ELet(x3,EBinOp(+,EVar(x1),EVar(x2),SNum(0)),EVar(x3)))),None),
-    |ELet(x5,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(0)),
-    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),SNum(0)),
-    |ELet(x8,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |ELet(x9,EBinOp(/,EVar(x7),EVar(x8),SNum(0)),EVar(x9))))))))
+    |  ELet(x1,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |  ELet(x2,EBinOp(+,EVar(x0),ENum(2),SNum(1)),
+    |  ELet(x3,EBinOp(+,EVar(x1),EVar(x2),SNum(1)),EVar(x3)))),None),
+    |ELet(x5,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(1)),
+    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),SNum(1)),
+    |ELet(x8,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |ELet(x9,EBinOp(/,EVar(x7),EVar(x8),SNum(1)),EVar(x9))))))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
     testEval(e, expInline, Set("fun-inline"))
 
     val expInlineCse = """
     |VCode(ELet(x4,
     |  ELam(x0,None,
-    |    ELet(x1,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |    ELet(x2,EBinOp(+,EVar(x0),ENum(2),SNum(0)),
-    |    ELet(x3,EBinOp(+,EVar(x1),EVar(x2),SNum(0)),EVar(x3)))),None),
-    |ELet(x5,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(0)),
-    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),SNum(0)),
-    |ELet(x8,EBinOp(/,EVar(x7),EVar(x5),SNum(0)),EVar(x8)))))))
+    |    ELet(x1,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |    ELet(x2,EBinOp(+,EVar(x0),ENum(2),SNum(1)),
+    |    ELet(x3,EBinOp(+,EVar(x1),EVar(x2),SNum(1)),EVar(x3)))),None),
+    |ELet(x5,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(1)),
+    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),SNum(1)),
+    |ELet(x8,EBinOp(/,EVar(x7),EVar(x5),SNum(1)),EVar(x8)))))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
     testEval(e, expInlineCse, Set("fun-inline", "cse"))
 
     val expInlineCseDce = """
     |VCode(
-    |ELet(x5,EBinOp(*,ENum(42),ENum(100),SNum(0)),
-    |ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(0)),
-    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),SNum(0)),
-    |ELet(x8,EBinOp(/,EVar(x7),EVar(x5),SNum(0)),EVar(x8))))))
+    |ELet(x5,EBinOp(*,ENum(42),ENum(100),SNum(1)),
+    |ELet(x6,EBinOp(+,ENum(3),ENum(2),SNum(1)),
+    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),SNum(1)),
+    |ELet(x8,EBinOp(/,EVar(x7),EVar(x5),SNum(1)),EVar(x8))))))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
     testEval(e, expInlineCseDce, Set("fun-inline", "cse", "dce"))
 
     val expInlineCseSimp = """
     VCode(ELet(x3,
-      ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(0)),ELet(x2,EBinOp(+,ENum(4200),EVar(x1),SNum(0)),EVar(x2))),None),
+      ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(2),SNum(1)),ELet(x2,EBinOp(+,ENum(4200),EVar(x1),SNum(1)),EVar(x2))),None),
     ENum(1)))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
     testEval(e, expInlineCseSimp, Set("fun-inline", "cse", "rewriting"))
@@ -391,7 +391,7 @@ class CoreEffOpt extends Base {
     // let x0 = 2 * 3
     // let x1 = x0 + x0
     // x1
-    testEval(e5, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(0)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),EVar(x1))))", Set("cse"))
+    testEval(e5, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(1)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(1)),EVar(x1))))", Set("cse"))
   }
 
   test("cse-2") {
@@ -405,7 +405,7 @@ class CoreEffOpt extends Base {
     // let x1 = x0 + x0
     // let x2 = x1 / x1
     // x2
-    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(0)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(0)),ELet(x2,EBinOp(/,EVar(x1),EVar(x1),SNum(0)),EVar(x2)))))", Set("cse"))
+    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(1)),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),SNum(1)),ELet(x2,EBinOp(/,EVar(x1),EVar(x1),SNum(1)),EVar(x2)))))", Set("cse"))
   }
 
   test("cse-lam-1") {
@@ -428,7 +428,7 @@ class CoreEffOpt extends Base {
     // let x5 = x3(3)
     // x5
 
-    testEval(e, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(*,ENum(2),ENum(3),SNum(0)),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2))),None),ELet(x4,EBinOp(*,ENum(2),ENum(3),SNum(0)),ELet(x5,EApp(EVar(x3),ENum(3),SNum(0)),EVar(x5)))))", Set("cse"))
+    testEval(e, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(*,ENum(2),ENum(3),SNum(1)),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(1)),EVar(x2))),None),ELet(x4,EBinOp(*,ENum(2),ENum(3),SNum(1)),ELet(x5,EApp(EVar(x3),ENum(3),SNum(1)),EVar(x5)))))", Set("cse"))
   }
 
   test("cse-lam-2") {
@@ -450,7 +450,7 @@ class CoreEffOpt extends Base {
     // let x4 = x3(3)
     // x4
 
-    testEval(e, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(0)),ELet(x3,ELam(x1,None,ELet(x2,EBinOp(+,EVar(x1),EVar(x0),SNum(0)),EVar(x2)),None),ELet(x4,EApp(EVar(x3),ENum(3),SNum(0)),EVar(x4)))))", Set("cse"))
+    testEval(e, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(1)),ELet(x3,ELam(x1,None,ELet(x2,EBinOp(+,EVar(x1),EVar(x0),SNum(1)),EVar(x2)),None),ELet(x4,EApp(EVar(x3),ENum(3),SNum(1)),EVar(x4)))))", Set("cse"))
   }
 
   test("cse-cond-1") {
@@ -466,7 +466,7 @@ class CoreEffOpt extends Base {
     //   else
     //      let x2 = 2 * 3 in x2
     // x3
-    testEval(e, "VCode(ELet(x0,EBinOp(==,ENum(1),ENum(2),SNum(0)),ELet(x3,ECond(EVar(x0),ELet(x1,EBinOp(*,ENum(2),ENum(3),SNum(0)),EVar(x1)),ELet(x2,EBinOp(*,ENum(2),ENum(3),SNum(0)),EVar(x2)),SNum(0)),EVar(x3))))", Set("cse"))
+    testEval(e, "VCode(ELet(x0,EBinOp(==,ENum(1),ENum(2),SNum(1)),ELet(x3,ECond(EVar(x0),ELet(x1,EBinOp(*,ENum(2),ENum(3),SNum(1)),EVar(x1)),ELet(x2,EBinOp(*,ENum(2),ENum(3),SNum(1)),EVar(x2)),SNum(1)),EVar(x3))))", Set("cse"))
   }
 
   test("cse-cond-2") {
@@ -481,7 +481,7 @@ class CoreEffOpt extends Base {
     // let x2 =
     //   if x1 then x0 else x0
     // x2
-    testEval(e, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(0)),ELet(x1,EBinOp(==,ENum(1),ENum(2),SNum(0)),ELet(x2,ECond(EVar(x1),EVar(x0),EVar(x0),SNum(0)),EVar(x2)))))", Set("cse"))
+    testEval(e, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),SNum(1)),ELet(x1,EBinOp(==,ENum(1),ENum(2),SNum(1)),ELet(x2,ECond(EVar(x1),EVar(x0),EVar(x0),SNum(1)),EVar(x2)))))", Set("cse"))
   }
 
   test("cond-simp-1") {
@@ -512,7 +512,7 @@ class CoreEffOpt extends Base {
     val exp1 = """
     |VCode(ELet(x5,
     |  ELam(x0,None,
-    |    ELet(x4,EBinOp(*,EVar(x0),ENum(4),SNum(0)),
+    |    ELet(x4,EBinOp(*,EVar(x0),ENum(4),SNum(1)),
     |    EVar(x4)),None),
     |  EVar(x5)))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -528,8 +528,8 @@ class CoreEffOpt extends Base {
     val exp2 = """
     |VCode(ELet(x6,
     |  ELam(x0,None,
-    |    ELet(x4,EBinOp(+,EVar(x0),ENum(4),SNum(0)),
-    |    ELet(x5,EBinOp(*,EVar(x0),EVar(x4),SNum(0)),
+    |    ELet(x4,EBinOp(+,EVar(x0),ENum(4),SNum(1)),
+    |    ELet(x5,EBinOp(*,EVar(x0),EVar(x4),SNum(1)),
     |    EVar(x5))),None),
     |  EVar(x6)))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -551,7 +551,7 @@ class CoreEffAnalysis extends Base {
     val e =
       ELet("app", EApp2(ELift2(ELam("x", None, EVar("x"), None)), ENum2(42)),
         ECond1(EIsApp(EVar("app")), EBool2(true), EBool2(false)))
-    testEval(e, "VCode(ELet(x1,ELam(x0,None,EVar(x0),None),ELet(x2,EApp(EVar(x1),ENum(42),SNum(0)),EBool(true))))")
+    testEval(e, "VCode(ELet(x1,ELam(x0,None,EVar(x0),None),ELet(x2,EApp(EVar(x1),ENum(42),SNum(1)),EBool(true))))")
   }
 
   test("is-app-2") {
@@ -563,7 +563,7 @@ class CoreEffAnalysis extends Base {
     // If we allow intensional code analysis and optimizations at the same time,
     // we may end up incoherent results.
     val e = ELift2(EIsApp(EApp2(ELift2(ELam("x", None, EVar("x"), None)), ENum2(42))))
-    testEval(e, "VCode(ELet(x1,ELam(x0,None,EVar(x0),None),ELet(x2,EApp(EVar(x1),ENum(42),SNum(0)),EBool(true))))", Set("dce"))
+    testEval(e, "VCode(ELet(x1,ELam(x0,None,EVar(x0),None),ELet(x2,EApp(EVar(x1),ENum(42),SNum(1)),EBool(true))))", Set("dce"))
     testEval(e, "VCode(EBool(false))", Set("fun-inline", "dce"))
   }
 }
@@ -693,21 +693,21 @@ class CoreEffTest extends Base {
   }
 
   test("lam-app") {
-    testEval(e1, "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(41),SNum(0)),EVar(x3))))")
+    testEval(e1, "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(1)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(41),SNum(1)),EVar(x3))))")
 
-    testEval(e2, "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),EVar(x2)))")
+    testEval(e2, "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(1)),EVar(x1)),None),EVar(x2)))")
   }
 
   test("cond") {
-    testEval(e4, "VCode(ELet(x8,ECond(EBool(true),ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(10),SNum(0)),EVar(x3))),ELet(x6,ELam(x4,None,ELet(x5,EBinOp(*,EVar(x4),ENum(42),SNum(0)),EVar(x5)),None),ELet(x7,EApp(EVar(x6),ENum(20),SNum(0)),EVar(x7))),SNum(0)),EVar(x8)))")
+    testEval(e4, "VCode(ELet(x8,ECond(EBool(true),ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(1)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(10),SNum(1)),EVar(x3))),ELet(x6,ELam(x4,None,ELet(x5,EBinOp(*,EVar(x4),ENum(42),SNum(1)),EVar(x5)),None),ELet(x7,EApp(EVar(x6),ENum(20),SNum(1)),EVar(x7))),SNum(1)),EVar(x8)))")
   }
 
   test("stage-poly") {
-    testEval(e5(0), "VNum(6)")
+    testEval(e5(1), "VNum(6)")
 
-    testEval(e5(1), "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(5),SNum(0)),EVar(x3))))")
+    testEval(e5(2), "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(1)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(5),SNum(1)),EVar(x3))))")
 
-    val (VCode(e), _) = eval(e5(1))
+    val (VCode(e), _) = eval(e5(2))
     testEval(e, "VNum(6)")
   }
 
@@ -717,22 +717,22 @@ class CoreEffTest extends Base {
   }
 
   test("rec-stage-poly") {
-    testEval(e8(EApp1(EApp1(ESApp(EVar("power"), SNum(0)), ENum(2)), ENum(3))), "VNum(8)")
+    testEval(e8(EApp1(EApp1(ESApp(EVar("power"), SNum(1)), ENum(2)), ENum(3))), "VNum(8)")
 
-    testEval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(1)), EVar("x")), ENum(3)), Some(TCode(TInt))))),
-      "VCode(ELet(x4,ELam(x0,Some(TInt),ELet(x1,EBinOp(*,EVar(x0),ENum(1),SNum(0)),ELet(x2,EBinOp(*,EVar(x0),EVar(x1),SNum(0)),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),SNum(0)),EVar(x3)))),Some(TInt)),EVar(x4)))")
+    testEval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(2)), EVar("x")), ENum(3)), Some(TCode(TInt))))),
+      "VCode(ELet(x4,ELam(x0,Some(TInt),ELet(x1,EBinOp(*,EVar(x0),ENum(1),SNum(1)),ELet(x2,EBinOp(*,EVar(x0),EVar(x1),SNum(1)),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),SNum(1)),EVar(x3)))),Some(TInt)),EVar(x4)))")
 
-    val (VCode(e), _) = eval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(1)), EVar("x")), ENum(3)), Some(TCode(TInt))))))
+    val (VCode(e), _) = eval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(2)), EVar("x")), ENum(3)), Some(TCode(TInt))))))
     testEval(EApp1(e, ENum(2)), "VNum(8)")
   }
 
   test("rec-imp-stage-poly") {
-    testEval(e9(EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(0)), ENum(2)), ENum(3)), EAlloc1(ENum(1)))), "VNum(8)")
+    testEval(e9(EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(1)), ENum(2)), ENum(3)), EAlloc1(ENum(1)))), "VNum(8)")
 
-    testEval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(1)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))),
-      "VCode(ELet(x12,ELam(x0,Some(TInt),ELet(x1,EAlloc(ENum(1),SNum(0)),ELet(x2,EDeref(EVar(x1),SNum(0)),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),SNum(0)),ELet(x4,EAssign(EVar(x1),EVar(x3),SNum(0)),ELet(x5,EDeref(EVar(x1),SNum(0)),ELet(x6,EBinOp(*,EVar(x0),EVar(x5),SNum(0)),ELet(x7,EAssign(EVar(x1),EVar(x6),SNum(0)),ELet(x8,EDeref(EVar(x1),SNum(0)),ELet(x9,EBinOp(*,EVar(x0),EVar(x8),SNum(0)),ELet(x10,EAssign(EVar(x1),EVar(x9),SNum(0)),ELet(x11,EDeref(EVar(x1),SNum(0)),EVar(x11)))))))))))),Some(TInt)),EVar(x12)))")
+    testEval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(2)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))),
+      "VCode(ELet(x12,ELam(x0,Some(TInt),ELet(x1,EAlloc(ENum(1),SNum(1)),ELet(x2,EDeref(EVar(x1),SNum(1)),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),SNum(1)),ELet(x4,EAssign(EVar(x1),EVar(x3),SNum(1)),ELet(x5,EDeref(EVar(x1),SNum(1)),ELet(x6,EBinOp(*,EVar(x0),EVar(x5),SNum(1)),ELet(x7,EAssign(EVar(x1),EVar(x6),SNum(1)),ELet(x8,EDeref(EVar(x1),SNum(1)),ELet(x9,EBinOp(*,EVar(x0),EVar(x8),SNum(1)),ELet(x10,EAssign(EVar(x1),EVar(x9),SNum(1)),ELet(x11,EDeref(EVar(x1),SNum(1)),EVar(x11)))))))))))),Some(TInt)),EVar(x12)))")
 
-    val (VCode(e), _) = eval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(1)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))))
+    val (VCode(e), _) = eval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(2)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))))
     testEval(EApp1(e, ENum(2)), "VNum(8)")
   }
 
@@ -750,7 +750,7 @@ class CoreEffTest extends Base {
 
   test("fix-second-stage") {
     testEval(e11,
-      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,Some(TInt),ELet(x2,EBinOp(<=,EVar(x1),ENum(1),SNum(0)),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),SNum(0)),ELet(x4,EApp(EVar(f0),EVar(x3),SNum(0)),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),SNum(0)),EVar(x5)))),SNum(0)),EVar(x6))),Some(TInt)),EVar(x7)),SNum(0)),ELet(x9,EApp(EVar(x8),ENum(5),SNum(0)),EVar(x9))))")
+      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,Some(TInt),ELet(x2,EBinOp(<=,EVar(x1),ENum(1),SNum(1)),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),SNum(1)),ELet(x4,EApp(EVar(f0),EVar(x3),SNum(1)),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),SNum(1)),EVar(x5)))),SNum(1)),EVar(x6))),Some(TInt)),EVar(x7)),SNum(1)),ELet(x9,EApp(EVar(x8),ENum(5),SNum(1)),EVar(x9))))")
 
     val (VCode(e), _) = eval(e11)
     testEval(e, "VNum(120)")
@@ -768,7 +768,7 @@ class CoreEffTest extends Base {
       ELam(x0,None,
         ELet(x3,
           ELam(x1,None,
-            ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(0)),EVar(x2)),None),
+            ELet(x2,EBinOp(+,EVar(x0),EVar(x1),SNum(1)),EVar(x2)),None),
         EVar(x3)),None),
       EVar(x4)))
     """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
@@ -785,12 +785,12 @@ class CoreEffTest extends Base {
 
     testEval(
       e1,
-      "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),EVar(x2)))"
+      "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(1)),EVar(x1)),None),EVar(x2)))"
     )
 
     testEval(
       ERun(e1),
-      "VClo(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None,Map(),Map())"
+      "VClo(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(1)),EVar(x1)),None,Map(),Map())"
     )
 
     val e2 = ELet(
@@ -801,7 +801,7 @@ class CoreEffTest extends Base {
 
     testEval(
       e2,
-      "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(1),SNum(0)),EVar(x3))))"
+      "VCode(ELet(x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(1)),EVar(x1)),None),ELet(x3,EApp(EVar(x2),ENum(1),SNum(1)),EVar(x3))))"
     )
 
     testEval(
