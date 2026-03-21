@@ -462,6 +462,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
         reflect(EFix(g, x, Sta), σ2, k, γ)
       })
+    // Experimental features below:
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
     case ECBNApp(e1, e2) =>
       eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>

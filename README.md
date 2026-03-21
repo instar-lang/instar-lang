@@ -1,6 +1,6 @@
-## Stage-Polymorphic Meta-programming Language
+## Instar: Stage-Polymorphic Meta-programming Language
 
-### Getting Started 
+### Getting Started
 
 Requirements: JDK 17+, Scala, sbt
 
@@ -21,10 +21,9 @@ Currently there are three variant interpreters for the elaborated core language:
 High priority
 
 - [x] need a name for the language
-- [ ] surface language syntax and parser
-  - [ ] antlr4 grammar
-  - [ ] ast definitions (Surface.scala)
-  - [ ] parsing to ast
+- [x] surface language syntax and parser
+  - [x] ast definitions (Syntax.scala)
+  - [x] parsing to ast
 - [ ] type checking/inference/elaboration
   - [ ] type checking for core language (without bidirectional typing)
     - [ ] scala implementation
@@ -50,7 +49,7 @@ Medium priority
   - [ ] lambda lifting or closure conversion
   - [ ] lambda dropping
   - [x] common sub-expression elimination (pure)
-  - [ ] code motion
+  - [x] code motion (lambda hoisting)
   - [x] function inlining
   - [x] simplification of pure expressions
   - [x] dead code elimination (pure)
@@ -63,4 +62,3 @@ Low priority
   - [ ] Rust backend?
 - [ ] type system tracking aliases and separation
 - [ ] type polymorphism a la F
-

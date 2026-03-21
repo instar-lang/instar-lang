@@ -41,10 +41,9 @@ enum Expr:
   case EFix(f: String, e: Expr, st: Stage)
   // Experimental:
   case ELoc(l: Loc)
-  // extend the language to allow programmers to inspect code values
+  // Extend the language to allow programmers to inspect code values
   case EIsApp(e: Expr)
   case ECBNApp(e1: Expr, e2: Expr)
-  // TODO: what's the general pattern matching form on Code?
 
 val Sta = Stage.SNum(1)
 val Dyn = Stage.SNum(2)
