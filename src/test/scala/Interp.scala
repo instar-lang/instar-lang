@@ -601,41 +601,44 @@ class CoreEffTest extends Base {
 
   val e6 = ELetRec(
     "fact",
-    TFun(TInt, TInt),
-    ELam("n", Some(TInt), ECond1(
-      EBinOp1("<=", EVar("n"), ENum(1)),
-      ENum(1),
-      EBinOp1("*",
-        EVar("n"),
-        EApp1(EVar("fact"), EBinOp1("-", EVar("n"), ENum(1)))),
-    ), Some(TInt)),
+    EAscribe(
+      ELam("n", Some(TInt), ECond1(
+        EBinOp1("<=", EVar("n"), ENum(1)),
+        ENum(1),
+        EBinOp1("*",
+          EVar("n"),
+          EApp1(EVar("fact"), EBinOp1("-", EVar("n"), ENum(1)))),
+      ), Some(TInt)),
+      TFun(TInt, TInt)),
     EApp1(EVar("fact"), ENum(5))
   )
 
   val e7 = ELetRec(
     "power",
-    TFun(TInt, TFun(TInt, TInt)),
-    ELam("x", Some(TInt), ELam("n", Some(TInt), ECond1(
-      EBinOp1("==", EVar("n"), ENum(0)),
-      ENum(1),
-      EBinOp1("*",
-        EVar("x"),
-        EApp1(EApp1(EVar("power"), EVar("x")), EBinOp1("-", EVar("n"), ENum(1)))),
-    ), Some(TInt)), Some(TInt)),
+    EAscribe(
+      ELam("x", Some(TInt), ELam("n", Some(TInt), ECond1(
+        EBinOp1("==", EVar("n"), ENum(0)),
+        ENum(1),
+        EBinOp1("*",
+          EVar("x"),
+          EApp1(EApp1(EVar("power"), EVar("x")), EBinOp1("-", EVar("n"), ENum(1)))),
+      ), Some(TInt)), Some(TInt)),
+      TFun(TInt, TFun(TInt, TInt))),
     EApp1(EApp1(EVar("power"), ENum(2)), ENum(10))
   )
 
   def e8(body: Expr) = ELetRec(
     "power",
-    TForallSt("s", TFun(TAt(TInt, SVar("s")), TFun(TInt, TAt(TInt, SVar("s"))))),
-    ESLam("s",
-      ELam("x", Some(TAt(TInt, SVar("s"))), ELam("n", Some(TInt), ECond1(
-        EBinOp1("==", EVar("n"), ENum(0)),
-        ELift(ENum(1), SVar("s")),
-        EBinOp("*",
-          EVar("x"),
-          EApp1(EApp1(ESApp(EVar("power"), SVar("s")), EVar("x")), EBinOp1("-", EVar("n"), ENum(1))), SVar("s")),
-      ), Some(TAt(TInt, SVar("s")))), Some(TInt))),
+    EAscribe(
+      ESLam("s",
+        ELam("x", Some(TAt(TInt, SVar("s"))), ELam("n", Some(TInt), ECond1(
+          EBinOp1("==", EVar("n"), ENum(0)),
+          ELift(ENum(1), SVar("s")),
+          EBinOp("*",
+            EVar("x"),
+            EApp1(EApp1(ESApp(EVar("power"), SVar("s")), EVar("x")), EBinOp1("-", EVar("n"), ENum(1))), SVar("s")),
+        ), Some(TAt(TInt, SVar("s")))), Some(TInt))),
+      TForallSt("s", TFun(TAt(TInt, SVar("s")), TFun(TInt, TAt(TInt, SVar("s")))))),
     body
   )
 
@@ -650,17 +653,18 @@ class CoreEffTest extends Base {
 
   def e9(body: Expr) = ELetRec(
     "impPower",
-    TForallSt("s", TFun(TAt(TInt, SVar("s")), TFun(TInt, TFun(TRef(TInt), TAt(TInt, SVar("s")))))),
-    ESLam("s",
-      ELam("b", Some(TAt(TInt, SVar("s"))),
-        ELam("n", Some(TInt),
-          ELam("result", Some(TRef(TInt)),
-            ECond1(
-              EBinOp1("==", EVar("n"), ENum(0)),
-              EDeref(EVar("result"), SVar("s")),
-              ELet("_", EAssign(EVar("result"), EBinOp("*", EVar("b"), EDeref(EVar("result"), SVar("s")), SVar("s")), SVar("s")),
-                EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SVar("s")), EVar("b")), EBinOp1("-", EVar("n"), ENum(1))), EVar("result")))),
-          Some(TAt(TInt, SVar("s")))), Some(TFun(TAt(TRef(TInt), SVar("s")), TAt(TInt, SVar("s"))))), Some(TAt(TInt, SVar("s"))))),
+    EAscribe(
+      ESLam("s",
+        ELam("b", Some(TAt(TInt, SVar("s"))),
+          ELam("n", Some(TInt),
+            ELam("result", Some(TRef(TInt)),
+              ECond1(
+                EBinOp1("==", EVar("n"), ENum(0)),
+                EDeref(EVar("result"), SVar("s")),
+                ELet("_", EAssign(EVar("result"), EBinOp("*", EVar("b"), EDeref(EVar("result"), SVar("s")), SVar("s")), SVar("s")),
+                  EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SVar("s")), EVar("b")), EBinOp1("-", EVar("n"), ENum(1))), EVar("result")))),
+            Some(TAt(TInt, SVar("s")))), Some(TFun(TAt(TRef(TInt), SVar("s")), TAt(TInt, SVar("s"))))), Some(TAt(TInt, SVar("s"))))),
+      TForallSt("s", TFun(TAt(TInt, SVar("s")), TFun(TInt, TFun(TRef(TInt), TAt(TInt, SVar("s"))))))),
     body
   )
 

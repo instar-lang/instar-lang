@@ -82,7 +82,7 @@ extension (e: Expr)
       case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
       case ERun(t) => t.isPure
       case ELet(_, rhs, body) => rhs.isPure && body.isPure
-      case ELetRec(_, _, rhs, body) => rhs.isPure && body.isPure
+      case ELetRec(_, rhs, body) => rhs.isPure && body.isPure
       case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
       case EAscribe(e, _) => e.isPure
       case EFix(_, e, _) => e.isPure
@@ -100,7 +100,7 @@ extension (e: Expr)
       case ELift(t, _) => t.freeVar
       case ERun(t) => t.freeVar
       case ELet(x, rhs, body) => rhs.freeVar ++ (body.freeVar - x)
-      case ELetRec(f, _, rhs, body) => (rhs.freeVar - f) ++ (body.freeVar - f)
+      case ELetRec(f, rhs, body) => (rhs.freeVar - f) ++ (body.freeVar - f)
       case ECond(e1, e2, e3, _) => e1.freeVar ++ e2.freeVar ++ e3.freeVar
       case EBinOp(_, e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EUnaryOp(_, e, _) => e.freeVar
@@ -125,8 +125,8 @@ extension (e: Expr)
       case ERun(t) => ERun(t.subst(from, to))
       case ELet(x, rhs, body) =>
         ELet(x, rhs.subst(from, to), body.subst(from, to))
-      case ELetRec(f, fnty, rhs, body) =>
-        ELetRec(f, fnty, rhs.subst(from, to), body.subst(from, to))
+      case ELetRec(f, rhs, body) =>
+        ELetRec(f, rhs.subst(from, to), body.subst(from, to))
       case ECond(e1, e2, e3, s) =>
         ECond(e1.subst(from, to), e2.subst(from, to), e3.subst(from, to), s)
       case EBinOp(op, e1, e2, s) => EBinOp(op, e1.subst(from, to), e2.subst(from, to), s)
@@ -367,7 +367,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       eval(rhs, ρ, ς, σ, (v, σ1, γ1) =>
         val l = σ1.size
         eval(e, ρ + (x -> l), ς, σ1 + (l -> v), k, γ1), γ)
-    case ELetRec(f, _, rhs, e) =>
+    case ELetRec(f, rhs, e) =>
       eval(rhs, ρ, ς, σ, {
         case (VClo(x, argTy, body, retTy, ρf, ςf), σ1, γ1) =>
           val l = σ1.size

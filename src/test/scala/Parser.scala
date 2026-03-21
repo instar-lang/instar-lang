@@ -11,7 +11,7 @@ class CoreEffOptParserTest extends FunSuite:
 
   test("lexes and parses let/fun/application") {
     val input = "let inc = fun(x: Int): Int => x + 1 in inc(41)"
-    val parsed = CoreEffOptParser.parse(input)
+    val parsed = Parser.parse(input)
 
     val expected =
       ELet(
@@ -30,7 +30,7 @@ class CoreEffOptParserTest extends FunSuite:
 
   test("parses stage abstractions and stage application") {
     val input = "sfun[s]: forall[s]. Int @ s -> Int => lift[s](1)"
-    val parsed = CoreEffOptParser.parse(input)
+    val parsed = Parser.parse(input)
 
     val lam = parsed.asInstanceOf[ESLam]
     assertEquals(lam.x, "s")
@@ -40,7 +40,7 @@ class CoreEffOptParserTest extends FunSuite:
 
   test("parses let annotation as rhs ascription") {
     val input = "let x: Int = 1 in (x : Int)"
-    val parsed = CoreEffOptParser.parse(input)
+    val parsed = Parser.parse(input)
 
     val expected =
       ELet(
@@ -54,7 +54,7 @@ class CoreEffOptParserTest extends FunSuite:
 
   test("parses refs with explicit stages") {
     val input = "let cell = ref@1(0) in assign@s(cell, deref@1(cell))"
-    val parsed = CoreEffOptParser.parse(input)
+    val parsed = Parser.parse(input)
 
     val expected =
       ELet(
@@ -68,12 +68,27 @@ class CoreEffOptParserTest extends FunSuite:
 
   test("parses letrec with explicit function type") {
     val input = "letrec id: Int -> Int = fun(x: Int): Int => x in id(3)"
-    val parsed = CoreEffOptParser.parse(input)
+    val parsed = Parser.parse(input)
 
     val expected =
       ELetRec(
         "id",
-        TFun(TInt, TInt),
+        EAscribe(
+          ELam("x", Some(TInt), EVar("x"), Some(TInt)),
+          TFun(TInt, TInt)),
+        EApp(EVar("id"), ENum(3), Sta),
+      )
+
+    assertEquals(parsed, expected)
+  }
+
+  test("parses letrec without explicit type when rhs exposes one") {
+    val input = "letrec id = fun(x: Int): Int => x in id(3)"
+    val parsed = Parser.parse(input)
+
+    val expected =
+      ELetRec(
+        "id",
         ELam("x", Some(TInt), EVar("x"), Some(TInt)),
         EApp(EVar("id"), ENum(3), Sta),
       )
@@ -81,13 +96,40 @@ class CoreEffOptParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
-  test("rejects unannotated letrec because the target AST requires a type") {
-    intercept[CoreEffOptParser.ParserException] {
-      CoreEffOptParser.parse("letrec id = fun(x: Int): Int => x in id(3)")
-    }
+  test("parses stage-polymorphic letrec without explicit type when rhs exposes one") {
+    val input = "letrec id = sfun[s] => fun(x: Int @ s): Int @ s => x in id[0](3)"
+    val parsed = Parser.parse(input)
+
+    val expected =
+      ELetRec(
+        "id",
+        ESLam("s", ELam("x", Some(TAt(TInt, SVar("s"))), EVar("x"), Some(TAt(TInt, SVar("s"))))),
+        EApp(ESApp(EVar("id"), SNum(0)), ENum(3), Sta),
+      )
+
+    assertEquals(parsed, expected)
+  }
+
+  test("parses letrec without explicit type even when rhs omits return type") {
+    val parsed = Parser.parse("letrec id = fun(x: Int) => x in id(3)")
+
+    val expected =
+      ELetRec(
+        "id",
+        ELam("x", Some(TInt), EVar("x"), None),
+        EApp(EVar("id"), ENum(3), Sta),
+      )
+
+    assertEquals(parsed, expected)
   }
 
   test("parses standalone types with constructors, staging, and arrows") {
-    val ty = CoreEffOptParser.parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
+    val ty = Parser.parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
     assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TCode(TInt))))
+  }
+
+  test("rejects fun without a parameter type") {
+    intercept[Parser.ParserException] {
+      Parser.parse("fun(x) => x")
+    }
   }

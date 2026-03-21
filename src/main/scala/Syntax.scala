@@ -29,7 +29,7 @@ enum Expr:
   case ELift(t: Expr, to: Stage)
   case ERun(t: Expr)
   case ELet(x: String, rhs: Expr, body: Expr)
-  case ELetRec(f: String, fnty: Type, rhs: Expr, body: Expr) // letrec f: ty = λx.e in e'
+  case ELetRec(f: String, rhs: Expr, body: Expr)
   case ECond(e1: Expr, e2: Expr, e3: Expr, st: Stage)
   case EBinOp(op: String, e1: Expr, e2: Expr, st: Stage)
   case EUnaryOp(op: String, e: Expr, st: Stage)

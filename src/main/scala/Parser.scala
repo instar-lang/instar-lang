@@ -7,7 +7,7 @@ import Expr.*
 import Stage.*
 import Type.*
 
-object CoreEffOptLexer:
+object Lexer:
   enum Kind:
     case Identifier
     case IntLit
@@ -185,14 +185,14 @@ object CoreEffOptLexer:
     out += Token(Kind.EOF, "", line, col)
     out.toVector
 
-object CoreEffOptParser:
-  import CoreEffOptLexer.Kind
-  import CoreEffOptLexer.Token
+object Parser:
+  import Lexer.Kind
+  import Lexer.Token
 
   final class ParserException(message: String) extends RuntimeException(message)
 
   def lex(input: String): Vector[Token] =
-    CoreEffOptLexer.lex(input)
+    Lexer.lex(input)
 
   def parse(input: String): Expr =
     Parser(lex(input)).parseProgram()
@@ -259,19 +259,19 @@ object CoreEffOptParser:
       expect(Kind.In, "`in`")
       val body = parseExpr()
       ann match
-        case Some(ty) => ELetRec(name, ty, rhs, body)
-        case None =>
-          fail("`letrec` needs a type annotation because CoreEffOpt.ELetRec stores the function type explicitly")
+        case Some(ty) => ELetRec(name, EAscribe(rhs, ty), body)
+        case None => ELetRec(name, rhs, body)
 
     private def parseFun(): Expr =
       expect(Kind.Fun, "`fun`")
       expect(Kind.LParen, "`(`")
       val arg = parseIdentifier("parameter name")
-      val argTy = parseOptionalTypeAnnotation()
+      expect(Kind.Colon, "`:` after function parameter")
+      val argTy = parseTypeExpr()
       expect(Kind.RParen, "`)`")
       val retTy = parseOptionalTypeAnnotation()
       expect(Kind.FatArrow, "`=>`")
-      ELam(arg, argTy, parseExpr(), retTy)
+      ELam(arg, Some(argTy), parseExpr(), retTy)
 
     private def parseSFun(): Expr =
       expect(Kind.SFun, "`sfun`")
