@@ -1,4 +1,4 @@
-package instar.core.imp
+package instar.experiment.imp.cps1
 
 // Note: this version uses global mutable states to manage scope and inserted let-bindings,
 // pretty much close to the POPL 18 paper's big-step evaluator.
@@ -56,7 +56,8 @@ enum Value:
   case VUnit
   case VNum(i: Int)
   case VBool(b: Boolean)
-  case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env)
+  case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
+  case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(e: Expr) // XXX: could extend to open code value with environment?
 
 extension (t: Option[Type])
@@ -72,35 +73,29 @@ import Type.*
 import Value.*
 
 type Env = Map[String, Value]
-//type StEnv = Map[String, Stage]
+type StEnv = Map[String, Stage]
 type Ans = Value
 
-var stBlock: List[(String, Expr)] = List()
+def reify(e: Expr, ρ: Env, ς: StEnv): Expr =
+  // evaluate term under the identity continuation, and the term should return a code value
+  val VCode(t) = eval(e, ρ, ς, v => v)
+  t
 
-def reify(f: => Value): Expr =
-  val prev = stBlock
-  stBlock = List()
-  val VCode(last) = f
-  val e = stBlock.foldRight(last):
-    case ((x, s), acc) => ELet(x, s, acc)
-  stBlock = prev
-  e
+def reflect(e: Expr, k: Value => Value): Value =
+  val z = fresh()
+  // How should we form a let-binding with let z = lam in ... here, as we don't know the body of let!
+  val VCode(t) = k(VCode(EVar(z)))
+  VCode(ELet(z, e, t))
 
-def reflect(s: Expr): Value =
-  val x = fresh()
-  stBlock = stBlock :+ (x, s)
-  VCode(EVar(x))
-
-def lift(v: Value): Value =
+def lift(v: Value, k: Value => Value): Value =
   v match
-    case VUnit => reflect(EUnit)
-    case VNum(i) => reflect(ENum(i))
-    case VBool(b) => reflect(EBool(b))
-    case VClo(x, argTy, body, retTy, ρf) =>
+    case VUnit => reflect(EUnit, k)
+    case VNum(i) => reflect(ENum(i), k)
+    case VBool(b) => reflect(EBool(b), k)
+    case VClo(x, argTy, body, retTy, ρ, ςf) =>
       val y = fresh()
-      val t = reify:
-        eval(body, ρf + (x -> VCode(EVar(y))))
-      reflect(ELam(y, argTy.erase, t, retTy.erase))
+      val t = reify(body, ρ + (x -> VCode(EVar(y))), ςf)
+      reflect(ELam(y, argTy.erase, t, retTy.erase), k)
 
 def evalPrim(op: String, v1: Value, v2: Value): Value =
   (op, v1, v2) match
@@ -119,66 +114,77 @@ def evalPrimUnary(op: String, v: Value): Value =
   (op, v) match
     case ("-", VNum(i)) => VNum(-i)
 
-def eval(e: Expr, ρ: Env): Value =
+def evalStVar(s: Stage, ς: StEnv): Stage =
+  s match
+    case SVar(st) => ς(st)
+    case _ => s
+
+def eval(e: Expr, ρ: Env, ς: StEnv, k: Value => Value): Value =
   e match
     case EUnit =>
-      VUnit
+      k(VUnit)
     case ENum(i) =>
-      VNum(i)
+      k(VNum(i))
     case EBool(b) =>
-      VBool(b)
+      k(VBool(b))
     case EVar(x) =>
-      ρ(x)
+      k(ρ(x))
+    case ESLam(x, body) =>
+      k(VSClo(x, body, ρ, ς))
+    case ESApp(e, st) =>
+      eval(e, ρ, ς, { case VSClo(x, body, ρf, ςf) =>
+        eval(body, ρf, ςf + (x -> evalStVar(st, ς)), k)
+      })
     case ELam(x, argTy, e, retTy) =>
-      VClo(x, argTy, e, retTy, ρ)
-    case EApp(e1, e2, Sta) =>
-      val VClo(x, _, body, _, ρf) = eval(e1, ρ)
-      val v2 = eval(e2, ρ)
-      eval(body, ρf + (x -> v2))
-    case EApp(e1, e2, Dyn) =>
-      val VCode(x1) = eval(e1, ρ)
-      val VCode(x2) = eval(e2, ρ)
-      reflect(EApp1(x1, x2))
-    case ELift(e, Sta) =>
-      eval(e, ρ)
-    case ELift(e, Dyn) =>
-      lift(eval(e, ρ))
+      k(VClo(x, argTy, e, retTy, ρ, ς))
+    case EApp(e1, e2, s) if evalStVar(s, ς) == Sta =>
+      eval(e1, ρ, ς, { case VClo(x, _, body, _, ρf, ςf) =>
+        eval(e2, ρ, ς, v2 =>
+          eval(body, ρf + (x -> v2), ςf, k))
+      })
+    case EApp(e1, e2, s) if evalStVar(s, ς) == Dyn =>
+      eval(e1, ρ, ς, { case VCode(x1) =>
+        eval(e2, ρ, ς, { case VCode(x2) =>
+          reflect(EApp1(x1, x2), k)
+        })
+      })
+    case ELift(e, to) if evalStVar(to, ς) == Sta =>
+      eval(e, ρ, ς, k)
+    case ELift(e, to) if evalStVar(to, ς) == Dyn =>
+      eval(e, ρ, ς, v => lift(v, k))
     case ERun(e) =>
-      val t = reify { eval(e, ρ) }
-      eval(t, Map())
+      val t = reify(e, ρ, ς)
+      eval(t, Map(), Map(), k)
     case ELet(x, rhs, e) =>
-      val v = eval(rhs, ρ)
-      eval(e, ρ + (x -> v))
-    case ECond(e1, e2, e3, Sta) =>
-      val VBool(b) = eval(e1, ρ)
-      if b then eval(e2, ρ)
-      else eval(e3, ρ)
-    case ECond(e1, e2, e3, Dyn) =>
-      val VCode(x1) = eval(e1, ρ)
-      val x2 = reify { eval(e2, ρ) }
-      val x3 = reify { eval(e3, ρ) }
-      reflect(ECond1(x1, x2, x3))
-    case EBinOp(op, e1, e2, Sta) =>
-      val v1 = eval(e1, ρ)
-      val v2 = eval(e2, ρ)
-      evalPrim(op, v1, v2)
-    case EBinOp(op, e1, e2, Dyn) =>
-      val VCode(x1) = eval(e1, ρ)
-      val VCode(x2) = eval(e2, ρ)
-      reflect(EBinOp1(op, x1, x2))
-    case EUnaryOp(op, e, Sta) =>
-      val v = eval(e, ρ)
-      evalPrimUnary(op, v)
-    case EUnaryOp(op, e, Dyn) =>
-      val VCode(x) = eval(e, ρ)
-      reflect(EUnaryOp1(op, x))
-    case EAscribe(e, _) => eval(e, ρ)
+      eval(rhs, ρ, ς, v =>
+        eval(e, ρ + (x -> v), ς, k))
+    case ECond(e1, e2, e3, s) if evalStVar(s, ς) == Sta =>
+      eval(e1, ρ, ς, { case VBool(b) =>
+        if b then eval(e2, ρ, ς, k)
+        else eval(e3, ρ, ς, k) })
+    case ECond(e1, e2, e3, s) if evalStVar(s, ς) == Dyn =>
+      eval(e1, ρ, ς, { case VCode(x1) =>
+        val x2 = reify(e2, ρ, ς)
+        val x3 = reify(e3, ρ, ς)
+        reflect(ECond1(x1, x2, x3), k)
+      })
+    case EBinOp(op, e1, e2, s) if evalStVar(s, ς) == Sta =>
+      eval(e1, ρ, ς, v1 =>
+        eval(e2, ρ, ς, v2 =>
+          evalPrim(op, v1, v2)))
+    case EBinOp(op, e1, e2, s) if evalStVar(s, ς) == Dyn =>
+      eval(e1, ρ, ς, { case VCode(x1) =>
+        eval(e2, ρ, ς, { case VCode(x2) =>
+          reflect(EBinOp1(op, x1, x2), k)
+        })
+      })
+    case EUnaryOp(op, e, s) if evalStVar(s, ς) == Sta =>
+      eval(e, ρ, ς, v => k(evalPrimUnary(op, v)))
+    case EUnaryOp(op, e, s) if evalStVar(s, ς) == Dyn =>
+      eval(e, ρ, ς, { case VCode(x) =>
+        reflect(EUnaryOp1(op, x), k)
+      })
 
 def eval(e: Expr): Ans =
   clear
-  stBlock = List()
-  val v = eval(e, Map())
-  if stBlock.isEmpty then v
-  else
-    val VCode(r) = v
-    VCode(stBlock.foldRight(r) { case ((x, s), acc) => ELet(x, s, acc) })
+  eval(e, Map(), Map(), x => x)

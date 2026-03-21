@@ -1,8 +1,8 @@
 package instar.surf
 
-import instar.core
-import instar.core.Type
-import instar.core.Stage
+import instar.eff.opt
+import instar.eff.opt.Type
+import instar.eff.opt.Stage
 
 type StageVar = String
 type BinOp = String

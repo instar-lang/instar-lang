@@ -1,4 +1,4 @@
-package instar.core.delimited
+package instar.experiment.delimited
 
 import Stage.*
 import Expr.*

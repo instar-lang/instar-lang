@@ -1,4 +1,4 @@
-package instar.core
+package instar.experiment.noeff
 
 // The core language:
 // - After inference and elaboration phases, assuming programs are now well-typed.

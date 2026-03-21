@@ -1,14 +1,14 @@
 package instar.tyck
 
-import instar.core
-import instar.core.Type
-import instar.core.Stage
+import instar.eff.opt
+import instar.eff.opt.Type
+import instar.eff.opt.Stage
 
 import instar.surf.*
 
 type Env = Map[String, Type]
 
-def infer(env: Env, expr: Expr): core.Expr =
+def infer(env: Env, expr: Expr): Expr =
   expr match
     case Expr.EUnit                 =>
     case Expr.ENatV(n)              =>
@@ -30,7 +30,7 @@ def infer(env: Env, expr: Expr): core.Expr =
     case Expr.EAscribe(e, ty)       =>
   ???
 
-def check(env: Env, term: Expr, expected: Type): core.Expr =
+def check(env: Env, term: Expr, expected: Type): Expr =
   term match
     case Expr.EUnit                 =>
     case Expr.ENatV(n)              =>

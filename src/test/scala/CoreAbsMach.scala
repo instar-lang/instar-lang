@@ -1,4 +1,4 @@
-package instar.core.absmach
+package instar.experiment.absmach
 
 import Stage.*
 import Expr.*

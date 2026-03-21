@@ -1,0 +1,533 @@
+package instar.eff.opt
+
+import scala.collection.mutable.ArrayBuffer
+
+import Expr.*
+import Stage.*
+import Type.*
+
+object CoreEffOptLexer:
+  enum Kind:
+    case Identifier
+    case IntLit
+    case LParen
+    case RParen
+    case LBracket
+    case RBracket
+    case Colon
+    case At
+    case Comma
+    case Dot
+    case Equal
+    case Arrow
+    case FatArrow
+    case Plus
+    case Minus
+    case Star
+    case Slash
+    case LessEq
+    case GreaterEq
+    case Less
+    case Greater
+    case EqEq
+    case BangEq
+    case KwTrue
+    case KwFalse
+    case KwFun
+    case KwSFun
+    case KwLift
+    case KwLet
+    case KwIn
+    case KwLetRec
+    case KwFix
+    case KwIf
+    case KwThen
+    case KwElse
+    case KwRef
+    case KwDeref
+    case KwAssign
+    case KwIsApp
+    case KwForall
+    case EOF
+
+  case class Token(kind: Kind, lexeme: String, line: Int, col: Int)
+
+  final class LexerException(message: String) extends RuntimeException(message)
+
+  private val keywords: Map[String, Kind] = Map(
+    "true" -> Kind.KwTrue,
+    "false" -> Kind.KwFalse,
+    "fun" -> Kind.KwFun,
+    "sfun" -> Kind.KwSFun,
+    "lift" -> Kind.KwLift,
+    "let" -> Kind.KwLet,
+    "in" -> Kind.KwIn,
+    "letrec" -> Kind.KwLetRec,
+    "fix" -> Kind.KwFix,
+    "if" -> Kind.KwIf,
+    "then" -> Kind.KwThen,
+    "else" -> Kind.KwElse,
+    "ref" -> Kind.KwRef,
+    "deref" -> Kind.KwDeref,
+    "assign" -> Kind.KwAssign,
+    "isApp" -> Kind.KwIsApp,
+    "forall" -> Kind.KwForall,
+  )
+
+  def lex(input: String): Vector[Token] =
+    val out = ArrayBuffer.empty[Token]
+    var i = 0
+    var line = 1
+    var col = 1
+
+    def current(offset: Int = 0): Char =
+      input.charAt(i + offset)
+
+    def atEnd(offset: Int = 0): Boolean =
+      i + offset >= input.length
+
+    def advance(): Char =
+      val ch = input.charAt(i)
+      i += 1
+      if ch == '\n' then
+        line += 1
+        col = 1
+      else
+        col += 1
+      ch
+
+    def add(kind: Kind, lexeme: String, startLine: Int, startCol: Int): Unit =
+      out += Token(kind, lexeme, startLine, startCol)
+
+    def skipWhitespaceAndComments(): Unit =
+      var keepGoing = true
+      while keepGoing && !atEnd() do
+        current() match
+          case ch if ch.isWhitespace =>
+            advance()
+          case '/' if !atEnd(1) && current(1) == '/' =>
+            while !atEnd() && current() != '\n' do advance()
+          case _ =>
+            keepGoing = false
+
+    while
+      skipWhitespaceAndComments()
+      !atEnd()
+    do
+      val startLine = line
+      val startCol = col
+      current() match
+        case ch if ch.isLetter || ch == '_' =>
+          val sb = new StringBuilder
+          while !atEnd() && (current().isLetterOrDigit || current() == '_') do
+            sb += advance()
+          val lexeme = sb.result()
+          add(keywords.getOrElse(lexeme, Kind.Identifier), lexeme, startLine, startCol)
+
+        case ch if ch.isDigit =>
+          val sb = new StringBuilder
+          while !atEnd() && current().isDigit do sb += advance()
+          add(Kind.IntLit, sb.result(), startLine, startCol)
+
+        case '(' => advance(); add(Kind.LParen, "(", startLine, startCol)
+        case ')' => advance(); add(Kind.RParen, ")", startLine, startCol)
+        case '[' => advance(); add(Kind.LBracket, "[", startLine, startCol)
+        case ']' => advance(); add(Kind.RBracket, "]", startLine, startCol)
+        case ':' => advance(); add(Kind.Colon, ":", startLine, startCol)
+        case '@' => advance(); add(Kind.At, "@", startLine, startCol)
+        case ',' => advance(); add(Kind.Comma, ",", startLine, startCol)
+        case '.' => advance(); add(Kind.Dot, ".", startLine, startCol)
+        case '+' => advance(); add(Kind.Plus, "+", startLine, startCol)
+        case '*' => advance(); add(Kind.Star, "*", startLine, startCol)
+        case '/' => advance(); add(Kind.Slash, "/", startLine, startCol)
+        case '-' =>
+          advance()
+          if !atEnd() && current() == '>' then
+            advance()
+            add(Kind.Arrow, "->", startLine, startCol)
+          else
+            add(Kind.Minus, "-", startLine, startCol)
+        case '=' =>
+          advance()
+          if !atEnd() && current() == '>' then
+            advance()
+            add(Kind.FatArrow, "=>", startLine, startCol)
+          else if !atEnd() && current() == '=' then
+            advance()
+            add(Kind.EqEq, "==", startLine, startCol)
+          else
+            add(Kind.Equal, "=", startLine, startCol)
+        case '!' =>
+          advance()
+          if !atEnd() && current() == '=' then
+            advance()
+            add(Kind.BangEq, "!=", startLine, startCol)
+          else
+            throw LexerException(s"Unexpected character ! at $startLine:$startCol")
+        case '<' =>
+          advance()
+          if !atEnd() && current() == '=' then
+            advance()
+            add(Kind.LessEq, "<=", startLine, startCol)
+          else
+            add(Kind.Less, "<", startLine, startCol)
+        case '>' =>
+          advance()
+          if !atEnd() && current() == '=' then
+            advance()
+            add(Kind.GreaterEq, ">=", startLine, startCol)
+          else
+            add(Kind.Greater, ">", startLine, startCol)
+        case other =>
+          throw LexerException(s"Unexpected character $other at $startLine:$startCol")
+
+    out += Token(Kind.EOF, "", line, col)
+    out.toVector
+
+object CoreEffOptParser:
+  import CoreEffOptLexer.Kind
+  import CoreEffOptLexer.Token
+
+  final class ParserException(message: String) extends RuntimeException(message)
+
+  def lex(input: String): Vector[Token] =
+    CoreEffOptLexer.lex(input)
+
+  def parse(input: String): Expr =
+    Parser(lex(input)).parseProgram()
+
+  def parseType(input: String): Type =
+    Parser(lex(input)).parseStandaloneType()
+
+  private case class Parser(tokens: Vector[Token]):
+    private var pos = 0
+
+    private def current: Token = tokens(pos)
+    private def peek(offset: Int): Token = tokens(math.min(pos + offset, tokens.length - 1))
+    private def at(kind: Kind): Boolean = current.kind == kind
+    private def advance(): Token =
+      val tok = current
+      if pos < tokens.length - 1 then pos += 1
+      tok
+
+    private def expect(kind: Kind, expected: String): Token =
+      if at(kind) then advance()
+      else fail(s"Expected $expected but found `${current.lexeme}`")
+
+    private def fail(message: String): Nothing =
+      throw ParserException(s"$message at ${current.line}:${current.col}")
+
+    def parseProgram(): Expr =
+      val expr = parseExpr()
+      expect(Kind.EOF, "end of input")
+      expr
+
+    def parseStandaloneType(): Type =
+      val ty = parseTypeExpr()
+      expect(Kind.EOF, "end of input")
+      ty
+
+    private def parseExpr(): Expr =
+      current.kind match
+        case Kind.KwLet => parseLet()
+        case Kind.KwLetRec => parseLetRec()
+        case Kind.KwFun => parseFun()
+        case Kind.KwSFun => parseSFun()
+        case Kind.KwFix => parseFix()
+        case Kind.KwIf => parseIf()
+        case _ => parseComparison()
+
+    private def parseLet(): Expr =
+      expect(Kind.KwLet, "`let`")
+      val name = parseIdentifier("binding name")
+      val ann = parseOptionalTypeAnnotation()
+      expect(Kind.Equal, "`=`")
+      val rhs = parseExpr()
+      expect(Kind.KwIn, "`in`")
+      val body = parseExpr()
+      ann match
+        case Some(ty) => ELet(name, EAscribe(rhs, ty), body)
+        case None => ELet(name, rhs, body)
+
+    private def parseLetRec(): Expr =
+      expect(Kind.KwLetRec, "`letrec`")
+      val name = parseIdentifier("recursive binding name")
+      val ann = parseOptionalTypeAnnotation()
+      expect(Kind.Equal, "`=`")
+      val rhs = parseExpr()
+      expect(Kind.KwIn, "`in`")
+      val body = parseExpr()
+      ann match
+        case Some(ty) => ELetRec(name, ty, rhs, body)
+        case None =>
+          fail("`letrec` needs a type annotation because CoreEffOpt.ELetRec stores the function type explicitly")
+
+    private def parseFun(): Expr =
+      expect(Kind.KwFun, "`fun`")
+      expect(Kind.LParen, "`(`")
+      val arg = parseIdentifier("parameter name")
+      val argTy = parseOptionalTypeAnnotation()
+      expect(Kind.RParen, "`)`")
+      val retTy = parseOptionalTypeAnnotation()
+      expect(Kind.FatArrow, "`=>`")
+      ELam(arg, argTy, parseExpr(), retTy)
+
+    private def parseSFun(): Expr =
+      expect(Kind.KwSFun, "`sfun`")
+      expect(Kind.LBracket, "`[`")
+      val st = parseIdentifier("stage variable")
+      expect(Kind.RBracket, "`]`")
+      val ann = parseOptionalTypeAnnotation()
+      expect(Kind.FatArrow, "`=>`")
+      val lam = ESLam(st, parseExpr())
+      ann.foreach(lam.withType)
+      lam
+
+    private def parseFix(): Expr =
+      expect(Kind.KwFix, "`fix`")
+      val stage = parseBracketedStage()
+      val name = parseIdentifier("fixpoint name")
+      expect(Kind.Dot, "`.`")
+      EFix(name, parseExpr(), stage)
+
+    private def parseIf(): Expr =
+      expect(Kind.KwIf, "`if`")
+      val cond = parseExpr()
+      expect(Kind.KwThen, "`then`")
+      val thn = parseExpr()
+      expect(Kind.KwElse, "`else`")
+      val els = parseExpr()
+      ECond(cond, thn, els, Sta)
+
+    private def parseComparison(): Expr =
+      var expr = parseAdditive()
+      while
+        current.kind match
+          case Kind.LessEq | Kind.GreaterEq | Kind.Less | Kind.Greater | Kind.EqEq | Kind.BangEq => true
+          case _ => false
+      do
+        val op = advance().lexeme
+        val rhs = parseAdditive()
+        expr = EBinOp(op, expr, rhs, Sta)
+      expr
+
+    private def parseAdditive(): Expr =
+      var expr = parseMultiplicative()
+      while at(Kind.Plus) || at(Kind.Minus) do
+        val op = advance().lexeme
+        val rhs = parseMultiplicative()
+        expr = EBinOp(op, expr, rhs, Sta)
+      expr
+
+    private def parseMultiplicative(): Expr =
+      var expr = parseUnary()
+      while at(Kind.Star) || at(Kind.Slash) do
+        val op = advance().lexeme
+        val rhs = parseUnary()
+        expr = EBinOp(op, expr, rhs, Sta)
+      expr
+
+    private def parseUnary(): Expr =
+      if at(Kind.Minus) then
+        advance()
+        if at(Kind.IntLit) then ENum(-advance().lexeme.toInt)
+        else EUnaryOp("-", parseUnary(), Sta)
+      else
+        parsePostfix()
+
+    private def parsePostfix(): Expr =
+      var expr = parsePrimary()
+      var keepGoing = true
+      while keepGoing do
+        current.kind match
+          case Kind.LBracket =>
+            val stage = parseBracketedStage()
+            expr = ESApp(expr, stage)
+          case Kind.LParen =>
+            advance()
+            val arg = parseExpr()
+            expect(Kind.RParen, "`)`")
+            expr = EApp(expr, arg, Sta)
+          case _ =>
+            keepGoing = false
+      expr
+
+    private def parsePrimary(): Expr =
+      current.kind match
+        case Kind.IntLit =>
+          ENum(advance().lexeme.toInt)
+        case Kind.KwTrue =>
+          advance()
+          EBool(true)
+        case Kind.KwFalse =>
+          advance()
+          EBool(false)
+        case Kind.Identifier =>
+          EVar(advance().lexeme)
+        case Kind.KwLift =>
+          parseLift()
+        case Kind.KwRef =>
+          parseRef()
+        case Kind.KwDeref =>
+          parseDeref()
+        case Kind.KwAssign =>
+          parseAssign()
+        case Kind.KwIsApp =>
+          parseIsApp()
+        case Kind.LParen =>
+          parseParenExpr()
+        case _ =>
+          fail(s"Unexpected token `${current.lexeme}`")
+
+    private def parseLift(): Expr =
+      expect(Kind.KwLift, "`lift`")
+      val stage = parseBracketedStage()
+      expect(Kind.LParen, "`(`")
+      val expr = parseExpr()
+      expect(Kind.RParen, "`)`")
+      ELift(expr, stage)
+
+    private def parseRef(): Expr =
+      expect(Kind.KwRef, "`ref`")
+      val stage = parseOptionalStageValue(default = Sta)
+      expect(Kind.LParen, "`(`")
+      val expr = parseExpr()
+      expect(Kind.RParen, "`)`")
+      EAlloc(expr, stage)
+
+    private def parseDeref(): Expr =
+      expect(Kind.KwDeref, "`deref`")
+      val stage = parseOptionalStageValue(default = Sta)
+      expect(Kind.LParen, "`(`")
+      val expr = parseExpr()
+      expect(Kind.RParen, "`)`")
+      EDeref(expr, stage)
+
+    private def parseAssign(): Expr =
+      expect(Kind.KwAssign, "`assign`")
+      val stage = parseOptionalStageValue(default = Sta)
+      expect(Kind.LParen, "`(`")
+      val lhs = parseExpr()
+      expect(Kind.Comma, "`,`")
+      val rhs = parseExpr()
+      expect(Kind.RParen, "`)`")
+      EAssign(lhs, rhs, stage)
+
+    private def parseIsApp(): Expr =
+      expect(Kind.KwIsApp, "`isApp`")
+      expect(Kind.LParen, "`(`")
+      val expr = parseExpr()
+      expect(Kind.RParen, "`)`")
+      EIsApp(expr)
+
+    private def parseParenExpr(): Expr =
+      expect(Kind.LParen, "`(`")
+      if at(Kind.RParen) then
+        advance()
+        EUnit
+      else
+        val expr = parseExpr()
+        if at(Kind.Colon) then
+          advance()
+          val ty = parseTypeExpr()
+          expect(Kind.RParen, "`)`")
+          EAscribe(expr, ty)
+        else
+          expect(Kind.RParen, "`)`")
+          expr
+
+    private def parseTypeExpr(): Type =
+      current.kind match
+        case Kind.KwForall =>
+          advance()
+          expect(Kind.LBracket, "`[`")
+          val st = parseIdentifier("stage variable")
+          expect(Kind.RBracket, "`]`")
+          expect(Kind.Dot, "`.`")
+          TForallSt(st, parseTypeExpr())
+        case _ =>
+          parseArrowType()
+
+    private def parseArrowType(): Type =
+      val lhs = parseAtType()
+      if at(Kind.Arrow) then
+        advance()
+        TFun(lhs, parseArrowType())
+      else
+        lhs
+
+    private def parseAtType(): Type =
+      val base = parseAtomicType()
+      if at(Kind.At) then
+        advance()
+        TAt(base, parseStage())
+      else
+        base
+
+    private def parseAtomicType(): Type =
+      current.kind match
+        case Kind.Identifier =>
+          val name = advance().lexeme
+          if at(Kind.LBracket) then
+            advance()
+            val arg = parseTypeExpr()
+            expect(Kind.RBracket, "`]`")
+            applyTypeConstructor(name, Some(arg))
+          else
+            applyTypeConstructor(name, None)
+        case Kind.LParen =>
+          advance()
+          val ty = parseTypeExpr()
+          expect(Kind.RParen, "`)`")
+          ty
+        case _ =>
+          fail("Expected a type")
+
+    private def applyTypeConstructor(name: String, arg: Option[Type]): Type =
+      (name, arg) match
+        case ("Unit", None) => TUnit
+        case ("Int", None) => TInt
+        case ("Bool", None) => TBool
+        case ("Ref", Some(t)) => TRef(t)
+        case ("Code", Some(t)) => TCode(t)
+        case ("Code", None) =>
+          fail("`Code` must be applied as `Code[T]`")
+        case ("Ref", None) =>
+          fail("`Ref` must be applied as `Ref[T]`")
+        case _ =>
+          fail(s"Unsupported type constructor `$name` for CoreEffOpt")
+
+    private def parseOptionalTypeAnnotation(): Option[Type] =
+      if at(Kind.Colon) then
+        advance()
+        Some(parseTypeExpr())
+      else
+        None
+
+    private def parseStage(): Stage =
+      current.kind match
+        case Kind.IntLit =>
+          val n = advance().lexeme.toInt
+          if n < 0 then fail("Stage indices must be non-negative")
+          SNum(n)
+        case Kind.Identifier =>
+          SVar(advance().lexeme)
+        case _ =>
+          fail("Expected a stage")
+
+    private def parseOptionalStageValue(default: Stage): Stage =
+      if at(Kind.At) then
+        advance()
+        parseStage()
+      else
+        default
+
+    private def parseBracketedStage(): Stage =
+      expect(Kind.LBracket, "`[`")
+      val st = parseStage()
+      expect(Kind.RBracket, "`]`")
+      st
+
+    private def parseIdentifier(expected: String): String =
+      if at(Kind.Identifier) then advance().lexeme
+      else fail(s"Expected $expected")
