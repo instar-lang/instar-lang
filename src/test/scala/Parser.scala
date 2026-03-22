@@ -53,7 +53,7 @@ class ParserTest extends FunSuite:
   }
 
   test("parses refs with explicit stages") {
-    val input = "let cell = ref@1(0) in assign@s(cell, deref@1(cell))"
+    val input = "let cell = ref@1(0) in cell :=@s !@1 cell"
     val parsed = Parser.parse(input)
 
     val expected =

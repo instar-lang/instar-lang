@@ -31,6 +31,7 @@ object Lexer:
     case Less
     case Greater
     case EqEq
+    case Bang
     case BangEq
     case True
     case False
@@ -45,7 +46,6 @@ object Lexer:
     case Then
     case Else
     case Ref
-    case Deref
     case Assign
     case IsApp
     case Forall
@@ -70,8 +70,6 @@ object Lexer:
     "then" -> Kind.Then,
     "else" -> Kind.Else,
     "ref" -> Kind.Ref,
-    "deref" -> Kind.Deref,
-    "assign" -> Kind.Assign,
     "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
     "run" -> Kind.Run,
@@ -136,7 +134,13 @@ object Lexer:
         case ')' => advance(); add(Kind.RParen, ")", startLine, startCol)
         case '[' => advance(); add(Kind.LBracket, "[", startLine, startCol)
         case ']' => advance(); add(Kind.RBracket, "]", startLine, startCol)
-        case ':' => advance(); add(Kind.Colon, ":", startLine, startCol)
+        case ':' =>
+          advance()
+          if !atEnd() && current() == '=' then
+            advance()
+            add(Kind.Assign, ":=", startLine, startCol)
+          else
+            add(Kind.Colon, ":", startLine, startCol)
         case '@' => advance(); add(Kind.At, "@", startLine, startCol)
         case ',' => advance(); add(Kind.Comma, ",", startLine, startCol)
         case '.' => advance(); add(Kind.Dot, ".", startLine, startCol)
@@ -166,7 +170,7 @@ object Lexer:
             advance()
             add(Kind.BangEq, "!=", startLine, startCol)
           else
-            throw LexerException(s"Unexpected character ! at $startLine:$startCol")
+            add(Kind.Bang, "!", startLine, startCol)
         case '<' =>
           advance()
           if !atEnd() && current() == '=' then
@@ -238,7 +242,17 @@ object Parser:
         case Kind.SFun => parseSFun()
         case Kind.Fix => parseFix()
         case Kind.If => parseIf()
-        case _ => parseComparison()
+        case _ => parseAssignment()
+
+    private def parseAssignment(): Expr =
+      val lhs = parseComparison()
+      if at(Kind.Assign) then
+        advance()
+        val stage = parseOptionalStageValue(default = Sta)
+        val rhs = parseAssignment()
+        EAssign(lhs, rhs, stage)
+      else
+        lhs
 
     private def parseLet(): Expr =
       expect(Kind.Let, "`let`")
@@ -340,6 +354,10 @@ object Parser:
         val stage = parseOptionalStageValue(default = Sta)
         if at(Kind.IntLit) then ENum(-advance().lexeme.toInt)
         else EUnaryOp("-", parseUnary(), stage)
+      else if at(Kind.Bang) then
+        advance()
+        val stage = parseOptionalStageValue(default = Sta)
+        EDeref(parseUnary(), stage)
       else
         parsePostfix()
 
@@ -376,10 +394,6 @@ object Parser:
           parseLift()
         case Kind.Ref =>
           parseRef()
-        case Kind.Deref =>
-          parseDeref()
-        case Kind.Assign =>
-          parseAssign()
         case Kind.IsApp =>
           parseIsApp()
         case Kind.Run =>
@@ -404,24 +418,6 @@ object Parser:
       val expr = parseExpr()
       expect(Kind.RParen, "`)`")
       EAlloc(expr, stage)
-
-    private def parseDeref(): Expr =
-      expect(Kind.Deref, "`deref`")
-      val stage = parseOptionalStageValue(default = Sta)
-      expect(Kind.LParen, "`(`")
-      val expr = parseExpr()
-      expect(Kind.RParen, "`)`")
-      EDeref(expr, stage)
-
-    private def parseAssign(): Expr =
-      expect(Kind.Assign, "`assign`")
-      val stage = parseOptionalStageValue(default = Sta)
-      expect(Kind.LParen, "`(`")
-      val lhs = parseExpr()
-      expect(Kind.Comma, "`,`")
-      val rhs = parseExpr()
-      expect(Kind.RParen, "`)`")
-      EAssign(lhs, rhs, stage)
 
     private def parseIsApp(): Expr =
       expect(Kind.IsApp, "`isApp`")

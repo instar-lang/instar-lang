@@ -85,9 +85,9 @@ class CBackendTest extends FunSuite:
     letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int@s =
       sfun[s] => fun(b: Int@s) => fun(n: Int) => fun(result: Ref[Int]@s): Int@s =>
         if n == 0
-        then deref@s(result)
+        then !@s result
         else
-          let _ = assign@s(result, b *@s deref@s(result)) in
+          let _ = result :=@s b *@s !@s result in
           impPower[s](b)(n - 1)(result)
     in
     let pow3 = lift[2](fun(x: Code[Int]): Code[Int] => impPower[2](x)(3)(ref@2(lift[2](1)))) in
