@@ -123,6 +123,32 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
+  test("parses fix without explicit stage as first-stage fix") {
+    val parsed = Parser.parse("fix loop. fun(x: Int): Int => x")
+
+    val expected =
+      EFix(
+        "loop",
+        ELam("x", Some(TInt), EVar("x"), Some(TInt)),
+        Sta,
+      )
+
+    assertEquals(parsed, expected)
+  }
+
+  test("parses fix with @stage syntax") {
+    val parsed = Parser.parse("fix@2 loop. fun(x: Int): Int => x")
+
+    val expected =
+      EFix(
+        "loop",
+        ELam("x", Some(TInt), EVar("x"), Some(TInt)),
+        SNum(2),
+      )
+
+    assertEquals(parsed, expected)
+  }
+
   test("parses standalone types with constructors, staging, and arrows") {
     val ty = Parser.parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
     assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TCode(TInt))))

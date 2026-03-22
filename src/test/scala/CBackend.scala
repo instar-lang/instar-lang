@@ -60,9 +60,19 @@ class CBackendTest extends FunSuite:
     assertEquals(out, "42")
   }
 
+  test("next-stage function with fun2 syntax") {
+    val src = """
+      let mkAdd = fun@2(x: Int @ 2) => fun@2(y: Int @ 2) => x +@2 y in
+      let add40 = mkAdd(lift[2](40))@2 in
+      add40(lift[2](2))@2
+    """
+    val out = parseEvalCompile(src)
+    assertEquals(out, "42")
+  }
+
   test("compiled recursive closures preserve recursion") {
     val src = """
-      let fib = fix[2] fib. lift[2](fun(n: Code[Int]): Code[Int] =>
+      let fib = fix@2 fib. lift[2](fun(n: Code[Int]): Code[Int] =>
         if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
       in fib(lift[2](5))@2
     """

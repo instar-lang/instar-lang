@@ -280,6 +280,7 @@ object Parser:
 
     private def parseFun(): Expr =
       expect(Kind.Fun, "`fun`")
+      val stage = parseOptionalStageValue(default = Sta)
       expect(Kind.LParen, "`(`")
       val arg = parseIdentifier("parameter name")
       expect(Kind.Colon, "`:` after function parameter")
@@ -287,7 +288,8 @@ object Parser:
       expect(Kind.RParen, "`)`")
       val retTy = parseOptionalTypeAnnotation()
       expect(Kind.FatArrow, "`=>`")
-      ELam(arg, Some(argTy), parseExpr(), retTy)
+      val lam = ELam(arg, Some(argTy), parseExpr(), retTy)
+      if stage == Sta then lam else ELift(lam, stage)
 
     private def parseSFun(): Expr =
       expect(Kind.SFun, "`sfun`")
@@ -302,7 +304,7 @@ object Parser:
 
     private def parseFix(): Expr =
       expect(Kind.Fix, "`fix`")
-      val stage = parseBracketedStage()
+      val stage = parseOptionalStageValue(default = Sta)
       val name = parseIdentifier("fixpoint name")
       expect(Kind.Dot, "`.`")
       EFix(name, parseExpr(), stage)

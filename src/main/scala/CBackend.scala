@@ -51,13 +51,13 @@ object CBackend:
       out.append(body.result())
       out.append(
         """int main(void) {
-  init_lifted_locs();
-  Value result = instar_program();
-  print_value(result);
-  printf("\n");
-  return 0;
-}
-"""
+        |  init_lifted_locs();
+        |  Value result = instar_program();
+        |  print_value(result);
+        |  printf("\n");
+        |  return 0;
+        |}
+        """.stripMargin
       )
       out.result()
 

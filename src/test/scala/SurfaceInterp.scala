@@ -98,6 +98,11 @@ class Core extends SurfaceBase {
       VCode(lamAddCode))
   }
 
+  test("fun-stage-sugar") {
+    val src = "fun@2(x: Int @ 2) => x +@2 lift[2](1)"
+    testEvalSurface(src, VCode(lamAddCode))
+  }
+
   test("cond") {
     val src = s"if@2 lift[2](true) then $lamAddSrc(lift[2](10))@2 else $lamMulSrc(lift[2](20))@2"
     testEvalSurface(src,
@@ -197,7 +202,12 @@ class Core extends SurfaceBase {
   }
 
   test("fix-fib") {
-    val src = "let fib = fix[1] fib. fun(n: Int): Int => if n <= 1 then 1 else n * fib(n - 1) in fib(5)"
+    val src = "let fib = fix fib. fun(n: Int): Int => if n <= 1 then 1 else n * fib(n - 1) in fib(5)"
+    testEvalSurface(src, VNum(120))
+  }
+
+  test("fix-default-stage") {
+    val src = "let fib = fix fib. fun(n: Int): Int => if n <= 1 then 1 else n * fib(n - 1) in fib(5)"
     testEvalSurface(src, VNum(120))
   }
 
@@ -208,7 +218,7 @@ class Core extends SurfaceBase {
 
   test("fix-second-stage") {
     val src = """
-      let fib = fix[2] fib. lift[2](fun(n: Code[Int]): Code[Int] =>
+      let fib = fix@2 fib. lift[2](fun(n: Code[Int]): Code[Int] =>
         if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
       in fib(lift[2](5))@2
     """
