@@ -3,6 +3,7 @@ package instar.parser
 import munit.FunSuite
 
 import instar.syntax.*
+import instar.syntax.given
 import Expr.*
 import Stage.*
 import Type.*
@@ -19,10 +20,10 @@ class ParserTest extends FunSuite:
         ELam(
           "x",
           Some(TInt),
-          EBinOp("+", EVar("x"), ENum(1), Sta),
+          EBinOp("+", EVar("x"), ENum(1), None),
           Some(TInt),
         ),
-        EApp(EVar("inc"), ENum(41), Sta),
+        EApp(EVar("inc"), ENum(41), None),
       )
 
     assertEquals(parsed, expected)
@@ -76,7 +77,7 @@ class ParserTest extends FunSuite:
         EAscribe(
           ELam("x", Some(TInt), EVar("x"), Some(TInt)),
           TFun(TInt, TInt)),
-        EApp(EVar("id"), ENum(3), Sta),
+        EApp(EVar("id"), ENum(3), None),
       )
 
     assertEquals(parsed, expected)
@@ -90,7 +91,7 @@ class ParserTest extends FunSuite:
       ELetRec(
         "id",
         ELam("x", Some(TInt), EVar("x"), Some(TInt)),
-        EApp(EVar("id"), ENum(3), Sta),
+        EApp(EVar("id"), ENum(3), None),
       )
 
     assertEquals(parsed, expected)
@@ -104,7 +105,7 @@ class ParserTest extends FunSuite:
       ELetRec(
         "id",
         ESLam("s", ELam("x", Some(TAt(TInt, SVar("s"))), EVar("x"), Some(TAt(TInt, SVar("s"))))),
-        EApp(ESApp(EVar("id"), SNum(1)), ENum(3), Sta),
+        EApp(ESApp(EVar("id"), SNum(1)), ENum(3), None),
       )
 
     assertEquals(parsed, expected)
@@ -117,7 +118,7 @@ class ParserTest extends FunSuite:
       ELetRec(
         "id",
         ELam("x", Some(TInt), EVar("x"), None),
-        EApp(EVar("id"), ENum(3), Sta),
+        EApp(EVar("id"), ENum(3), None),
       )
 
     assertEquals(parsed, expected)
@@ -130,7 +131,7 @@ class ParserTest extends FunSuite:
       EFix(
         "loop",
         ELam("x", Some(TInt), EVar("x"), Some(TInt)),
-        Sta,
+        None,
       )
 
     assertEquals(parsed, expected)
@@ -164,7 +165,7 @@ class ParserTest extends FunSuite:
       ELet(
         "x",
         ENum(1),
-        EBinOp("+", EVar("x"), ENum(2), Sta),
+        EBinOp("+", EVar("x"), ENum(2), None),
       )
 
     assertEquals(parsed, expected)
@@ -178,8 +179,8 @@ class ParserTest extends FunSuite:
     val expected =
       ELet(
         "x",
-        EAlloc(ENum(0), Sta),
-        EDeref(EVar("x"), Sta),
+        EAlloc(ENum(0), None),
+        EDeref(EVar("x"), None),
       )
 
     assertEquals(parsed, expected)

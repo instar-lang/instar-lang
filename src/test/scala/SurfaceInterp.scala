@@ -2,6 +2,7 @@ package instar.interp
 
 import instar.parser.Parser
 import instar.syntax.*
+import instar.syntax.given
 import Expr.*
 import Stage.*
 import Value.*
@@ -26,7 +27,6 @@ trait SurfaceBase extends munit.FunSuite {
       case ECond(e1, e2, e3, st) => ECond(normalizeExpr(e1), normalizeExpr(e2), normalizeExpr(e3), st)
       case EBinOp(op, e1, e2, st) => EBinOp(op, normalizeExpr(e1), normalizeExpr(e2), st)
       case EUnaryOp(op, e1, st) => EUnaryOp(op, normalizeExpr(e1), st)
-      case EPrimOp(op, rands, st) => EPrimOp(op, rands.map(normalizeExpr), st)
       case EAlloc(e1, st) => EAlloc(normalizeExpr(e1), st)
       case EDeref(e1, st) => EDeref(normalizeExpr(e1), st)
       case EAssign(e1, e2, st) => EAssign(normalizeExpr(e1), normalizeExpr(e2), st)

@@ -13,6 +13,7 @@ import instar.interp.eval
 import instar.interp.Value.*
 import instar.parser.Parser
 import instar.syntax.*
+import instar.syntax.given
 import Expr.*
 
 class CBackendTest extends FunSuite:

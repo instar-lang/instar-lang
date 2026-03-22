@@ -160,6 +160,11 @@ def evalStVar(s: Stage, ς: StEnv): Stage =
     case SVar(st) => ς(st)
     case _ => s
 
+def evalExprStage(s: Option[Stage], ς: StEnv): Stage =
+  s match
+    case Some(st) => evalStVar(st, ς)
+    case None => Sta
+
 object StaticLam:
   def unapply(e: Expr)(using c: Cache): Option[ELam] =
     e match
@@ -336,7 +341,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       k(VClo(x, argTy, e, retTy, ρ, ς), σ, γ)
     case EBNLam(x, argTy, e, retTy) =>
       k(VBNClo(x, argTy, e, retTy, ρ, ς), σ, γ)
-    case EApp(e1, e2, s) if evalStVar(s, ς) == Sta =>
+    case EApp(e1, e2, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, {
         case (VBNClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
           val v2 = VThunk(e2, ρ, ς)
@@ -348,7 +353,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
             eval(body, ρf + (x -> l), ςf, σ2 + (l -> v2), k, γ2)
           }, γ1)
       }, γ)
-    case EApp(e1, e2, s) if evalStVar(s, ς) == Dyn =>
+    case EApp(e1, e2, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
           reflect(EApp1(x1, x2), σ2, k, γ2)
@@ -380,12 +385,12 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val v = VSClo(x, body, ρf1, ςf)
           eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
       }, γ)
-    case ECond(e1, e2, e3, s) if evalStVar(s, ς) == Sta =>
+    case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (VBool(b), σ1, γ1) =>
         if b then eval(e2, ρ, ς, σ1, k, γ1)
         else eval(e3, ρ, ς, σ1, k, γ1)
       }, γ)
-    case ECond(e1, e2, e3, s) if evalStVar(s, ς) == Dyn =>
+    case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         reify(e2, ρ, ς, σ1, { case (VCode(x2), σ2) =>
           reify(e3, ρ, ς, σ2, { case (VCode(x3), σ3) =>
@@ -393,57 +398,57 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           })
         })
       }, γ)
-    case EBinOp(op, e1, e2, s) if evalStVar(s, ς) == Sta =>
+    case EBinOp(op, e1, e2, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (v1, σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
           k(evalPrim(op, v1, v2), σ2, γ2)
         }, γ1)
       }, γ)
-    case EBinOp(op, e1, e2, s) if evalStVar(s, ς) == Dyn =>
+    case EBinOp(op, e1, e2, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
           reflect(EBinOp1(op, x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
-    case EUnaryOp(op, e, s) if evalStVar(s, ς) == Sta =>
+    case EUnaryOp(op, e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, { case (v, σ1, γ1) =>
         k(evalPrimUnary(op, v), σ1, γ1)
       }, γ)
-    case EUnaryOp(op, e, s) if evalStVar(s, ς) == Dyn =>
+    case EUnaryOp(op, e, s) if evalExprStage(s, ς) == Dyn =>
       eval(e, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
         reflect(EUnaryOp1(op, x), σ1, k, γ1)
       }, γ)
-    case EAlloc(e, s) if evalStVar(s, ς) == Sta =>
+    case EAlloc(e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, { case (v, σ1, γ1) =>
         val l = σ1.size
         k(VLoc(l), σ1 + (l -> v), γ1)
       }, γ)
-    case EAlloc(e, s) if evalStVar(s, ς) == Dyn =>
+    case EAlloc(e, s) if evalExprStage(s, ς) == Dyn =>
       eval(e, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
         reflect(EAlloc1(x), σ1, k, γ1)
       }, γ)
-    case EDeref(e, s) if evalStVar(s, ς) == Sta =>
+    case EDeref(e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, { case (VLoc(l), σ1, γ1) =>
         k(σ1(l), σ1, γ1)
       }, γ)
-    case EDeref(e, s) if evalStVar(s, ς) == Dyn =>
+    case EDeref(e, s) if evalExprStage(s, ς) == Dyn =>
       eval(e, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
         reflect(EDeref1(x), σ1, k, γ1)
       }, γ)
-    case EAssign(e1, e2, s) if evalStVar(s, ς) == Sta =>
+    case EAssign(e1, e2, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (VLoc(l), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
           k(VUnit, σ2 + (l -> v2), γ2)
         }, γ1)
       }, γ)
-    case EAssign(e1, e2, s) if evalStVar(s, ς) == Dyn =>
+    case EAssign(e1, e2, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
           reflect(EAssign1(x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
     case EAscribe(e, _) => eval(e, ρ, ς, σ, k, γ)
-    case EFix(f, e, s) if evalStVar(s, ς) == Sta =>
+    case EFix(f, e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, {
         case (VClo(x, argTy, body, retTy, ρf, ςf), σ1, γ1) =>
           val l = σ1.size
@@ -454,13 +459,13 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val v = VSClo(x, body, ρf + (f -> l), ςf)
           k(v, σ1 + (l -> v), γ1)
       }, γ)
-    case EFix(f, e, s) if evalStVar(s, ς) == Dyn =>
+    case EFix(f, e, s) if evalExprStage(s, ς) == Dyn =>
       val l = σ.size
       val ρ1 = ρ + (f -> l)
       val g = fresh("f")
       val σ1 = σ + (l -> VCode(EVar(g)))
       reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
-        reflect(EFix(g, x, Sta), σ2, k, γ)
+        reflect(EFix(g, x, Some(Sta)), σ2, k, γ)
       })
     // Experimental features below:
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)

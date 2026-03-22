@@ -305,9 +305,11 @@ object CBackend:
     private def lookupVar(name: String, env: Map[String, String]): String =
       env.getOrElse(name, throw CompileException(s"Unbound variable during code generation: $name"))
 
-    private def requireFirstStage(stage: Stage, context: String): Unit =
-      if stage != Sta then
-        throw CompileException(s"C backend only supports first-stage ANF $context, found stage $stage")
+    private def requireFirstStage(stage: Option[Stage], context: String): Unit =
+      stage match
+        case None | Some(Sta) => ()
+        case Some(other) =>
+          throw CompileException(s"C backend only supports first-stage ANF $context, found stage $other")
 
     private def binOpName(op: String): String =
       op match

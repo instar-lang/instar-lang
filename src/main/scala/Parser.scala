@@ -261,7 +261,7 @@ object Parser:
       val lhs = parseComparison()
       if at(Kind.Assign) then
         advance()
-        val stage = parseOptionalStageValue(default = Sta)
+        val stage = parseOptionalStageValue()
         val rhs = parseAssignment()
         EAssign(lhs, rhs, stage)
       else
@@ -293,7 +293,7 @@ object Parser:
 
     private def parseFun(): Expr =
       expect(Kind.Fun, "`fun`")
-      val stage = parseOptionalStageValue(default = Sta)
+      val stage = parseOptionalStageValue()
       expect(Kind.LParen, "`(`")
       val arg = parseIdentifier("parameter name")
       expect(Kind.Colon, "`:` after function parameter")
@@ -302,7 +302,9 @@ object Parser:
       val retTy = parseOptionalTypeAnnotation()
       expect(Kind.FatArrow, "`=>`")
       val lam = ELam(arg, Some(argTy), parseExpr(), retTy)
-      if stage == Sta then lam else ELift(lam, stage)
+      stage match
+        case None | Some(Sta) => lam
+        case Some(st) => ELift(lam, st)
 
     private def parseSFun(): Expr =
       expect(Kind.SFun, "`sfun`")
@@ -317,14 +319,14 @@ object Parser:
 
     private def parseFix(): Expr =
       expect(Kind.Fix, "`fix`")
-      val stage = parseOptionalStageValue(default = Sta)
+      val stage = parseOptionalStageValue()
       val name = parseIdentifier("fixpoint name")
       expect(Kind.Dot, "`.`")
       EFix(name, parseExpr(), stage)
 
     private def parseIf(): Expr =
       expect(Kind.If, "`if`")
-      val stage = parseOptionalStageValue(default = Sta)
+      val stage = parseOptionalStageValue()
       val cond = parseExpr()
       expect(Kind.Then, "`then`")
       val thn = parseExpr()
@@ -340,7 +342,7 @@ object Parser:
           case _ => false
       do
         val op = advance().lexeme
-        val stage = parseOptionalStageValue(default = Sta)
+        val stage = parseOptionalStageValue()
         val rhs = parseAdditive()
         expr = EBinOp(op, expr, rhs, stage)
       expr
@@ -349,7 +351,7 @@ object Parser:
       var expr = parseMultiplicative()
       while at(Kind.Plus) || at(Kind.Minus) do
         val op = advance().lexeme
-        val stage = parseOptionalStageValue(default = Sta)
+        val stage = parseOptionalStageValue()
         val rhs = parseMultiplicative()
         expr = EBinOp(op, expr, rhs, stage)
       expr
@@ -358,7 +360,7 @@ object Parser:
       var expr = parseUnary()
       while at(Kind.Star) || at(Kind.Slash) do
         val op = advance().lexeme
-        val stage = parseOptionalStageValue(default = Sta)
+        val stage = parseOptionalStageValue()
         val rhs = parseUnary()
         expr = EBinOp(op, expr, rhs, stage)
       expr
@@ -366,12 +368,12 @@ object Parser:
     private def parseUnary(): Expr =
       if at(Kind.Minus) then
         advance()
-        val stage = parseOptionalStageValue(default = Sta)
+        val stage = parseOptionalStageValue()
         if at(Kind.IntLit) then ENum(-advance().lexeme.toInt)
         else EUnaryOp("-", parseUnary(), stage)
       else if at(Kind.Bang) then
         advance()
-        val stage = parseOptionalStageValue(default = Sta)
+        val stage = parseOptionalStageValue()
         EDeref(parseUnary(), stage)
       else
         parsePostfix()
@@ -388,7 +390,7 @@ object Parser:
             advance()
             val arg = parseExpr()
             expect(Kind.RParen, "`)`")
-            expr = EApp(expr, arg, parseOptionalStageValue(default = Sta))
+            expr = EApp(expr, arg, parseOptionalStageValue())
           case _ =>
             keepGoing = false
       expr
@@ -428,7 +430,7 @@ object Parser:
 
     private def parseRef(): Expr =
       expect(Kind.Ref, "`ref`")
-      val stage = parseOptionalStageValue(default = Sta)
+      val stage = parseOptionalStageValue()
       expect(Kind.LParen, "`(`")
       val expr = parseExpr()
       expect(Kind.RParen, "`)`")
@@ -543,12 +545,12 @@ object Parser:
         case _ =>
           fail("Expected a stage")
 
-    private def parseOptionalStageValue(default: Stage): Stage =
+    private def parseOptionalStageValue(): Option[Stage] =
       if at(Kind.At) then
         advance()
-        parseStage()
+        Some(parseStage())
       else
-        default
+        None
 
     private def parseBracketedStage(): Stage =
       expect(Kind.LBracket, "`[`")
