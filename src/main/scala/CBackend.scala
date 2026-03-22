@@ -288,13 +288,9 @@ object CBackend:
                 stripAscriptions(rhs) match
                   case lam @ ELam(_, _, _, _) => (rest.reverse, lam)
                   case other =>
-                    throw CompileException(
-                      s"Recursive function must evaluate to a lambda, found $other"
-                    )
+                    throw CompileException(s"Recursive function must evaluate to a lambda, found $other")
               case _ =>
-                throw CompileException(
-                  s"Recursive function must end in a lambda-bound variable, found $current"
-                )
+                throw CompileException(s"Recursive function must end in a lambda-bound variable, found $current")
 
           case other =>
             throw CompileException(s"Unsupported recursive function shape: $other")
