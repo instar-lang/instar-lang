@@ -154,6 +154,37 @@ class ParserTest extends FunSuite:
     assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TCode(TInt))))
   }
 
+  test("skips line comments in programs") {
+    val parsed = Parser.parse(
+      """let x = 1 // keep this ignored
+        |in x + 2
+        |""".stripMargin)
+
+    val expected =
+      ELet(
+        "x",
+        ENum(1),
+        EBinOp("+", EVar("x"), ENum(2), Sta),
+      )
+
+    assertEquals(parsed, expected)
+  }
+
+  test("skips block comments in programs") {
+    val parsed = Parser.parse(
+      """let /* binding */ x = ref(0) in /* read it */ !x
+        |""".stripMargin)
+
+    val expected =
+      ELet(
+        "x",
+        EAlloc(ENum(0), Sta),
+        EDeref(EVar("x"), Sta),
+      )
+
+    assertEquals(parsed, expected)
+  }
+
   test("rejects fun without a parameter type") {
     intercept[Parser.ParserException] {
       Parser.parse("fun(x) => x")

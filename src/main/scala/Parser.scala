@@ -108,6 +108,19 @@ object Lexer:
             advance()
           case '/' if !atEnd(1) && current(1) == '/' =>
             while !atEnd() && current() != '\n' do advance()
+          case '/' if !atEnd(1) && current(1) == '*' =>
+            advance()
+            advance()
+            var closed = false
+            while !atEnd() && !closed do
+              if current() == '*' && !atEnd(1) && current(1) == '/' then
+                advance()
+                advance()
+                closed = true
+              else
+                advance()
+            if !closed then
+              throw LexerException(s"Unterminated block comment at $line:$col")
           case _ =>
             keepGoing = false
 
