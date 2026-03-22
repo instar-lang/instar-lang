@@ -38,7 +38,7 @@ class CBackendTest extends FunSuite:
     finally
       deleteRecursively(dir)
 
-  private def compileAndRunSurface(src: String): String =
+  private def parseEvalCompile(src: String): String =
     runCompiledC(evalWithCBackend(src))
 
   private def deleteRecursively(path: Path): Unit =
@@ -46,7 +46,7 @@ class CBackendTest extends FunSuite:
       Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
 
   test("compiled simple staged code returns the right value") {
-    val out = compileAndRunSurface("lift[2](1) +@2 lift[2](2)")
+    val out = parseEvalCompile("lift[2](1) +@2 lift[2](2)")
     assertEquals(out, "3")
   }
 
@@ -56,7 +56,7 @@ class CBackendTest extends FunSuite:
       let add40 = mkAdd(lift[2](40))@2 in
       add40(lift[2](2))@2
     """
-    val out = compileAndRunSurface(src)
+    val out = parseEvalCompile(src)
     assertEquals(out, "42")
   }
 
@@ -66,7 +66,7 @@ class CBackendTest extends FunSuite:
         if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
       in fib(lift[2](5))@2
     """
-    val out = compileAndRunSurface(src)
+    val out = parseEvalCompile(src)
     assertEquals(out, "120")
   }
 
@@ -78,4 +78,21 @@ class CBackendTest extends FunSuite:
             EDeref(EVar("r"), Sta))))
     val out = runCompiledC(CBackend.compile(value))
     assertEquals(out, "2")
+  }
+
+  test("stage-poly imperative power") {
+    val src = """
+    letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int@s =
+      sfun[s] => fun(b: Int@s) => fun(n: Int) => fun(result: Ref[Int]@s): Int@s =>
+        if n == 0
+        then deref@s(result)
+        else
+          let _ = assign@s(result, b *@s deref@s(result)) in
+          impPower[s](b)(n - 1)(result)
+    in
+    let pow3 = lift[2](fun(x: Code[Int]): Code[Int] => impPower[2](x)(3)(ref@2(lift[2](1)))) in
+    pow3(lift[2](4))@2
+    """
+    val out = parseEvalCompile(src)
+    assertEquals(out, "64")
   }

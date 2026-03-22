@@ -657,7 +657,7 @@ class CoreEffTest extends Base {
       ESLam("s",
         ELam("b", Some(TAt(TInt, SVar("s"))),
           ELam("n", Some(TInt),
-            ELam("result", Some(TRef(TInt)),
+            ELam("result", Some(TAt(TRef(TInt), SVar("s"))),
               ECond1(
                 EBinOp1("==", EVar("n"), ENum(0)),
                 EDeref(EVar("result"), SVar("s")),
