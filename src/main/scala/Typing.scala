@@ -6,8 +6,6 @@ import instar.eff.opt
 import instar.eff.opt.Type
 import instar.eff.opt.Stage
 
-import instar.surf.*
-
 type Env = Map[String, Type]
 
 def infer(env: Env, expr: Expr): Expr =

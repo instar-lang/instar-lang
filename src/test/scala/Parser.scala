@@ -7,7 +7,7 @@ import Expr.*
 import Stage.*
 import Type.*
 
-class CoreEffOptParserTest extends FunSuite:
+class ParserTest extends FunSuite:
 
   test("lexes and parses let/fun/application") {
     val input = "let inc = fun(x: Int): Int => x + 1 in inc(41)"

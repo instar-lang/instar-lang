@@ -8,6 +8,20 @@ Install Scala: https://www.scala-lang.org/download/
 
 Run `sbt` to start an interactive console.
 
+### Coverage
+
+To get statement coverage for the current test suite:
+
+- `sbt coverageAll`
+
+To focus on the main parser/interpreter/C-backend suites:
+
+- `sbt coverageMain`
+
+The HTML and XML reports are written under:
+
+- `target/scala-3.7.4/scoverage-report/`
+
 ### Interpreter
 
 Currently there are three variant interpreters for the elaborated core language:
