@@ -124,6 +124,38 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
+  test("desugars letrec function headers to the same AST as sfun/fun") {
+    val oldSyntax =
+      """letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int] @ s -> Int @ s =
+        |  sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int] @ s): Int @ s => result
+        |in impPower[1](2)(3)(ref(1))
+        |""".stripMargin
+
+    val newSyntax =
+      """letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int] @ s): Int @ s =
+        |  result
+        |in impPower[1](2)(3)(ref(1))
+        |""".stripMargin
+
+    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+  }
+
+  test("parses alternating stage and term binders in letrec headers") {
+    val oldSyntax =
+      """letrec mix: Int -> (forall[s]. Int @ s -> Int @ s) =
+        |  fun(x: Int) => sfun[s] => fun(y: Int @ s): Int @ s => y
+        |in mix(1)[2](lift[2](3))
+        |""".stripMargin
+
+    val newSyntax =
+      """letrec mix (x: Int) [s] (y: Int @ s): Int @ s =
+        |  y
+        |in mix(1)[2](lift[2](3))
+        |""".stripMargin
+
+    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+  }
+
   test("parses fix without explicit stage as first-stage fix") {
     val parsed = Parser.parse("fix loop. fun(x: Int): Int => x")
 

@@ -195,6 +195,16 @@ class Core extends SurfaceBase {
           EVar("x12"))))
   }
 
+  test("rec-imp-stage-poly letrec-header-sugar") {
+    val runtimeSrc = """
+      letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int]@s): Int @ s =
+        if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower[s](b)(n - 1)(result)
+      in impPower[1](2)(3)(ref(1))
+    """
+
+    testEvalSurface(runtimeSrc, VNum(8))
+  }
+
   test("stuck") {
     intercept[RuntimeException] {
       eval(Parser.parse("let x = ref@2(lift[2](0)) in 10"))

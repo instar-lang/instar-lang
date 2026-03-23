@@ -107,3 +107,19 @@ class CBackendTest extends FunSuite:
     val out = parseEvalCompile(src)
     assertEquals(out, "64")
   }
+
+  test("stage-poly imperative power with letrec-header sugar") {
+    val src = """
+    letrec impPower[s] (b: Int@s) (n: Int) (result: Ref[Int]@s): Int@s =
+      if n == 0
+      then !@s result
+      else
+        let _ = result :=@s b *@s !@s result in
+        impPower[s](b)(n - 1)(result)
+    in
+    let pow3 = fun@2(x: Code[Int]): Code[Int] => impPower[2](x)(3)(ref@2(lift[2](1))) in
+    pow3(lift[2](4))@2
+    """
+    val out = parseEvalCompile(src)
+    assertEquals(out, "64")
+  }

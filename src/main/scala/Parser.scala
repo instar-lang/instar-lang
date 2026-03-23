@@ -220,6 +220,10 @@ object Parser:
     Parser(lex(input)).parseStandaloneType()
 
   private case class Parser(tokens: Vector[Token]):
+    private enum LetRecBinder:
+      case Stage(name: String)
+      case Term(name: String, ty: Type)
+
     private var pos = 0
 
     private def current: Token = tokens(pos)
@@ -282,14 +286,30 @@ object Parser:
     private def parseLetRec(): Expr =
       expect(Kind.LetRec, "`letrec`")
       val name = parseIdentifier("recursive binding name")
-      val ann = parseOptionalTypeAnnotation()
-      expect(Kind.Equal, "`=`")
-      val rhs = parseExpr()
-      expect(Kind.In, "`in`")
-      val body = parseExpr()
-      ann match
-        case Some(ty) => ELetRec(name, EAscribe(rhs, ty), body)
-        case None => ELetRec(name, rhs, body)
+      val binders = parseLetRecBinders()
+
+      if binders.nonEmpty then
+        val retTy = parseOptionalTypeAnnotation()
+        expect(Kind.Equal, "`=`")
+        val rhsBody = parseExpr()
+        expect(Kind.In, "`in`")
+        val body = parseExpr()
+
+        val rhs = buildLetRecRhs(binders, retTy, rhsBody)
+        val rhsWithAnn =
+          retTy match
+            case Some(ty) => EAscribe(rhs, buildLetRecType(binders, ty))
+            case None => rhs // Note: this is the case letrec defines a function without explicitly annotating the result type.
+        ELetRec(name, rhsWithAnn, body)
+      else
+        val ann = parseOptionalTypeAnnotation()
+        expect(Kind.Equal, "`=`")
+        val rhs = parseExpr()
+        expect(Kind.In, "`in`")
+        val body = parseExpr()
+        ann match
+          case Some(ty) => ELetRec(name, EAscribe(rhs, ty), body)
+          case None => ELetRec(name, rhs, body)
 
     private def parseFun(): Expr =
       expect(Kind.Fun, "`fun`")
@@ -533,6 +553,44 @@ object Parser:
         Some(parseTypeExpr())
       else
         None
+
+    private def parseLetRecBinders(): List[LetRecBinder] =
+      val out = ArrayBuffer.empty[LetRecBinder]
+      var keepGoing = true
+      while keepGoing do
+        current.kind match
+          case Kind.LBracket =>
+            advance()
+            val stageName = parseIdentifier("stage variable")
+            expect(Kind.RBracket, "`]`")
+            out += LetRecBinder.Stage(stageName)
+          case Kind.LParen =>
+            advance()
+            val arg = parseIdentifier("parameter name")
+            expect(Kind.Colon, "`:` after function parameter")
+            val argTy = parseTypeExpr()
+            expect(Kind.RParen, "`)`")
+            out += LetRecBinder.Term(arg, argTy)
+          case _ =>
+            keepGoing = false
+      out.toList
+
+    private def buildLetRecRhs(binders: List[LetRecBinder], retTy: Option[Type], body: Expr): Expr =
+      var pendingRet = retTy
+      binders.foldRight(body) {
+        case (LetRecBinder.Stage(name), acc) =>
+          ESLam(name, acc)
+        case (LetRecBinder.Term(name, ty), acc) =>
+          val lam = ELam(name, Some(ty), acc, pendingRet)
+          pendingRet = None
+          lam
+      }
+
+    private def buildLetRecType(binders: List[LetRecBinder], retTy: Type): Type =
+      binders.foldRight(retTy) {
+        case (LetRecBinder.Stage(name), acc) => TForallSt(name, acc)
+        case (LetRecBinder.Term(_, ty), acc) => TFun(ty, acc)
+      }
 
     private def parseStage(): Stage =
       current.kind match
