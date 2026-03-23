@@ -53,6 +53,20 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
+  test("desugars let function bindings to the same AST as sfun/fun") {
+    val oldSyntax =
+      """let add = sfun[s] => fun(x: Int @ s) => fun(y: Int @ s) => x +@s y
+        |in add[1](2)(3)
+        |""".stripMargin
+
+    val newSyntax =
+      """let add[s] (x: Int @ s) (y: Int @ s) = x +@s y
+        |in add[1](2)(3)
+        |""".stripMargin
+
+    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+  }
+
   test("parses refs with explicit stages") {
     val input = "let cell = ref@1(0) in cell :=@s !@1 cell"
     val parsed = Parser.parse(input)
@@ -124,7 +138,7 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
-  test("desugars letrec function headers to the same AST as sfun/fun") {
+  test("desugars letrec function bindings to the same AST as sfun/fun") {
     val oldSyntax =
       """letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int] @ s -> Int @ s =
         |  sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int] @ s): Int @ s => result
@@ -140,7 +154,7 @@ class ParserTest extends FunSuite:
     assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
   }
 
-  test("parses alternating stage and term binders in letrec headers") {
+  test("parses alternating stage and term binders in letrec bindings") {
     val oldSyntax =
       """letrec mix: Int -> (forall[s]. Int @ s -> Int @ s) =
         |  fun(x: Int) => sfun[s] => fun(y: Int @ s): Int @ s => y

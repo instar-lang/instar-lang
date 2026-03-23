@@ -125,6 +125,11 @@ class Core extends SurfaceBase {
         ELet("x3", EApp(EVar("x2"), ENum(5), Sta), EVar("x3")))))
   }
 
+  test("let-header-sugar") {
+    val src = "let add[s] (x: Int @ s) (y: Int @ s) = x +@s y in add[1](2)(3)"
+    testEvalSurface(src, VNum(5))
+  }
+
   test("rec") {
     val factSrc =
       "letrec fact: Int -> Int = fun(n: Int): Int => if n <= 1 then 1 else n * fact(n - 1) in fact(5)"

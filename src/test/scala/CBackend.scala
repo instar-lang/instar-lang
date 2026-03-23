@@ -123,3 +123,12 @@ class CBackendTest extends FunSuite:
     val out = parseEvalCompile(src)
     assertEquals(out, "64")
   }
+
+  test("let-binding-sugar") {
+    val src = """
+    |let add[s] (x: Int@s) (y: Int@s) = x +@s y in
+    |add[2](lift[2](2))(lift[2](3))
+    """.stripMargin
+    val out = parseEvalCompile(src)
+    assertEquals(out, "5")
+  }
