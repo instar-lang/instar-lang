@@ -9,8 +9,11 @@ import scala.sys.process.ProcessLogger
 
 import instar.codegen.CBackend
 import instar.interp.eval
-import instar.interp.Value.VCode
+import instar.interp.Store
+import instar.interp.Value
+import instar.interp.Value.*
 import instar.parser.Parser
+import instar.typing.*
 
 private case class CliConfig(
   emitC: Boolean,
@@ -31,55 +34,40 @@ def main(args: Array[String]): Unit =
         case CliConfig(true, None, Some(program)) =>
           emitCFromProgram(program)
         case CliConfig(false, None, Some(program)) =>
-          runProgram(program)
+          runSource(program, "Error: Failed to run inline program")
         case _ =>
           Console.err.println(usage)
 
 def runFile(path: Path): Unit =
-  try
-    val source = Files.readString(path, StandardCharsets.UTF_8)
-    runSource(source, s"Error: Failed to run ${path.toAbsolutePath}")
-  catch
-    case ex: Exception =>
-      Console.err.println(s"Error: Failed to run ${path.toAbsolutePath}: ${ex.getMessage}")
-
-def runProgram(source: String): Unit =
-  try
-    runSource(source, "Error: Failed to run inline program")
-  catch
-    case ex: Exception =>
-      Console.err.println(s"Error: Failed to run inline program: ${ex.getMessage}")
+  val source = Files.readString(path, StandardCharsets.UTF_8)
+  runSource(source, s"Error: Failed to run ${path.toAbsolutePath}")
 
 def emitCFromPath(path: Path): Unit =
-  try
-    val source = Files.readString(path, StandardCharsets.UTF_8)
-    emitCSource(source, cOutputPath(path), executableOutputPath(path), s"Error: Failed to compile ${path.toAbsolutePath}")
-  catch
-    case ex: Exception =>
-      Console.err.println(s"Error: Failed to compile ${path.toAbsolutePath}: ${ex.getMessage}")
+  val source = Files.readString(path, StandardCharsets.UTF_8)
+  emitCSource(source, cOutputPath(path), executableOutputPath(path))
 
 def emitCFromProgram(source: String): Unit =
+  val cFile = inlineCOutputPath
+  val exeFile = inlineExecutableOutputPath
+  emitCSource(source, cFile, exeFile)
+
+private def runSource(source: String, errorPrefix: String = ""): (Value, Store) =
   try
-    val cFile = inlineCOutputPath
-    val exeFile = inlineExecutableOutputPath
-    emitCSource(source, cFile, exeFile, "Error: Failed to compile inline program")
+    val prog = Parser.parse(source)
+    val tyProg = infer(prog)
+    println(s"Type checking succeeded: ${tyProg.ty}")
+    val (value, store) = eval(tyProg)
+    println(s"First-stage evaluation result: $value")
+    (value, store)
   catch
     case ex: Exception =>
-      Console.err.println(s"Error: Failed to compile inline program: ${ex.getMessage}")
+      val prefix = if errorPrefix.isEmpty then "Error: Failed to run the program" else errorPrefix
+      Console.err.println(s"$prefix: ${ex.getMessage}")
+      throw ex
 
-private def runSource(source: String, errorPrefix: String): Unit =
+private def emitCSource(source: String, cFile: Path, exeFile: Path): Unit =
   try
-    val program = Parser.parse(source)
-    val (value, _) = eval(program)
-    println(value)
-  catch
-    case ex: Exception =>
-      Console.err.println(s"$errorPrefix: ${ex.getMessage}")
-
-private def emitCSource(source: String, cFile: Path, exeFile: Path, errorPrefix: String): Unit =
-  try
-    val program = Parser.parse(source)
-    val result @ (value, _) = eval(program)
+    val result @ (value, _) = runSource(source)
     value match
       case VCode(_) =>
         val code = CBackend.compileResult(result)
@@ -92,7 +80,8 @@ private def emitCSource(source: String, cFile: Path, exeFile: Path, errorPrefix:
         Console.err.println(s"Error: Expected the program to evaluate to VCode, found $other")
   catch
     case ex: Exception =>
-      Console.err.println(s"$errorPrefix: ${ex.getMessage}")
+      Console.err.println(s"Error: Failed to compile ${cFile.toAbsolutePath}: ${ex.getMessage}")
+      throw ex
 
 def cOutputPath(path: Path): Path =
   path.resolveSibling(replaceExtension(path.getFileName.toString, "c"))

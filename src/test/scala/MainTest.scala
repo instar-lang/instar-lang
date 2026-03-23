@@ -23,7 +23,7 @@ class MainTest extends FunSuite:
     val out = captureStdout {
       main(Array("--program", "let x = 41 in x + 1"))
     }
-    assertEquals(out, "VNum(42)")
+    assertEquals(out, "First-stage evaluation result: VNum(42)")
   }
 
   test("main compiles and runs inline programs via --emit-c --program") {
