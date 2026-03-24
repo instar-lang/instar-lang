@@ -526,7 +526,10 @@ object Parser:
       val base = parseAtomicType()
       if at(Kind.At) then
         advance()
-        TAt(base, parseStage())
+        parseStage() match
+          case SNum(1) => base
+          case SNum(2) => TCode(base)
+          case st => TAt(base, st)
       else
         base
 
