@@ -12,15 +12,21 @@ Run `sbt` to start an interactive console.
 
 The distinctive feature of Instar is stage polymorphism, which allows us to write code that can be
 instantiated at different stages.
-For example, we can write a power function that can be instantiated at both stage 1 and stage 2:
+For example, we can write the stage-polymorphic `power` function
+with the stage parameter `s`, which can be instantiated as either stage 1 and stage 2.
 
 ```instar
-letrec power[s](x: Int@s)(n: Int): Int@s =
+letrec power[s](x: Int@s)(n: Int@1): Int@s =
   if n == 0
-  then lift[s](1)
-  else x *@s power[s](x)(n - 1)
-in ...
+  then 1
+  else x * power[s](x)(n - 1) in
+let power3 =
+  fun@2(x: Code[Int]) => power[2](x)(3) in
+power3(4)
 ```
+
+In the above example, we instantiate `power` at stage 2, and
+generate a specialized `power3`, which will be called at the second stage as well.
 
 ### Try Examples
 
