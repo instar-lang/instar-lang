@@ -47,6 +47,7 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case ESApp(e, st) =>
       val typedFun = infer(ctx, e)
       val TForallSt(s, bodyTy) = typedFun.ty.get
+      println(bodyTy)
       ESApp(typedFun, st).withType(substStage(bodyTy, s, st))
 
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))
@@ -179,7 +180,6 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EBNLam(_, None, _, _) =>
       fail("cannot infer a by-name lambda without a parameter type")
 
-
 private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
   expr match
     case ELam(x, argTy, body, retTy) =>
@@ -236,14 +236,17 @@ private def resolveType(ctx: Ctx, ty: Type): Type =
     case TAt(t, s) => TAt(resolveType(ctx, t), s)
     case TCode(t) => TCode(resolveType(ctx, t))
 
+// TODO: should do a proper capture-avoiding substitution with alpha-renaming
 private def substStage(ty: Type, from: String, to: Stage): Type =
+  assert(SVar(from) != to, s"Cannot substitute stage variable `$from` with itself")
   ty match
     case TUnit | TInt | TBool => ty
     case TFun(t1, t2) => TFun(substStage(t1, from, to), substStage(t2, from, to))
     case TRef(t) => TRef(substStage(t, from, to))
     case TForallSt(s, t) if s == from => TForallSt(s, t)
     case TForallSt(s, t) => TForallSt(s, substStage(t, from, to))
-    case TAt(t, SVar(s)) if s == from => TAt(substStage(t, from, to), to)
+    case TAt(t, SVar(s)) if s == from => substStage(TAt(t, to), from, to)
+    case TAt(t, SVar(s)) => TAt(substStage(t, from, to), SVar(s))
     case TAt(t, SNum(1)) => substStage(t, from, to)
     case TAt(t, SNum(2)) => TCode(substStage(t, from, to))
     case TCode(t) => TCode(substStage(t, from, to))
