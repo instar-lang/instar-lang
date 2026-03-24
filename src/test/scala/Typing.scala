@@ -9,7 +9,47 @@ import Expr.*
 import Stage.*
 import Type.*
 
+class Fixme extends FunSuite:
+  test("stage poly inst1") {
+    val str = """
+      let f[s1][s2] = fun@s1(x: Int @ s2) => x in
+      f[2][2]
+    """
+    val checked = infer(Parser.parse(str))
+    println(checked.ty)
+    // Got: TCode(TFun(TCode(TInt),TCode(TInt)))
+    // Should be: TCode(TFun(TInt, TInt))
+  }
+
 class TypingTest extends FunSuite:
+
+  test("stage-poly function") {
+    val str1 = """
+      let f[s] = fun@s(x: Int @ s) => x in
+      let g[s] = f[s] in
+      g[2]
+    """
+    val checked1 = infer(Parser.parse(str1))
+    assert(checked1.ty == Some(TCode(TFun(TInt, TInt))))
+
+    val str2 = """
+      let f[s] = fun@s(x: Int @ s) => x in
+      let g[s] = f[s] in
+      g[1]
+    """
+    val checked2 = infer(Parser.parse(str2))
+    assert(checked2.ty == Some(TFun(TInt, TInt)))
+  }
+
+  test("multiple stage vars") {
+    val str = """
+      let f[s1] [s2] = fun@s1(x: Int @ s2) => x in
+      f[1][1]
+    """
+    val checked = infer(Parser.parse(str))
+    assert(checked.ty == Some(TFun(TInt, TInt)))
+  }
+
   test("infer resolves omitted first-stage markers") {
     val typed = infer(Parser.parse("let inc = fun(x: Int): Int => x + 1 in inc(41)"))
 
@@ -81,4 +121,18 @@ class TypingTest extends FunSuite:
     intercept[TypeException] {
       infer(Parser.parse(src))
     }
+  }
+
+  test("check treats forall stage binders up to alpha-renaming") {
+    val expr =
+      Parser.parse("fun(x: forall[a]. Int @ a): forall[a]. Int @ a => x")
+    val expected =
+      TFun(
+        TForallSt("b", TAt(TInt, SVar("b"))),
+        TForallSt("c", TAt(TInt, SVar("c"))),
+      )
+
+    assert(equivType(infer(expr).ty.get, expected))
+    val checked = check(expr, expected)
+    assertEquals(checked.ty, Some(expected))
   }

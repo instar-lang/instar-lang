@@ -5,6 +5,13 @@ import Expr.*
 import Stage.*
 import Type.*
 
+object Counter:
+  private var count: Int = 0
+  def fresh: String =
+    val c = count
+    count += 1
+    s"$$s$c"
+
 final class TypeException(message: String) extends RuntimeException(message)
 
 private case class Ctx(env: Map[String, Type] = Map(), stEnv: Set[String] = Set()):
@@ -47,7 +54,6 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case ESApp(e, st) =>
       val typedFun = infer(ctx, e)
       val TForallSt(s, bodyTy) = typedFun.ty.get
-      println(bodyTy)
       ESApp(typedFun, st).withType(substStage(bodyTy, s, st))
 
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))
@@ -236,16 +242,20 @@ private def resolveType(ctx: Ctx, ty: Type): Type =
     case TAt(t, s) => TAt(resolveType(ctx, t), s)
     case TCode(t) => TCode(resolveType(ctx, t))
 
-// TODO: should do a proper capture-avoiding substitution with alpha-renaming
 private def substStage(ty: Type, from: String, to: Stage): Type =
-  assert(SVar(from) != to, s"Cannot substitute stage variable `$from` with itself")
   ty match
     case TUnit | TInt | TBool => ty
     case TFun(t1, t2) => TFun(substStage(t1, from, to), substStage(t2, from, to))
     case TRef(t) => TRef(substStage(t, from, to))
     case TForallSt(s, t) if s == from => TForallSt(s, t)
+    case TForallSt(s, t) if SVar(s) == to => t
     case TForallSt(s, t) => TForallSt(s, substStage(t, from, to))
-    case TAt(t, SVar(s)) if s == from => substStage(TAt(t, to), from, to)
+    case TAt(t, SVar(s)) if s == from =>
+      val t1 = substStage(t, from, to)
+      to match
+        case SVar(_) => TAt(t1, to)
+        case SNum(1) => t1
+        case SNum(2) => TCode(t1)
     case TAt(t, SVar(s)) => TAt(substStage(t, from, to), SVar(s))
     case TAt(t, SNum(1)) => substStage(t, from, to)
     case TAt(t, SNum(2)) => TCode(substStage(t, from, to))
@@ -288,8 +298,26 @@ private def inferUnaryOp(op: String, st: Stage): (Type, Type) =
     case _ => fail(s"unsupported unary operator `$op`")
 
 private def ensureSame(found: Type, expected: Type): Unit =
-  // TODO: alpha-renaming
-  assert(found == expected, s"type mismatch: found $found, expected $expected")
+  assert(equivType(found, expected), s"type mismatch: found $found, expected $expected")
+
+private def equivType(left: Type, right: Type): Boolean =
+  (left, right) match
+    case (TUnit, TUnit) | (TInt, TInt) | (TBool, TBool) => true
+    case (TFun(l1, l2), TFun(r1, r2)) =>
+      equivType(l1, r1) && equivType(l2, r2)
+    case (TRef(l), TRef(r)) =>
+      equivType(l, r)
+    case (TCode(l), TCode(r)) =>
+      equivType(l, r)
+    case (TAt(t1, st1), TAt(t2, st2)) =>
+      equivType(t1, t2) && st1 == st2
+    case (TForallSt(x, t1), TForallSt(y, t2)) if x == y =>
+      equivType(t1, t2)
+    case (TForallSt(x, t1), TForallSt(y, t2)) =>
+      val z = Counter.fresh
+      equivType(substStage(t1, x, SVar(z)), substStage(t2, y, SVar(z)))
+    case _ =>
+      false
 
 private def fail(message: String): Nothing =
   throw TypeException(message)
