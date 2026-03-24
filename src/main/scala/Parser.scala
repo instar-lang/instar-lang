@@ -420,8 +420,8 @@ object Parser:
       while keepGoing do
         current.kind match
           case Kind.LBracket =>
-            val stage = parseBracketedStage()
-            expr = ESApp(expr, stage)
+            val stages = parseBracketedStages()
+            stages.foreach(stage => expr = ESApp(expr, stage))
           case Kind.LParen =>
             advance()
             val arg = parseExpr()
@@ -580,9 +580,13 @@ object Parser:
         current.kind match
           case Kind.LBracket =>
             advance()
-            val stageName = parseIdentifier("stage variable")
+            val stageNames = ArrayBuffer.empty[String]
+            stageNames += parseIdentifier("stage variable")
+            while at(Kind.Comma) do
+              advance()
+              stageNames += parseIdentifier("stage variable")
             expect(Kind.RBracket, "`]`")
-            out += HeaderBinder.Stage(stageName)
+            stageNames.foreach(name => out += HeaderBinder.Stage(name))
           case Kind.LParen =>
             advance()
             val arg = parseIdentifier("parameter name")
@@ -634,6 +638,16 @@ object Parser:
       val st = parseStage()
       expect(Kind.RBracket, "`]`")
       st
+
+    private def parseBracketedStages(): List[Stage] =
+      expect(Kind.LBracket, "`[`")
+      val stages = ArrayBuffer.empty[Stage]
+      stages += parseStage()
+      while at(Kind.Comma) do
+        advance()
+        stages += parseStage()
+      expect(Kind.RBracket, "`]`")
+      stages.toList
 
     private def parseIdentifier(expected: String): String =
       if at(Kind.Identifier) then advance().lexeme

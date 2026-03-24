@@ -154,6 +154,50 @@ class ParserTest extends FunSuite:
     assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
   }
 
+  test("desugars comma-separated letrec stage binders to repeated brackets") {
+    val oldSyntax =
+      """letrec f[s1][s2] (x: Int @ s2): Int @ s2 =
+        |  x
+        |in f[1][1](2)
+        |""".stripMargin
+
+    val newSyntax =
+      """letrec f[s1, s2] (x: Int @ s2): Int @ s2 =
+        |  x
+        |in f[1][1](2)
+        |""".stripMargin
+
+    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+  }
+
+  test("desugars comma-separated let stage binders to repeated brackets") {
+    val oldSyntax =
+      """let f[s1][s2][s3][s4] = fun@s1(x: Int @ s2) => x
+        |in f[1][1][2][2](2)
+        |""".stripMargin
+
+    val newSyntax =
+      """let f[s1, s2, s3, s4] = fun@s1(x: Int @ s2) => x
+        |in f[1][1][2][2](2)
+        |""".stripMargin
+
+    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+  }
+
+  test("desugars comma-separated stage application to repeated brackets") {
+    val oldSyntax =
+      """let f = sfun[s1] => sfun[s2] => sfun[s3] => fun@s1(x: Int @ s2) => x
+        |in f[1][1][2](2)
+        |""".stripMargin
+
+    val newSyntax =
+      """let f[s1, s2, s3] = fun@s1(x: Int @ s2) => x
+        |in f[1, 1, 2](2)
+        |""".stripMargin
+
+    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+  }
+
   test("parses alternating stage and term binders in letrec bindings") {
     val oldSyntax =
       """letrec mix: Int -> (forall[s]. Int @ s -> Int @ s) =

@@ -52,6 +52,7 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       ESLam(s, typedBody).withType(TForallSt(s, bodyTy))
 
     case ESApp(e, st) =>
+      checkWF(ctx, st)
       val typedFun = infer(ctx, e)
       val TForallSt(s, bodyTy) = typedFun.ty.get
       ESApp(typedFun, st).withType(substStage(bodyTy, s, st))
@@ -241,6 +242,12 @@ private def resolveType(ctx: Ctx, ty: Type): Type =
     case TForallSt(s, t) => TForallSt(s, resolveType(ctx + s, t))
     case TAt(t, s) => TAt(resolveType(ctx, t), s)
     case TCode(t) => TCode(resolveType(ctx, t))
+
+private def checkWF(ctx: Ctx, st: Stage): Unit =
+  st match
+    case SNum(_) => ()
+    case SVar(s) =>
+      assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
 
 private def substStage(ty: Type, from: String, to: Stage): Type =
   ty match

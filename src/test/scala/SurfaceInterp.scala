@@ -130,6 +130,16 @@ class Core extends SurfaceBase {
     testEvalSurface(src, VNum(5))
   }
 
+  test("comma-separated let stage binders") {
+    val src = "let f[s1, s2] = fun@s1(x: Int @ s2) => x in f[1][1](2)"
+    testEvalSurface(src, VNum(2))
+  }
+
+  test("comma-separated stage application") {
+    val src = "let f[s1, s2] = fun@s1(x: Int @ s2) => x in f[1, 1](2)"
+    testEvalSurface(src, VNum(2))
+  }
+
   test("rec") {
     val factSrc =
       "letrec fact: Int -> Int = fun(n: Int): Int => if n <= 1 then 1 else n * fact(n - 1) in fact(5)"
