@@ -29,15 +29,8 @@ private def inferElab: PartialFunction[(Ctx, Expr), Expr] =
   case (ctx, EApp(e1, e2, None)) =>
     val typedFun = infer(ctx, e1)
     val st = stageOf(typedFun.ty.get)
-    //infer(ctx, EApp(e1, e2, Some(st)))
-    typedFun.ty.get match
+    unwrapAtStage(typedFun.ty.get, st) match
       case TFun(argTy, resTy) =>
-        val typedArg = check(ctx, e2, wrapAtStage(argTy, st))
-        EApp(typedFun, typedArg, Some(SNum(1))).withType(resTy)
-      case TCode(TFun(argTy, resTy)) =>
-        val typedArg = check(ctx, e2, TCode(argTy))
-        EApp(typedFun, typedArg, Some(SNum(2))).withType(TCode(resTy))
-      case TAt(TFun(argTy, resTy), st) =>
         val typedArg = check(ctx, e2, wrapAtStage(argTy, st))
         EApp(typedFun, typedArg, Some(st)).withType(wrapAtStage(resTy, st))
       case other =>
