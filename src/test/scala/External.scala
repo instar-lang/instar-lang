@@ -12,7 +12,8 @@ import munit.FunSuite
 
 import instar.codegen.CBackend
 import instar.interp.eval
-import instar.parser.Parser
+import instar.parser.parse
+import instar.typing.infer
 
 class ExternalTest extends FunSuite:
   private val testsDir = Path.of("tests")
@@ -35,8 +36,9 @@ class ExternalTest extends FunSuite:
   instarFiles.foreach { path =>
     test(s"external file: ${path.getFileName}") {
       val src = Files.readString(path, StandardCharsets.UTF_8)
-      val parsed = Parser.parse(src)
-      val evaluated = eval(parsed)
+      val parsed = parse(src)
+      val typed = infer(parsed)
+      val evaluated = eval(typed)
       val cSource = CBackend.compileResult(evaluated)
       val output = runCompiledC(cSource, path.getFileName.toString.stripSuffix(".instar"))
 

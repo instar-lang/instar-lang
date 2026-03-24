@@ -12,7 +12,7 @@ class ParserTest extends FunSuite:
 
   test("lexes and parses let/fun/application") {
     val input = "let inc = fun(x: Int): Int => x + 1 in inc(41)"
-    val parsed = Parser.parse(input)
+    val parsed = parse(input)
 
     val expected =
       ELet(
@@ -31,7 +31,7 @@ class ParserTest extends FunSuite:
 
   test("parses stage abstractions and stage application") {
     val input = "sfun[s]: forall[s]. Int @ s -> Int => lift[s](1)"
-    val parsed = Parser.parse(input)
+    val parsed = parse(input)
 
     val lam = parsed.asInstanceOf[ESLam]
     assertEquals(lam.x, "s")
@@ -41,7 +41,7 @@ class ParserTest extends FunSuite:
 
   test("parses let annotation as rhs ascription") {
     val input = "let x: Int = 1 in (x : Int)"
-    val parsed = Parser.parse(input)
+    val parsed = parse(input)
 
     val expected =
       ELet(
@@ -64,12 +64,12 @@ class ParserTest extends FunSuite:
         |in add[1](2)(3)
         |""".stripMargin
 
-    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+    assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
   test("parses refs with explicit stages") {
     val input = "let cell = ref@1(0) in cell :=@s !@1 cell"
-    val parsed = Parser.parse(input)
+    val parsed = parse(input)
 
     val expected =
       ELet(
@@ -83,7 +83,7 @@ class ParserTest extends FunSuite:
 
   test("parses letrec with explicit function type") {
     val input = "letrec id: Int -> Int = fun(x: Int): Int => x in id(3)"
-    val parsed = Parser.parse(input)
+    val parsed = parse(input)
 
     val expected =
       ELetRec(
@@ -99,7 +99,7 @@ class ParserTest extends FunSuite:
 
   test("parses letrec without explicit type when rhs exposes one") {
     val input = "letrec id = fun(x: Int): Int => x in id(3)"
-    val parsed = Parser.parse(input)
+    val parsed = parse(input)
 
     val expected =
       ELetRec(
@@ -113,7 +113,7 @@ class ParserTest extends FunSuite:
 
   test("parses stage-polymorphic letrec without explicit type when rhs exposes one") {
     val input = "letrec id = sfun[s] => fun(x: Int @ s): Int @ s => x in id[1](3)"
-    val parsed = Parser.parse(input)
+    val parsed = parse(input)
 
     val expected =
       ELetRec(
@@ -126,7 +126,7 @@ class ParserTest extends FunSuite:
   }
 
   test("parses letrec without explicit type even when rhs omits return type") {
-    val parsed = Parser.parse("letrec id = fun(x: Int) => x in id(3)")
+    val parsed = parse("letrec id = fun(x: Int) => x in id(3)")
 
     val expected =
       ELetRec(
@@ -151,7 +151,7 @@ class ParserTest extends FunSuite:
         |in impPower[1](2)(3)(ref(1))
         |""".stripMargin
 
-    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+    assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
   test("desugars comma-separated letrec stage binders to repeated brackets") {
@@ -167,7 +167,7 @@ class ParserTest extends FunSuite:
         |in f[1][1](2)
         |""".stripMargin
 
-    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+    assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
   test("desugars comma-separated let stage binders to repeated brackets") {
@@ -181,7 +181,7 @@ class ParserTest extends FunSuite:
         |in f[1][1][2][2](2)
         |""".stripMargin
 
-    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+    assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
   test("desugars comma-separated stage application to repeated brackets") {
@@ -195,7 +195,7 @@ class ParserTest extends FunSuite:
         |in f[1, 1, 2](2)
         |""".stripMargin
 
-    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+    assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
   test("parses alternating stage and term binders in letrec bindings") {
@@ -211,11 +211,11 @@ class ParserTest extends FunSuite:
         |in mix(1)[2](lift[2](3))
         |""".stripMargin
 
-    assertEquals(Parser.parse(newSyntax), Parser.parse(oldSyntax))
+    assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
   test("parses fix without explicit stage as first-stage fix") {
-    val parsed = Parser.parse("fix loop. fun(x: Int): Int => x")
+    val parsed = parse("fix loop. fun(x: Int): Int => x")
 
     val expected =
       EFix(
@@ -228,7 +228,7 @@ class ParserTest extends FunSuite:
   }
 
   test("parses fix with @stage syntax") {
-    val parsed = Parser.parse("fix@2 loop. fun(x: Int): Int => x")
+    val parsed = parse("fix@2 loop. fun(x: Int): Int => x")
 
     val expected =
       EFix(
@@ -241,12 +241,12 @@ class ParserTest extends FunSuite:
   }
 
   test("parses standalone types with constructors, staging, and arrows") {
-    val ty = Parser.parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
+    val ty = parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
     assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TCode(TInt))))
   }
 
   test("skips line comments in programs") {
-    val parsed = Parser.parse(
+    val parsed = parse(
       """let x = 1 // keep this ignored
         |in x + 2
         |""".stripMargin)
@@ -262,7 +262,7 @@ class ParserTest extends FunSuite:
   }
 
   test("skips block comments in programs") {
-    val parsed = Parser.parse(
+    val parsed = parse(
       """let /* binding */ x = ref(0) in /* read it */ !x
         |""".stripMargin)
 
@@ -277,7 +277,7 @@ class ParserTest extends FunSuite:
   }
 
   test("rejects fun without a parameter type") {
-    intercept[Parser.ParserException] {
-      Parser.parse("fun(x) => x")
+    intercept[ParserException] {
+      parse("fun(x) => x")
     }
   }

@@ -1,6 +1,6 @@
 package instar.interp
 
-import instar.parser.Parser
+import instar.parser.parse
 import instar.syntax.*
 import instar.syntax.given
 import Expr.*
@@ -51,7 +51,7 @@ trait SurfaceBase extends munit.FunSuite {
   protected def testEvalSurface(src: String, expected: Value, opt: Set[String] = Set()): Unit =
     Opt.disableAll
     Opt.enable(opt.toSeq*)
-    val (value, _) = eval(Parser.parse(src))
+    val (value, _) = eval(parse(src))
     assertEquals(normalizeValue(value), normalizeValue(expected))
 }
 
@@ -222,7 +222,7 @@ class Core extends SurfaceBase {
 
   test("stuck") {
     intercept[RuntimeException] {
-      eval(Parser.parse("let x = ref@2(lift[2](0)) in 10"))
+      eval(parse("let x = ref@2(lift[2](0)) in 10"))
     }
   }
 

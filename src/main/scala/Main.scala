@@ -12,7 +12,7 @@ import instar.interp.eval
 import instar.interp.Store
 import instar.interp.Value
 import instar.interp.Value.*
-import instar.parser.Parser
+import instar.parser.parse
 import instar.typing.*
 
 private case class CliConfig(
@@ -53,7 +53,7 @@ def emitCFromProgram(source: String): Unit =
 
 private def runSource(source: String, errorPrefix: String = ""): (Value, Store) =
   try
-    val prog = Parser.parse(source)
+    val prog = parse(source)
     println(s"Parsed program: $prog")
     val tyProg = infer(prog)
     println(s"Type checking succeeded: ${tyProg.ty}")

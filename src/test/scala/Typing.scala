@@ -2,7 +2,7 @@ package instar.typing
 
 import munit.FunSuite
 
-import instar.parser.Parser
+import instar.parser.parse
 import instar.syntax.*
 import instar.syntax.given
 import Expr.*
@@ -16,7 +16,7 @@ class Fixme extends FunSuite:
       let f[s1, s2] = fun@s1(x: Int @ s2) => x in
       f
     """
-    val checked = infer(Parser.parse(str))
+    val checked = infer(parse(str))
     println(checked.ty)
     // Got: TCode(TFun(TCode(TInt),TCode(TInt)))
     // Should be: TCode(TFun(TInt, TInt))
@@ -30,7 +30,7 @@ class TypingTest extends FunSuite:
       let g[s] = f[s] in
       g[2]
     """
-    val checked1 = infer(Parser.parse(str1))
+    val checked1 = infer(parse(str1))
     assert(checked1.ty == Some(TCode(TFun(TInt, TInt))))
 
     val str2 = """
@@ -38,7 +38,7 @@ class TypingTest extends FunSuite:
       let g[s] = f[s] in
       g[1]
     """
-    val checked2 = infer(Parser.parse(str2))
+    val checked2 = infer(parse(str2))
     assert(checked2.ty == Some(TFun(TInt, TInt)))
   }
 
@@ -47,12 +47,12 @@ class TypingTest extends FunSuite:
       let f[s1] [s2] = fun@s1(x: Int @ s2) => x in
       f[1][1]
     """
-    val checked = infer(Parser.parse(str))
+    val checked = infer(parse(str))
     assert(checked.ty == Some(TFun(TInt, TInt)))
   }
 
   test("infer resolves omitted first-stage markers") {
-    val typed = infer(Parser.parse("let inc = fun(x: Int): Int => x + 1 in inc(41)"))
+    val typed = infer(parse("let inc = fun(x: Int): Int => x + 1 in inc(41)"))
 
     assertEquals(typed.ty, Some(TInt))
 
@@ -69,7 +69,7 @@ class TypingTest extends FunSuite:
   }
 
   test("check fills in the lambda result type") {
-    val checked = check(Parser.parse("fun(x: Int) => x"), TFun(TInt, TInt))
+    val checked = check(parse("fun(x: Int) => x"), TFun(TInt, TInt))
 
     val lam = checked.asInstanceOf[ELam]
     assertEquals(checked.ty, Some(TFun(TInt, TInt)))
@@ -79,7 +79,7 @@ class TypingTest extends FunSuite:
   }
 
   test("infer instantiates stage-polymorphic expressions") {
-    val typed = infer(Parser.parse("(sfun[s] => lift[s](fun(x: Int @ s): Int @ s => x))[2]"))
+    val typed = infer(parse("(sfun[s] => lift[s](fun(x: Int @ s): Int @ s => x))[2]"))
     assertEquals(typed.ty, Some(TCode(TFun(TInt, TInt))))
     val inst = typed.asInstanceOf[ESApp]
     assertEquals(inst.st, SNum(2))
@@ -91,7 +91,7 @@ class TypingTest extends FunSuite:
         fun(n: Int): Int => if n <= 1 then 1 else n * fact(n - 1)
       in fact(5)
     """
-    val typed = infer(Parser.parse(src))
+    val typed = infer(parse(src))
     val letrec = typed.asInstanceOf[ELetRec]
     val rhs = letrec.rhs.asInstanceOf[EAscribe]
     val lam = rhs.e.asInstanceOf[ELam]
@@ -107,7 +107,7 @@ class TypingTest extends FunSuite:
     val src =
       "fix fib. fun(n: Int): Int => if n <= 1 then 1 else n * fib(n - 1)"
 
-    val typed = infer(Parser.parse(src))
+    val typed = infer(parse(src))
     val fix = typed.asInstanceOf[EFix]
 
     assertEquals(typed.ty, Some(TFun(TInt, TInt)))
@@ -120,13 +120,13 @@ class TypingTest extends FunSuite:
       "letrec fact = fun(n: Int) => if n <= 1 then 1 else n * fact(n - 1) in fact(5)"
 
     intercept[TypeException] {
-      infer(Parser.parse(src))
+      infer(parse(src))
     }
   }
 
   test("check treats forall stage binders up to alpha-renaming") {
     val expr =
-      Parser.parse("fun(x: forall[a]. Int @ a): forall[a]. Int @ a => x")
+      parse("fun(x: forall[a]. Int @ a): forall[a]. Int @ a => x")
     val expected =
       TFun(
         TForallSt("b", TAt(TInt, SVar("b"))),
@@ -140,17 +140,17 @@ class TypingTest extends FunSuite:
 
   test("coerce primitives") {
     {
-      val expr = Parser.parse("fun(x: Int): Int@2 => 1")
+      val expr = parse("fun(x: Int): Int@2 => 1")
       val inferred = infer(expr)
       assertEquals(inferred, ELam("x",Some(TInt),ELift(ENum(1),SNum(2)),Some(TCode(TInt))))
     }
     {
-      val expr = Parser.parse("fun(x: Int): Unit@2 => ()")
+      val expr = parse("fun(x: Int): Unit@2 => ()")
       val inferred = infer(expr)
       assertEquals(inferred, ELam("x",Some(TInt),ELift(EUnit,SNum(2)),Some(TCode(TUnit))))
     }
     {
-      val expr = Parser.parse("fun(x: Int): Bool@2 => true")
+      val expr = parse("fun(x: Int): Bool@2 => true")
       val inferred = infer(expr)
       assertEquals(inferred, ELam("x",Some(TInt),ELift(EBool(true),SNum(2)),Some(TCode(TBool))))
     }
@@ -158,13 +158,13 @@ class TypingTest extends FunSuite:
 
   test("coerce var") {
     {
-      val expr = Parser.parse("fun(x: Int): Int@2 => x")
+      val expr = parse("fun(x: Int): Int@2 => x")
       val inferred = infer(expr)
       println(inferred)
       assertEquals(inferred, ELam("x",Some(TInt),ELift(EVar("x"),SNum(2)),Some(TCode(TInt))))
     }
     {
-      val expr = Parser.parse("sfun[s] => fun(x: Int): Int@s => x")
+      val expr = parse("sfun[s] => fun(x: Int): Int@s => x")
       val inferred = infer(expr)
       println(inferred)
       assertEquals(inferred, ESLam("s",ELam("x",Some(TInt),ELift(EVar("x"),SVar("s")),Some(TAt(TInt,SVar("s"))))))

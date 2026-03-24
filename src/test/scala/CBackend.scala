@@ -11,14 +11,14 @@ import scala.sys.process.ProcessLogger
 
 import instar.interp.eval
 import instar.interp.Value.*
-import instar.parser.Parser
+import instar.parser.parse
 import instar.syntax.*
 import instar.syntax.given
 import Expr.*
 
 class CBackendTest extends FunSuite:
   private def evalWithCBackend(src: String): String =
-    val result = eval(Parser.parse(src))
+    val result = eval(parse(src))
     CBackend.compileResult(result)
 
   private def runCompiledC(cSource: String): String =
