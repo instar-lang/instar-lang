@@ -94,25 +94,20 @@ def inlineCOutputPath: Path = Path.of("instar_inline.c").toAbsolutePath
 
 def inlineExecutableOutputPath: Path = Path.of("instar_inline.out").toAbsolutePath
 
-private def replaceExtension(fileName: String, newExt: String): String =
-  val dot = fileName.lastIndexOf('.')
-  if dot > 0 then s"${fileName.substring(0, dot)}.$newExt"
-  else s"$fileName.$newExt"
-
-private def compileC(cFile: Path, exeFile: Path): Unit =
+def compileC(cFile: Path, exeFile: Path): Unit =
   val compileLog = new StringBuilder
   val exitCode =
     Process(Seq("cc", "-std=c11", cFile.toString, "-o", exeFile.toString))
       .!(ProcessLogger(line => compileLog.append(line).append('\n')))
-  if exitCode != 0 then
-    val details =
-      val log = compileLog.result().trim
-      if log.isEmpty then s"C compiler exited with code $exitCode"
-      else log
-    throw RuntimeException(details)
+  if exitCode != 0 then throw RuntimeException(s"C compiler exited with code $exitCode")
 
-private def runExecutable(exeFile: Path): String =
+def runExecutable(exeFile: Path): String =
   Process(Seq(exeFile.toString)).!!.trim
+
+private def replaceExtension(fileName: String, newExt: String): String =
+  val dot = fileName.lastIndexOf('.')
+  if dot > 0 then s"${fileName.substring(0, dot)}.$newExt"
+  else s"$fileName.$newExt"
 
 private def parseArgs(args: List[String]): Either[String, CliConfig] =
   def loop(rest: List[String], emitC: Boolean, file: Option[Path], program: Option[String]): Either[String, CliConfig] =
