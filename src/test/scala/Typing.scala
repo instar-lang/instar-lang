@@ -10,6 +10,7 @@ import Stage.*
 import Type.*
 
 class Fixme extends FunSuite:
+
   test("stage poly inst1") {
     val str = """
       let f[s1, s2] = fun@s1(x: Int @ s2) => x in
@@ -135,4 +136,37 @@ class TypingTest extends FunSuite:
     assert(equivType(infer(expr).ty.get, expected))
     val checked = check(expr, expected)
     assertEquals(checked.ty, Some(expected))
+  }
+
+  test("coerce primitives") {
+    {
+      val expr = Parser.parse("fun(x: Int): Int@2 => 1")
+      val inferred = infer(expr)
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(ENum(1),SNum(2)),Some(TCode(TInt))))
+    }
+    {
+      val expr = Parser.parse("fun(x: Int): Unit@2 => ()")
+      val inferred = infer(expr)
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(EUnit,SNum(2)),Some(TCode(TUnit))))
+    }
+    {
+      val expr = Parser.parse("fun(x: Int): Bool@2 => true")
+      val inferred = infer(expr)
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(EBool(true),SNum(2)),Some(TCode(TBool))))
+    }
+  }
+
+  test("coerce var") {
+    {
+      val expr = Parser.parse("fun(x: Int): Int@2 => x")
+      val inferred = infer(expr)
+      println(inferred)
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(EVar("x"),SNum(2)),Some(TCode(TInt))))
+    }
+    {
+      val expr = Parser.parse("sfun[s] => fun(x: Int): Int@s => x")
+      val inferred = infer(expr)
+      println(inferred)
+      assertEquals(inferred, ESLam("s",ELam("x",Some(TInt),ELift(EVar("x"),SVar("s")),Some(TAt(TInt,SVar("s"))))))
+    }
   }

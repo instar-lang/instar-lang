@@ -25,8 +25,28 @@ def infer(expr: Expr): Expr = infer(Ctx(), expr)
 
 def check(expr: Expr, expected: Type): Expr = check(Ctx(), expr, expected)
 
+private def inferElab: PartialFunction[(Ctx, Expr), Expr] =
+  case (ctx, EApp(e1, e2, None)) =>
+    val typedFun = infer(ctx, e1)
+    val st = stageOf(typedFun.ty.get)
+    //infer(ctx, EApp(e1, e2, Some(st)))
+    typedFun.ty.get match
+      case TFun(argTy, resTy) =>
+        val typedArg = check(ctx, e2, wrapAtStage(argTy, st))
+        EApp(typedFun, typedArg, Some(SNum(1))).withType(resTy)
+      case TCode(TFun(argTy, resTy)) =>
+        val typedArg = check(ctx, e2, TCode(argTy))
+        EApp(typedFun, typedArg, Some(SNum(2))).withType(TCode(resTy))
+      case TAt(TFun(argTy, resTy), st) =>
+        val typedArg = check(ctx, e2, wrapAtStage(argTy, st))
+        EApp(typedFun, typedArg, Some(st)).withType(wrapAtStage(resTy, st))
+      case other =>
+        fail(s"expected a function, found $other")
+
 private def infer(ctx: Ctx, expr: Expr): Expr =
-  expr match
+  if inferElab.isDefinedAt((ctx, expr)) then
+    inferElab((ctx, expr))
+  else expr match
     case EUnit => EUnit.withType(TUnit)
     case ENum(i) => ENum(i).withType(TInt)
     case EBool(b) => EBool(b).withType(TBool)
@@ -187,8 +207,48 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EBNLam(_, None, _, _) =>
       fail("cannot infer a by-name lambda without a parameter type")
 
+def coerce(e: Expr, t1: Type, to: Type): Expr =
+  to match
+    case TCode(t2) if equivType(t1, t2) =>
+      ELift(e, SNum(2)).withType(TCode(t2))
+    case TAt(t2, st) if equivType(t1, t2) =>
+      ELift(e, st).withType(TAt(t2, st))
+    case t2 if equivType(t1, t2) => e
+    case other => fail(s"cannot coerce type $t1 to $other")
+
+private def checkElab: PartialFunction[(Ctx, Expr, Type), Expr] =
+  case (ctx, EUnit, expected) =>
+    coerce(EUnit.withType(TUnit), TUnit, expected)
+  case (ctx, ENum(i), expected) =>
+    coerce(ENum(i).withType(TInt), TInt, expected)
+  case (ctx, EBool(b), expected) =>
+    coerce(EBool(b).withType(TBool), TBool, expected)
+  case (ctx, EVar(x), expected) =>
+    assert(ctx.containsVar(x), s"unbound variable `$x`")
+    coerce(EVar(x).withType(ctx(x)), ctx(x), expected)
+  case (ctx, ECond(e1, e2, e3, None), expected) =>
+    val typedCond = infer(ctx, e1)
+    typedCond.ty.get match
+      case TBool =>
+        val typedThen = check(ctx, e2, expected)
+        val typedElse = check(ctx, e3, expected)
+        ECond(typedCond, typedThen, typedElse, Some(SNum(1))).withType(expected)
+      case TCode(TBool) =>
+        // FIXME: e2/e3's type should be TCode(...)
+        val typedThen = check(ctx, e2, expected)
+        val typedElse = check(ctx, e3, expected)
+        ECond(typedCond, typedThen, typedElse, Some(SNum(2))).withType(expected)
+      case TAt(TBool, st) => ???
+  case (ctx, EBinOp(op, e1, e2, None), expected) =>
+    val (argTy, resTy) = inferBinOp(op, stageOf(expected))
+    val typedL = check(ctx, e1, argTy)
+    val typedR = check(ctx, e2, argTy)
+    EBinOp(op, typedL, typedR, Some(stageOf(expected))).withType(resTy)
+
 private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
-  expr match
+  if checkElab.isDefinedAt((ctx, expr, expected)) then
+    checkElab((ctx, expr, expected))
+  else expr match
     case ELam(x, argTy, body, retTy) =>
       expected match
         case TFun(argTy1, retTy1) =>
@@ -280,6 +340,12 @@ private def substStage(ty: Type, from: String, to: Stage): Type =
     case TAt(t, SNum(1)) => substStage(t, from, to)
     case TAt(t, SNum(2)) => TCode(substStage(t, from, to))
     case TCode(t) => TCode(substStage(t, from, to))
+
+private def stageOf(ty: Type): Stage =
+  ty match
+    case TAt(_, st) => st
+    case TCode(_) => SNum(2)
+    case _ => SNum(1)
 
 private def wrapAtStage(ty: Type, st: Stage): Type =
   st match
