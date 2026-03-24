@@ -12,8 +12,8 @@ import Type.*
 class Fixme extends FunSuite:
   test("stage poly inst1") {
     val str = """
-      let f[s1][s2] = fun@s1(x: Int @ s2) => x in
-      f[2][2]
+      let f[s1, s2] = fun@s1(x: Int @ s2) => x in
+      f
     """
     val checked = infer(Parser.parse(str))
     println(checked.ty)

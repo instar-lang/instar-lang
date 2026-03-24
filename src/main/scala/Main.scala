@@ -54,6 +54,7 @@ def emitCFromProgram(source: String): Unit =
 private def runSource(source: String, errorPrefix: String = ""): (Value, Store) =
   try
     val prog = Parser.parse(source)
+    println(s"Parsed program: $prog")
     val tyProg = infer(prog)
     println(s"Type checking succeeded: ${tyProg.ty}")
     val (value, store) = eval(tyProg)

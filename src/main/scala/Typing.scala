@@ -122,7 +122,7 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EAlloc(e, Some(st)) =>
       val typedE = infer(ctx, e)
       // FIXME: we cannot have EAlloc(code, SNum(2))
-      val elemTy = typedE.ty.get
+      val elemTy = unwrapAtStage(typedE.ty.get, st)
       EAlloc(typedE, Some(st)).withType(wrapAtStage(TRef(elemTy), st))
 
     case EDeref(e, None) => infer(ctx, EDeref(e, Some(Sta)))
@@ -222,13 +222,26 @@ private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
       ensureSame(typed.ty.get, expected)
       typed
 
+// XXX: the ctx seems not necessary
 private def resolveRecType(ctx: Ctx, expr: Expr): Option[Type] =
   expr match
     case EAscribe(_, ann) => Some(ann)
+    case ELift(e, st) =>
+      resolveRecType(ctx, e) match
+        case Some(t) => Some(TCode(unliftType(t, st)))
+        case None => None
     case ELam(_, Some(argTy), _, Some(retTy)) =>
       Some(TFun(argTy, retTy))
+    case ELam(x, Some(argTy), body, None) =>
+      resolveRecType(ctx + (x -> argTy), body) match
+        case Some(retTy) => Some(TFun(argTy, retTy))
+        case None => None
     case EBNLam(_, Some(argTy), _, Some(retTy)) =>
       Some(TFun(argTy, retTy))
+    case EBNLam(x, Some(argTy), body, None) =>
+      resolveRecType(ctx + (x -> argTy), body) match
+        case Some(retTy) => Some(TFun(argTy, retTy))
+        case None => None
     case ESLam(s, body) =>
       resolveRecType(ctx + s, body).map(TForallSt(s, _))
     case _ =>
