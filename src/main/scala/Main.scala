@@ -28,37 +28,33 @@ def main(args: Array[String]): Unit =
     case Right(config) =>
       config match
         case CliConfig(true, Some(path), None) =>
-          emitCFromPath(path)
+          val source = Files.readString(path, StandardCharsets.UTF_8)
+          emitCSource(source, cOutputPath(path), executableOutputPath(path))
         case CliConfig(false, Some(path), None) =>
-          runFile(path)
+          val source = Files.readString(path, StandardCharsets.UTF_8)
+          runSource(source, s"Error: Failed to run ${path.toAbsolutePath}")
         case CliConfig(true, None, Some(program)) =>
-          emitCFromProgram(program)
+          val cFile = inlineCOutputPath
+          val exeFile = inlineExecutableOutputPath
+          emitCSource(program, cFile, exeFile)
         case CliConfig(false, None, Some(program)) =>
           runSource(program, "Error: Failed to run inline program")
         case _ =>
           Console.err.println(usage)
 
-def runFile(path: Path): Unit =
-  val source = Files.readString(path, StandardCharsets.UTF_8)
-  runSource(source, s"Error: Failed to run ${path.toAbsolutePath}")
-
-def emitCFromPath(path: Path): Unit =
-  val source = Files.readString(path, StandardCharsets.UTF_8)
-  emitCSource(source, cOutputPath(path), executableOutputPath(path))
-
-def emitCFromProgram(source: String): Unit =
-  val cFile = inlineCOutputPath
-  val exeFile = inlineExecutableOutputPath
-  emitCSource(source, cFile, exeFile)
-
 private def runSource(source: String, errorPrefix: String = ""): (Value, Store) =
   try
     val prog = parse(source)
-    println(s"Parsed program: $prog")
+    println(s"========Parsed Program=========")
+    println(s"$prog")
     val tyProg = infer(prog)
-    println(s"Type checking succeeded: ${tyProg.ty}")
+    println(s"========Elaborated Program=========")
+    println(s"$tyProg")
+    println(s"========Type Checking Result=========")
+    println(s"${tyProg.ty}")
     val (value, store) = eval(tyProg)
-    println(s"First-stage evaluation result: $value")
+    println(s"========First-Stage Evaluation=========")
+    println(s"${pretty.value(value)}")
     (value, store)
   catch
     case ex: Exception =>

@@ -48,3 +48,5 @@ Low priority
   - [ ] Wasm backend
   - [ ] Rust backend?
 - [ ] type polymorphism a la F
+- [x] pretty printer
+- [ ] convenient syntax for assignment
