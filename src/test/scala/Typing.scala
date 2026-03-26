@@ -10,17 +10,43 @@ import Stage.*
 import Type.*
 
 class Fixme extends FunSuite:
-
-  test("stage poly inst1") {
-    val str = """
-      let f[s1, s2] = fun@s1(x: Int @ s2) => x in
-      f
-    """
-    val checked = infer(parse(str))
-    println(checked.ty)
-    // Got: TCode(TFun(TCode(TInt),TCode(TInt)))
-    // Should be: TCode(TFun(TInt, TInt))
+  test("multiple stage vars") {
+    {
+      val str = """
+        let f[s1, s2] = fun@s1(x: Int @ s2) => x in
+        f[2, 2]
+      """
+      val checked = infer(parse(str))
+      println(checked.ty)
+      // Should be: TCode(TFun(TInt, TInt))
+    }
+    {
+      val str = """
+        let f[s1] [s2] = fun@s1(x: Int @ s2) => x in
+        f[1][1]
+      """
+      val checked = infer(parse(str))
+      assertEquals(checked.ty, Some(TFun(TInt, TInt)))
+    }
   }
+
+
+  test("second-stage cond should have second-stage branches") {
+    val str = """
+      if lift[2](true) then 1 else 2
+    """
+    val checked = check(parse(str), TInt)
+    println(checked.ty)
+    // Should: fail
+  }
+
+  test("elab with stage var") {
+    val expr = """let add[s] (x: Int@s) (y: Int) = x + y in add"""
+    val inferred = infer(parse(expr))
+    // Currently it fails to infer, we could insert a lift for y
+    println(inferred.ty.get)
+  }
+
 
 class TypingTest extends FunSuite:
 
@@ -31,7 +57,7 @@ class TypingTest extends FunSuite:
       g[2]
     """
     val checked1 = infer(parse(str1))
-    assert(checked1.ty == Some(TCode(TFun(TInt, TInt))))
+    assertEquals(checked1.ty, Some(TCode(TFun(TInt, TInt))))
 
     val str2 = """
       let f[s] = fun@s(x: Int @ s) => x in
@@ -39,16 +65,7 @@ class TypingTest extends FunSuite:
       g[1]
     """
     val checked2 = infer(parse(str2))
-    assert(checked2.ty == Some(TFun(TInt, TInt)))
-  }
-
-  test("multiple stage vars") {
-    val str = """
-      let f[s1] [s2] = fun@s1(x: Int @ s2) => x in
-      f[1][1]
-    """
-    val checked = infer(parse(str))
-    assert(checked.ty == Some(TFun(TInt, TInt)))
+    assertEquals(checked2.ty, Some(TFun(TInt, TInt)))
   }
 
   test("infer resolves omitted first-stage markers") {
@@ -160,13 +177,32 @@ class TypingTest extends FunSuite:
     {
       val expr = parse("fun(x: Int): Int@2 => x")
       val inferred = infer(expr)
-      println(inferred)
       assertEquals(inferred, ELam("x",Some(TInt),ELift(EVar("x"),SNum(2)),Some(TCode(TInt))))
     }
     {
       val expr = parse("sfun[s] => fun(x: Int): Int@s => x")
       val inferred = infer(expr)
-      println(inferred)
       assertEquals(inferred, ESLam("s",ELam("x",Some(TInt),ELift(EVar("x"),SVar("s")),Some(TAt(TInt,SVar("s"))))))
+    }
+  }
+
+  test("stage poly add") {
+    val expr = "let add[s] (x: Int@s) (y: Int@s) = x +@s y in add[2](lift[2](2))(lift[2](3))"
+    val inferred = infer(parse(expr))
+    assert(inferred.ty.get == TCode(TInt))
+  }
+
+  test("elab with stage var") {
+    val expr = """let add[s] (x: Int@s) (y: Int@s) = x + y in add[2](2)(3)"""
+    val inferred = infer(parse(expr))
+    assert(inferred.asInstanceOf[ELet].rhs.asInstanceOf[ESLam].body.asInstanceOf[ELam].body.asInstanceOf[ELam].body ==
+      EBinOp("+",EVar("x"),EVar("y"),Some(SVar("s"))))
+    assert(inferred.ty.get == TCode(TInt))
+  }
+
+  test("lift2-lift2") {
+    val expr = parse("lift[2](lift[2](1))")
+    intercept[TypeException] {
+      infer(expr)
     }
   }

@@ -1,2 +1,7 @@
+let add[s] (x: Int@s) (y: Int@s) = x + y in
+add[2](2)(3)
+
+/*
 let add[s] (x: Int@s) (y: Int@s) = x +@s y in
 add[2](lift[2](2))(lift[2](3))
+*/
