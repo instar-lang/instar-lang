@@ -32,6 +32,7 @@ High priority
 Medium priority
 
 - [ ] type system tracking aliases and separation
+- [ ] generate recursive definitions (see `tests/ackermann.instar` a challenging example and https://okmij.org/ftp/meta-programming/genletrec/genletrec.pdf)
 - [ ] optimizations
   - [ ] lambda lifting or closure conversion
   - [ ] lambda dropping
