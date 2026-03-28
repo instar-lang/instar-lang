@@ -74,7 +74,7 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
     case ESApp(_, _) =>
       val (base, stages) = collectStageApps(expr)
       maybeParens(
-        s"${renderExpr(base, 8)}[${stages.map(renderStage).mkString(", ")}]",
+        s"${renderExpr(base, 9)}[${stages.map(renderStage).mkString(", ")}]",
         parentPrec > 8,
       )
 
@@ -91,8 +91,8 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
       maybeParens(s"run(${renderExpr(t, 0)})", parentPrec > 7)
 
     case EApp(e1, e2, st) =>
-      val rendered = s"${renderExpr(e1, 8)}(${renderExpr(e2, 0)})${renderStageValue(st)}"
-      maybeParens(rendered, parentPrec > 7)
+      val rendered = s"${renderExpr(e1, 8)} ${renderAppArg(e2)}${renderStageValue(st)}"
+      maybeParens(rendered, parentPrec > 8)
 
     case ECBNApp(e1, e2) =>
       val rendered = s"${renderExpr(e1, 8)}(${renderExpr(e2, 0)})"
@@ -174,6 +174,22 @@ private def renderLiftedFun(lam: ELam, stage: Stage, parentPrec: Int): String =
     s"fun@${renderStage(stage)}(${lam.x}: $arg)${renderReturn(lam.retTy)} => ${renderExpr(lam.body, 0)}",
     parentPrec > 0,
   )
+
+private def renderAppArg(expr: Expr): String =
+  if canRenderJuxtapositionArg(expr) then renderExpr(expr, 9)
+  else s"(${renderExpr(expr, 0)})"
+
+private def canRenderJuxtapositionArg(expr: Expr): Boolean =
+  expr match
+    case ENum(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
+    case ESApp(base, _) => canRenderJuxtapositionStageBase(base)
+    case _ => false
+
+private def canRenderJuxtapositionStageBase(expr: Expr): Boolean =
+  expr match
+    case ENum(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
+    case ESApp(base, _) => canRenderJuxtapositionStageBase(base)
+    case _ => false
 
 private def maybeParens(s: String, needParens: Boolean): String =
   if needParens then s"($s)" else s

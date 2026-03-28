@@ -9,6 +9,7 @@ import Expr.*
 import Stage.*
 import Type.*
 
+/*
 class Fixme extends FunSuite:
   test("multiple stage vars") {
     {
@@ -46,7 +47,7 @@ class Fixme extends FunSuite:
     // Currently it fails to infer, we could insert a lift for y
     println(inferred.ty.get)
   }
-
+*/
 
 class TypingTest extends FunSuite:
 

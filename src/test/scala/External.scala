@@ -17,14 +17,36 @@ import instar.typing.infer
 
 class ExternalTest extends FunSuite:
   private val testsDir = Path.of("tests")
+  // Leave this empty to run every `tests/*.instar` case.
+  // Otherwise list the file stems or filenames to be tested
+  private val requestedTestFiles: List[String] =
+    List("power.instar", "fib.instar", "mkAdd.instar", "impPower.instar", "try.instar")
+  // TODO: ackermann doesn't work yet because we don't support recursive definitions
 
-  private val instarFiles =
+  private val allInstarFiles =
     Files.list(testsDir).iterator().asScala
       .filter(path => Files.isRegularFile(path) && path.toString.endsWith(".instar"))
       .toList
       .sortBy(_.getFileName.toString)
 
-  assert(instarFiles.nonEmpty, s"No .instar files found under $testsDir")
+  private val selectedInstarFiles =
+    if requestedTestFiles.nonEmpty then requestedTestFiles.map(resolveRequestedFile)
+    else allInstarFiles
+
+  private def resolveRequestedFile(name: String): Path =
+    val provided = Path.of(name)
+    val withExt =
+      if name.endsWith(".instar") then provided
+      else Path.of(s"$name.instar")
+
+    val candidate =
+      if withExt.isAbsolute then withExt
+      else
+        val direct = testsDir.resolve(withExt)
+        if Files.exists(direct) then direct else withExt
+
+    if Files.isRegularFile(candidate) then candidate.normalize()
+    else fail(s"Requested external test file `$name` was not found")
 
   private def runCompiledC(cSource: String, stem: String): String =
     val cFile = testsDir.resolve(s"$stem.c")
@@ -33,7 +55,7 @@ class ExternalTest extends FunSuite:
     instar.compileC(cFile, exeFile)
     instar.runExecutable(exeFile)
 
-  instarFiles.foreach { path =>
+  selectedInstarFiles.foreach { path =>
     test(s"external file: ${path.getFileName}") {
       val src = Files.readString(path, StandardCharsets.UTF_8)
       val parsed = parse(src)

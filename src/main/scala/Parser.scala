@@ -411,10 +411,10 @@ private case class Parser(tokens: Vector[Token]):
       val stage = parseOptionalStageValue()
       EDeref(parseUnary(), stage)
     else
-      parsePostfix()
+      parseApplication()
 
-  private def parsePostfix(): Expr =
-    var expr = parsePrimary()
+  private def parseApplication(): Expr =
+    var expr = parseAtomicPostfix()
     var keepGoing = true
     while keepGoing do
       current.kind match
@@ -426,9 +426,27 @@ private case class Parser(tokens: Vector[Token]):
           val arg = parseExpr()
           expect(Kind.RParen, "`)`")
           expr = EApp(expr, arg, parseOptionalStageValue())
+        case kind if canStartJuxtapositionArg(kind) =>
+          val arg = parseJuxtapositionArg()
+          expr = EApp(expr, arg, parseOptionalStageValue())
         case _ =>
           keepGoing = false
     expr
+
+  private def parseAtomicPostfix(): Expr =
+    var expr = parsePrimary()
+    while at(Kind.LBracket) do
+      val stages = parseBracketedStages()
+      stages.foreach(stage => expr = ESApp(expr, stage))
+    expr
+
+  private def parseJuxtapositionArg(): Expr =
+    parseAtomicPostfix()
+
+  private def canStartJuxtapositionArg(kind: Kind): Boolean =
+    kind match
+      case Kind.IntLit | Kind.True | Kind.False | Kind.Identifier | Kind.Lift | Kind.Ref | Kind.IsApp | Kind.Run => true
+      case _ => false
 
   private def parsePrimary(): Expr =
     current.kind match

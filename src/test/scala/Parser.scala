@@ -29,6 +29,20 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
+  test("parses bare function application left-associatively") {
+    val parsed = parse("f x y")
+    assertEquals(parsed, EApp(EApp(EVar("f"), EVar("x"), None), EVar("y"), None))
+  }
+
+  test("parses bare application with parenthesized complex arguments") {
+    assertEquals(parse("f x (y + 1)"), parse("f(x)(y + 1)"))
+  }
+
+  test("preserves stage application syntax alongside bare term application") {
+    assertEquals(parse("add[1] 2 3"), parse("add[1](2)(3)"))
+    assertEquals(parse("(mix 1)[2] x"), parse("mix(1)[2](x)"))
+  }
+
   test("parses stage abstractions and stage application") {
     val input = "sfun[s]: forall[s]. Int @ s -> Int => lift[s](1)"
     val parsed = parse(input)
@@ -61,7 +75,7 @@ class ParserTest extends FunSuite:
 
     val newSyntax =
       """let add[s] (x: Int @ s) (y: Int @ s) = x +@s y
-        |in add[1](2)(3)
+        |in add[1] 2 3
         |""".stripMargin
 
     assertEquals(parse(newSyntax), parse(oldSyntax))
@@ -148,7 +162,7 @@ class ParserTest extends FunSuite:
     val newSyntax =
       """letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int] @ s): Int @ s =
         |  result
-        |in impPower[1](2)(3)(ref(1))
+        |in impPower[1] 2 3 (ref(1))
         |""".stripMargin
 
     assertEquals(parse(newSyntax), parse(oldSyntax))
@@ -208,7 +222,7 @@ class ParserTest extends FunSuite:
     val newSyntax =
       """letrec mix (x: Int) [s] (y: Int @ s): Int @ s =
         |  y
-        |in mix(1)[2](lift[2](3))
+        |in (mix 1)[2] lift[2](3)
         |""".stripMargin
 
     assertEquals(parse(newSyntax), parse(oldSyntax))

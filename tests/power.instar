@@ -1,7 +1,7 @@
 letrec power[s](x: Int@s)(n: Int): Int@s =
   if n == 0
   then 1
-  else x * power[s](x)(n - 1) in
+  else x * power[s] x (n - 1) in
 let power3 =
-  fun@2(x: Code[Int]) => power[2](x)(3) in
-power3(3)
+  fun@2(x: Code[Int]) => power[2] x 3 in
+power3 3
