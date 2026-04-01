@@ -9,7 +9,6 @@ import Expr.*
 import Stage.*
 import Type.*
 
-/*
 class Fixme extends FunSuite:
   test("multiple stage vars") {
     {
@@ -18,8 +17,7 @@ class Fixme extends FunSuite:
         f[2, 2]
       """
       val checked = infer(parse(str))
-      println(checked.ty)
-      // Should be: TCode(TFun(TInt, TInt))
+      assert(checked.ty == Some(TCode(TFun(TInt, TInt))))
     }
     {
       val str = """
@@ -30,7 +28,6 @@ class Fixme extends FunSuite:
       assertEquals(checked.ty, Some(TFun(TInt, TInt)))
     }
   }
-
 
   test("second-stage cond should have second-stage branches") {
     val str = """
@@ -47,7 +44,6 @@ class Fixme extends FunSuite:
     // Currently it fails to infer, we could insert a lift for y
     println(inferred.ty.get)
   }
-*/
 
 class TypingTest extends FunSuite:
 

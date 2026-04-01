@@ -28,11 +28,13 @@ High priority
 - [ ] case study
   - [ ] explore stage-polymorphic standard library
   - [ ] stream fusion
+- [ ] algebraic datatype
 
 Medium priority
 
 - [ ] type system tracking aliases and separation
 - [ ] generate recursive definitions (see `tests/ackermann.instar` a challenging example and https://okmij.org/ftp/meta-programming/genletrec/genletrec.pdf)
+- [ ] module/functor
 - [ ] optimizations
   - [ ] lambda lifting or closure conversion
   - [ ] lambda dropping
@@ -48,6 +50,6 @@ Low priority
   - [x] C backend
   - [ ] Wasm backend
   - [ ] Rust backend?
-- [ ] type polymorphism a la F
+- [ ] type polymorphism a la F-sub
 - [x] pretty printer
 - [ ] convenient syntax for assignment

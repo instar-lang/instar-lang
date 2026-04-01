@@ -1,5 +1,6 @@
 package instar.typing
 
+import instar.Config
 import instar.syntax.*
 import Expr.*
 import Stage.*
@@ -49,9 +50,8 @@ private def inferElab: (Ctx, Expr) ⇀ Expr =
   case (ctx, EBinOp(op, e1, e2, None)) =>
     ???
 
-
 private def infer(ctx: Ctx, expr: Expr): Expr =
-  if inferElab.isDefinedAt((ctx, expr)) then
+  if Config.elab && inferElab.isDefinedAt((ctx, expr)) then
     inferElab((ctx, expr))
   else expr match
     case EUnit => EUnit.withType(TUnit)
@@ -264,7 +264,7 @@ private def checkElab: PartialFunction[(Ctx, Expr, Type), Expr] =
     EBinOp(op, typedL, typedR, Some(stageOf(expected))).withType(resTy)
 
 private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
-  if checkElab.isDefinedAt((ctx, expr, expected)) then
+  if Config.elab && checkElab.isDefinedAt((ctx, expr, expected)) then
     checkElab((ctx, expr, expected))
   else expr match
     case ELam(x, argTy, body, retTy) =>
