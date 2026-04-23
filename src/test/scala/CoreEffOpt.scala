@@ -470,6 +470,18 @@ class CoreEffOpt extends Base {
       None))
     testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x2,EBinOp(+,ENum(4),EVar(x0),SNum(0)),EVar(x2)),None),EVar(x3)))", Set("ps", "dce"))
 
+    // λf. λx. let y = 1 + x in let z = x + 1 in f @[2] y + f @[2] z
+    val e1_5 = ELift2(ELam("x", None,
+      ELift2(ELam("f", None,
+        ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
+        ELet("z", EBinOp2("+", EVar("x"), ENum2(1)),
+          EBinOp2("+",
+            EApp2(EVar("f"), EVar("y")),
+            EApp2(EVar("f"), EVar("z"))))),
+        None)),
+      None))
+    testEval(e1_5, "VCode(ELet(x7,ELam(x0,None,ELet(x6,ELam(x1,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x3,EApp(EVar(x1),EVar(x2),SNum(0)),ELet(x4,EApp(EVar(x1),EVar(x2),SNum(0)),ELet(x5,EBinOp(+,EVar(x4),EVar(x4),SNum(0)),EVar(x5))))),None),EVar(x6)),None),EVar(x7)))", Set("ps", "dce", "cse"))
+
     // λx. 1 + (1 + (1 + (1 + (1 + x))))
     val e2 = ELift2(ELam("x", None,
       EBinOp2("+", ENum2(1), EBinOp2("+",
