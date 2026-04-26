@@ -19,7 +19,8 @@ object Cont:
     pure(runCont(cont))
 
   def shift[R, A](f: (A => Cont[R, R]) => Cont[R, R]): Cont[R, A] =
-    Cont(k => f(a => reset(Cont(_ => k(a))))(identity))
+    //Cont(k => runCont(f(a => reset(Cont(_ => k(a))))))
+    Cont(k => runCont(f(a => pure(k(a)))))
 
   given contMonad[R]: Monad[[A] =>> Cont[R, A]] with
     def pure[A](a: A): Cont[R, A] = Cont.pure(a)
