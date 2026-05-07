@@ -252,11 +252,14 @@ private def checkElab: PartialFunction[(Ctx, Expr, Type), Expr] =
         val typedElse = check(ctx, e3, expected)
         ECond(typedCond, typedThen, typedElse, Some(SNum(1))).withType(expected)
       case TCode(TBool) =>
-        // FIXME: e2/e3's type should be TCode(...)
-        val typedThen = check(ctx, e2, expected)
-        val typedElse = check(ctx, e3, expected)
-        ECond(typedCond, typedThen, typedElse, Some(SNum(2))).withType(expected)
-      case TAt(TBool, st) => ???
+        expected match
+          case TCode(_) =>
+            val typedThen = check(ctx, e2, expected)
+            val typedElse = check(ctx, e3, expected)
+            ECond(typedCond, typedThen, typedElse, Some(SNum(2))).withType(expected)
+          case _ => fail(s"expected a code type for ECond, found $expected")
+      case TAt(TBool, st) =>
+        ???
   case (ctx, EBinOp(op, e1, e2, None), expected) =>
     val (argTy, resTy) = inferBinOp(op, stageOf(expected))
     val typedL = check(ctx, e1, argTy)
@@ -422,3 +425,6 @@ private def equivType(left: Type, right: Type): Boolean =
 
 private def fail(message: String): Nothing =
   throw TypeException(message)
+
+private def assert(cond: Boolean, message: => String): Unit =
+  if (!cond) then throw TypeException(message)

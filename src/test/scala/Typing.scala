@@ -2,6 +2,7 @@ package instar.typing
 
 import munit.FunSuite
 
+import instar.Config
 import instar.parser.parse
 import instar.syntax.*
 import instar.syntax.given
@@ -29,23 +30,19 @@ class Fixme extends FunSuite:
     }
   }
 
-  test("second-stage cond should have second-stage branches") {
-    val str = """
-      if lift[2](true) then 1 else 2
-    """
-    val checked = check(parse(str), TInt)
-    println(checked.ty)
-    // Should: fail
-  }
-
-  test("elab with stage var") {
+  test("elaboration - stage var") {
     val expr = """let add[s] (x: Int@s) (y: Int) = x + y in add"""
     val inferred = infer(parse(expr))
-    // Currently it fails to infer, we could insert a lift for y
+    // Currently it fails to infer/elab.
+    // Possible result 1: x +@s lift[s](y)
+    // Possible result 2: add[s, s=1] (x: Int@s) (y: Int) = x +@1 y
+    // Which one is better? The former is more general, and does not
+    // restrict the instantiation of `s`.
     println(inferred.ty.get)
   }
 
 class TypingTest extends FunSuite:
+  Config.elab = false
 
   test("stage-poly function") {
     val str1 = """
@@ -152,6 +149,53 @@ class TypingTest extends FunSuite:
     assertEquals(checked.ty, Some(expected))
   }
 
+  test("stage poly add") {
+    val expr = "let add[s] (x: Int@s) (y: Int@s) = x +@s y in add[2](lift[2](2))(lift[2](3))"
+    val inferred = infer(parse(expr))
+    assert(inferred.ty.get == TCode(TInt))
+  }
+
+  test("lift2-lift2") {
+    val expr = parse("lift[2](lift[2](1))")
+    intercept[TypeException] {
+      infer(expr)
+    }
+  }
+
+  test("second-stage cond should have second-stage branches") {
+    intercept[TypeException]:
+      Config.elab = false
+      val str = """
+        if lift[2](true) then 1 else 2
+      """
+      val checked = check(parse(str), TInt)
+
+    intercept[TypeException]:
+      Config.elab = true
+      val str = """
+        if lift[2](true) then 1 else 2
+      """
+      val checked = check(parse(str), TInt)
+  }
+
+class ElabTest extends FunSuite:
+  Config.elab = true
+
+  test("branches") {
+    val str = """
+      if lift[2](true) then 1 else 2
+    """
+    val checked = check(parse(str), TCode(TInt))
+  }
+
+  test("stage var") {
+    val expr = """let add[s] (x: Int@s) (y: Int@s) = x + y in add[2](2)(3)"""
+    val inferred = infer(parse(expr))
+    assert(inferred.asInstanceOf[ELet].rhs.asInstanceOf[ESLam].body.asInstanceOf[ELam].body.asInstanceOf[ELam].body ==
+      EBinOp("+",EVar("x"),EVar("y"),Some(SVar("s"))))
+    assert(inferred.ty.get == TCode(TInt))
+  }
+
   test("coerce primitives") {
     {
       val expr = parse("fun(x: Int): Int@2 => 1")
@@ -183,23 +227,3 @@ class TypingTest extends FunSuite:
     }
   }
 
-  test("stage poly add") {
-    val expr = "let add[s] (x: Int@s) (y: Int@s) = x +@s y in add[2](lift[2](2))(lift[2](3))"
-    val inferred = infer(parse(expr))
-    assert(inferred.ty.get == TCode(TInt))
-  }
-
-  test("elab with stage var") {
-    val expr = """let add[s] (x: Int@s) (y: Int@s) = x + y in add[2](2)(3)"""
-    val inferred = infer(parse(expr))
-    assert(inferred.asInstanceOf[ELet].rhs.asInstanceOf[ESLam].body.asInstanceOf[ELam].body.asInstanceOf[ELam].body ==
-      EBinOp("+",EVar("x"),EVar("y"),Some(SVar("s"))))
-    assert(inferred.ty.get == TCode(TInt))
-  }
-
-  test("lift2-lift2") {
-    val expr = parse("lift[2](lift[2](1))")
-    intercept[TypeException] {
-      infer(expr)
-    }
-  }
