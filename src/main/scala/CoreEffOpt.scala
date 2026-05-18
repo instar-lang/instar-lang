@@ -316,29 +316,6 @@ def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Val
         γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
 
-object VNumAddMonoid extends Monoid[VNum]:
-  def empty: VNum = VNum(0)
-  extension (x: VNum)
-    def ⊗(rhs: VNum): VNum = VNum(x.i + rhs.i)
-
-object VNumMulMonoid extends Monoid[VNum]:
-  def empty: VNum = VNum(1)
-  extension (x: VNum)
-    def ⊗(rhs: VNum): VNum = VNum(x.i * rhs.i)
-
-given [T]: Free[Monoid, T] with
-  case class FreeA(l: List[T])
-
-  given af: Monoid[FreeA] with
-    def empty: FreeA = FreeA(List())
-    extension (x: FreeA)
-      def ⊗(rhs: FreeA): FreeA = FreeA(x.l ++ rhs.l)
-
-  def pvar(x: T): FreeA = FreeA(List(x))
-
-  def pbind[C: Monoid](freeA: FreeA)(f: T => C): C =
-    freeA.l.map(f).reduce(_ ⊗_)
-
 given [X, T](using r: Ring[T]): Ring[Multinomial[X, T]] = new MultinomialRing[X, T]
 
 given Ring[Int] with
@@ -363,8 +340,6 @@ given Ring[VNum] with
 given Conversion[VNum, Expr] with
   def apply(v: VNum): Expr = ENum1(v.i)
 
-val freeMonoidCode: Free[Monoid, Code] = new FreeCMonoid[Code]
-
 // TODO: can a type have multiple implementations of the same algebra?
 val freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
@@ -382,39 +357,6 @@ object AddMulRingCoproductImpl extends Coproduct[Ring, VNum, freeRingCode.FreeA]
   override def eva[C: Ring](fa: VNum => C)(fb: freeRingCode.FreeA => C)(co: Coprod): C =
     inst.eva(fa)(fb)(co)
 
-object AddCMonoidCoproductImpl
-  extends Coproduct[Monoid, VNum, freeMonoidCode.FreeA](using VNumAddMonoid, freeMonoidCode.af):
-  val inst: Coproduct[Monoid, VNum, freeMonoidCode.FreeA] =
-    coproductFromFreeMonoid[VNum, Code](using VNumAddMonoid, freeMonoidCode)
-
-  type Coprod = inst.Coprod
-  given ac: Monoid[Coprod] = inst.ac
-
-  override def inl(a: VNum): Coprod = inst.inl(a)
-  override def inr(b: freeMonoidCode.FreeA): Coprod = inst.inr(b)
-  override def eva[C: Monoid](fa: VNum => C)(fb: freeMonoidCode.FreeA => C)(co: Coprod): C =
-    inst.eva(fa)(fb)(co)
-
-object MulCMonoidCoproductImpl
-  extends Coproduct[Monoid, VNum, freeMonoidCode.FreeA](using VNumMulMonoid, freeMonoidCode.af):
-  val inst: Coproduct[Monoid, VNum, freeMonoidCode.FreeA] =
-    coproductFromFreeMonoid[VNum, Code](using VNumMulMonoid, freeMonoidCode)
-
-  type Coprod = inst.Coprod
-  given ac: Monoid[Coprod] = inst.ac
-
-  override def inl(a: VNum): Coprod = inst.inl(a)
-  override def inr(b: freeMonoidCode.FreeA): Coprod = inst.inr(b)
-  override def eva[C: Monoid](fa: VNum => C)(fb: freeMonoidCode.FreeA => C)(co: Coprod): C =
-    inst.eva(fa)(fb)(co)
-
-trait PartialNum:
-  def +(rhs: PartialNum): PartialNum
-  def *(rhs: PartialNum): PartialNum
-  def -(rhs: PartialNum): PartialNum
-  def /(rhs: PartialNum): PartialNum
-  def code: Expr
-
 object AddMulRingExprImpl extends Ring[Expr]:
   def zero: Expr = ENum(0).withNormalized
   def one: Expr = ENum(1).withNormalized
@@ -431,209 +373,34 @@ object AddMulRingExprImpl extends Ring[Expr]:
       else if (x == zero || rhs == zero) zero
       else EBinOp("*", x, rhs, Sta).withNormalized
 
-object AddCMonoidExprImpl extends Monoid[Expr]:
-  def empty: Expr = ENum(0).withNormalized
+type RingNormalForm = AddMulRingCoproductImpl.Coprod
 
-  extension (x: Expr)
-    def ⊗(rhs: Expr): Expr =
-      if (x == empty) rhs.withNormalized
-      else if (rhs == empty) x.withNormalized
-      else EBinOp("+", x, rhs, Sta).withNormalized
+def dyn(x: String): RingNormalForm =
+  AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
 
-object MulCMonoidExprImpl extends Monoid[Expr]:
-  def empty: Expr = ENum(1).withNormalized
+def sta(v: Int): RingNormalForm =
+  AddMulRingCoproductImpl.inl(VNum(v))
 
-  extension (x: Expr)
-    def ⊗(rhs: Expr): Expr =
-      if (x == empty) rhs.withNormalized
-      else if (rhs == empty) x.withNormalized
-      else EBinOp("*", x, rhs, Sta).withNormalized
+object CachedRingExpr:
+  val AddMulRingOps = Set("+", "*")
 
-def liftAddCToRing(value: AddCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
-  given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-  given Monoid[AddMulRingCoproductImpl.Coprod] with
-    def empty: AddMulRingCoproductImpl.Coprod = summon[Ring[AddMulRingCoproductImpl.Coprod]].zero
-    extension (x: AddMulRingCoproductImpl.Coprod)
-      def ⊗(rhs: AddMulRingCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
-        x + rhs
+  def unapply(e: Expr)(using c: Cache): Option[(String, Expr, Expr)] =
+    e match
+      case EBinOp(op, e1, e2, _) if AddMulRingOps(op) => Some((op, e1, e2))
+      case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
+      case _ => None
 
-  val elim1 = (v: VNum) => AddMulRingCoproductImpl.inl(v)
-  val elim2 = (freeA: freeMonoidCode.FreeA) =>
-    freeMonoidCode.pbind(freeA) { (code: Code) =>
-      AddMulRingCoproductImpl.inr(freeRingCode.pvar(code))
-    }
-  AddCMonoidCoproductImpl.eva[AddMulRingCoproductImpl.Coprod](elim1)(elim2)(value)
+def evalPS(expr: Expr)(using c: Cache): RingNormalForm =
+  given Ring[RingNormalForm] = AddMulRingCoproductImpl.ac
+  expr match
+    case CachedRingExpr("+", e1, e2) => evalPS(e1) + evalPS(e2)
+    case CachedRingExpr("*", e1, e2) => evalPS(e1) * evalPS(e2)
+    case EVar(x) => dyn(x)
+    case ENum(i) => sta(i)
 
-given addCMonoidToRingCoproduct: Conversion[AddCMonoidCoproductImpl.Coprod, AddMulRingCoproductImpl.Coprod] with
-  def apply(value: AddCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
-    liftAddCToRing(value)
-
-def liftMulCToRing(value: MulCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
-  given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-  given Monoid[AddMulRingCoproductImpl.Coprod] with
-    def empty: AddMulRingCoproductImpl.Coprod = summon[Ring[AddMulRingCoproductImpl.Coprod]].one
-    extension (x: AddMulRingCoproductImpl.Coprod)
-      def ⊗(rhs: AddMulRingCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
-        x * rhs
-
-  val elim1 =(v: VNum) => AddMulRingCoproductImpl.inl(v)
-  val elim2 = (freeA: freeMonoidCode.FreeA) =>
-    freeMonoidCode.pbind(freeA) { (code: Code) =>
-      AddMulRingCoproductImpl.inr(freeRingCode.pvar(code))
-    }
-  MulCMonoidCoproductImpl.eva[AddMulRingCoproductImpl.Coprod](elim1)(elim2)(value)
-
-given mulCMonoidToRingCoproduct: Conversion[MulCMonoidCoproductImpl.Coprod, AddMulRingCoproductImpl.Coprod] with
-  def apply(value: MulCMonoidCoproductImpl.Coprod): AddMulRingCoproductImpl.Coprod =
-    liftMulCToRing(value)
-
-class AddMulRingRepr(val ringRepr: AddMulRingCoproductImpl.Coprod) extends PartialNum:
-  override def +(rhs: PartialNum): PartialNum = rhs match
-    case rhsRing: AddMulRingRepr => new AddMulRingRepr(ringRepr + rhsRing.ringRepr)
-    case DynRepr(EVar(name)) =>
-      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-      val rhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-      new AddMulRingRepr(ringRepr + rhs)
-    case DynRepr(ENum(i)) =>
-      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-      val rhs = AddMulRingCoproductImpl.inl(VNum(i))
-      new AddMulRingRepr(ringRepr + rhs)
-    case _ =>
-      new DynRepr(EBinOp("+", code, rhs.code, Sta))
-
-  override def *(rhs: PartialNum): PartialNum = rhs match
-    case rhsRing: AddMulRingRepr => new AddMulRingRepr(ringRepr * rhsRing.ringRepr)
-    case DynRepr(EVar(name)) =>
-      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-      val rhsRing = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-      new AddMulRingRepr(ringRepr * rhsRing)
-    case DynRepr(ENum(i)) =>
-      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-      val rhsRing = AddMulRingCoproductImpl.inl(VNum(i))
-      new AddMulRingRepr(ringRepr * rhsRing)
-    case _ => new DynRepr(EBinOp("*", code, rhs.code, Sta))
-
-  override def -(rhs: PartialNum): PartialNum =
-    // TODO: Dont use DynRepr, Coprod already carries the meaning of code
-    new DynRepr(EBinOp("-", code, rhs.code, Sta))
-
-  override def /(rhs: PartialNum): PartialNum =
-    new DynRepr(EBinOp("/", code, rhs.code, Sta))
-
-  override def code: Expr =
-    cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(ringRepr)
-
-
-case class DynRepr(val expr: Expr) extends PartialNum:
-  override def +(rhs: PartialNum): PartialNum = (expr, rhs) match
-    case (ENum(i), rhsDyn: DynRepr) =>
-      rhsDyn.expr match
-        case ENum(j) =>
-          given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-          new AddMulRingRepr(AddMulRingCoproductImpl.inl(VNum(i)) * AddMulRingCoproductImpl.inl(VNum(j)))
-        case EVar(rhsName) =>
-          val lhs = AddMulRingCoproductImpl.inl(VNum(i))
-          val rhsC = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(rhsName)))
-          new AddMulRingRepr(lhs + rhsC)
-        case _ =>
-          new DynRepr(EBinOp("+", expr, rhsDyn.code, Sta))
-    case (ENum(i), rhsAdd: AddMulRingRepr) =>
-      val lhs = AddMulRingCoproductImpl.inl(VNum(i))
-      new AddMulRingRepr(lhs + rhsAdd.ringRepr)
-    case (EVar(name), rhsDyn: DynRepr) =>
-      rhsDyn.expr match
-        case ENum(i) =>
-          val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-          val rhsC = AddMulRingCoproductImpl.inl(VNum(i))
-          new AddMulRingRepr(lhs + rhsC)
-        case EVar(rhsName) =>
-          val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-          val rhsC = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(rhsName)))
-          new AddMulRingRepr(lhs + rhsC)
-        case _ =>
-          new DynRepr(EBinOp("+", expr, rhsDyn.code, Sta))
-    case (EVar(name), rhsRing: AddMulRingRepr) =>
-      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-      val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-      new AddMulRingRepr(lhs + rhsRing.ringRepr)
-    case _ =>
-      new DynRepr(EBinOp("+", code, rhs.code, Sta))
-
-  override def *(rhs: PartialNum): PartialNum = (expr, rhs) match
-    case (ENum(i), rhsDyn: DynRepr) =>
-      rhsDyn.expr match
-        case ENum(j) =>
-          given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-          new AddMulRingRepr(AddMulRingCoproductImpl.inl(VNum(i)) * AddMulRingCoproductImpl.inl(VNum(j)))
-        case EVar(rhsName) =>
-          val lhs = AddMulRingCoproductImpl.inl(VNum(i))
-          val rhsC = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(rhsName)))
-          new AddMulRingRepr(lhs * rhsC)
-        case _ =>
-          new DynRepr(EBinOp("*", expr, rhsDyn.code, Sta))
-    case (ENum(i), rhsRing: AddMulRingRepr) =>
-      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-      val lhs = AddMulRingCoproductImpl.inl(VNum(i))
-      new AddMulRingRepr(lhs * rhsRing.ringRepr)
-    case (EVar(name), rhsDyn: DynRepr) =>
-      rhsDyn.expr match
-        case ENum(i) =>
-          val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-          val rhsC = AddMulRingCoproductImpl.inl(VNum(i))
-          new AddMulRingRepr(lhs * rhsC)
-        case EVar(rhsName) =>
-          val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-          val rhsC = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(rhsName)))
-          new AddMulRingRepr(lhs * rhsC)
-        case _ =>
-          new DynRepr(EBinOp("*", expr, rhsDyn.code, Sta))
-    case (EVar(name), rhsRing: AddMulRingRepr) =>
-      given Ring[AddMulRingCoproductImpl.Coprod] = AddMulRingCoproductImpl.ac
-      val lhs = AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(name)))
-      new AddMulRingRepr(lhs * rhsRing.ringRepr)
-    case _ =>
-      new DynRepr(EBinOp("*", code, rhs.code, Sta))
-
-  override def -(rhs: PartialNum): PartialNum = (expr, rhs) match
-    case (ENum(i), rhsDyn: DynRepr) =>
-      rhsDyn.expr match
-        case ENum(j) => new DynRepr(ENum(i - j).withNormalized)
-        case _ => new DynRepr(EBinOp("-", expr, rhsDyn.code, Sta))
-    case _ =>
-      new DynRepr(EBinOp("-", code, rhs.code, Sta))
-
-  override def /(rhs: PartialNum): PartialNum = (expr, rhs) match
-    case (ENum(i), rhsDyn: DynRepr) =>
-      rhsDyn.expr match
-        case ENum(j) if j != 0 => new DynRepr(ENum(i / j).withNormalized)
-        case _ => new DynRepr(EBinOp("/", expr, rhsDyn.code, Sta))
-    case _ =>
-      new DynRepr(EBinOp("/", code, rhs.code, Sta))
-
-  override def code: Expr = expr
-
-def dyn(expr: Expr)(using c: Cache): PartialNum = 
-  // TODO: Why not?
-  //  expr match
-  //    case CachedExpr(x) => new DynRepr(x)
-  //    case _ => new DynRepr(expr)
-  if (c.contains(expr)) 
-    println(s"dyn: using cached value for $expr, which is ${c(expr)}")
-    new DynRepr(EVar(c(expr)))
-  else new DynRepr(expr)
-
-def evalPS(expr: Expr)(using c: Cache): PartialNum = expr match
-  case EBinOp("+", e1, e2, _) => evalPS(e1) + evalPS(e2)
-  case EBinOp("*", e1, e2, _) => evalPS(e1) * evalPS(e2)
-  case EBinOp("-", e1, e2, _) => evalPS(e1) - evalPS(e2)
-  case EBinOp("/", e1, e2, _) => evalPS(e1) / evalPS(e2)
-  case EVar(x) if c.inv.contains(x) =>
-    println(s"evalPS: found variable $x in cache, substituting with ${c.inv(x)}")
-    evalPS(c.inv(x))
-  case e => dyn(e)
-
-def residualizePS(repr: PartialNum, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-  println(s"residualizePS: residualizing ${repr.code} with repr = ${repr.asInstanceOf[AddMulRingRepr].ringRepr}")
+def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+  val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
+  println(s"residualizePS: residualizing $code with repr = $repr")
   
   def residualizeExpr(e: Expr, σ: Store, k: Cont, γ: MCont): (Value, Store) =
     // This is basically an eval function
@@ -645,10 +412,10 @@ def residualizePS(repr: PartialNum, σ: Store, k: Cont, γ: MCont)(using c: Cach
           }, γ1)
         }, γ)
       case e => reflect(e, σ, k, γ)
-  residualizeExpr(repr.code, σ, k, γ)
+  residualizeExpr(code, σ, k, γ)
 
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case e@EBinOp(_, _, _, _) if Opt("ps") && !e.normalized => residualizePS(evalPS(e), σ, k, γ)
+  case e@CachedRingExpr(_, _, _) if Opt("ps") && !e.normalized => residualizePS(evalPS(e), σ, k, γ)
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.
