@@ -85,13 +85,14 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
       val x = power(a, n / 2)
       x * x
 
-  m.terms.foldLeft(r2.zero) { case (sum, (xs, a)) =>
-    sum +
-      xs.foldLeft(f1(a)) { case (prod, (x, n)) =>
+  m.terms.toSeq
+    .sortBy { case (k, v) => k.toString }
+    .foldLeft(r2.zero) { case (sum, (xs, a)) =>
+      sum + xs.foldLeft(f1(a)) { case (prod, (x, n)) =>
         prod * power(f2(x), n)
       }
-  }
-
+    }
+  
 // Multinomial itself is a ring structure
 class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
   def zero: Multinomial[X, T] = Multinomial(Map())
