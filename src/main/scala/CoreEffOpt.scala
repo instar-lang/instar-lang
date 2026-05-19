@@ -390,17 +390,17 @@ object CachedRingExpr:
       case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
       case _ => None
 
-def evalPS(expr: Expr)(using c: Cache): RingNormalForm =
+def evalRingPS(expr: Expr)(using c: Cache): RingNormalForm =
   given Ring[RingNormalForm] = AddMulRingCoproductImpl.ac
   expr match
-    case CachedRingExpr("+", e1, e2) => evalPS(e1) + evalPS(e2)
-    case CachedRingExpr("*", e1, e2) => evalPS(e1) * evalPS(e2)
+    case CachedRingExpr("+", e1, e2) => evalRingPS(e1) + evalRingPS(e2)
+    case CachedRingExpr("*", e1, e2) => evalRingPS(e1) * evalRingPS(e2)
     case EVar(x) => dyn(x)
     case ENum(i) => sta(i)
 
 def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
-  println(s"residualizePS: residualizing $code with repr = $repr")
+  // println(s"residualizePS: residualizing $code with repr = $repr")
   
   def residualizeExpr(e: Expr, σ: Store, k: Cont, γ: MCont): (Value, Store) =
     // This is basically an eval function
@@ -414,8 +414,8 @@ def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: 
       case e => reflect(e, σ, k, γ)
   residualizeExpr(code, σ, k, γ)
 
-def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case e@CachedRingExpr(_, _, _) if Opt("ps") && !e.normalized => residualizePS(evalPS(e), σ, k, γ)
+def reflectRingPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+  case e@CachedRingExpr(_, _, _) if Opt("ps") && !e.normalized => residualizePS(evalRingPS(e), σ, k, γ)
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.
@@ -425,7 +425,7 @@ def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Sto
     reflectLam,
     reflectInline,
     reflectSimp, // There should be a reflectPS that replaces reflectSimp
-    reflectPS,
+    reflectRingPS,
     reflectCondSimp,
     reflectCse,
     reflectDce,
