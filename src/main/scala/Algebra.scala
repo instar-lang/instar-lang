@@ -68,9 +68,9 @@ class FreeCMonoid[T] extends Free[Monoid, T]:
 def initMN[R](n: Int)(using r: Ring[R]): R = n match
   case 0 => r.zero
   case 1 => r.one
-  case n if n < 0 => ???
-  case n if n % 2 == 0 => r.one + r.one * initMN(n / 2)
-  case n if n % 2 == 1 => r.one + r.one * initMN(n / 2) + r.one
+  case n if n >= 0 =>
+    val half = initMN(n / 2)
+    if n % 2 == 0 then half + half else half + half + r.one
 
 case class Multinomial[X, A](terms: Map[Map[X, Int], A])
 
@@ -199,4 +199,3 @@ def coproductFromFreeRing[A, B](using r: Ring[A])(using f: FreeRing[B]): Coprodu
 
     def eva[C: Ring](fa: A => C)(fb: f.FreeA => C)(co: Coprod): C =
       evalMN(fa)((b: B) => fb(f.pvar(b)))(co.m)
-
