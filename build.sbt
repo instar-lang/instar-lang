@@ -1,4 +1,4 @@
-val scala3Version = "3.7.4"
+val scala3Version = "3.8.0"
 
 ThisBuild / coverageFailOnMinimum := false
 ThisBuild / coverageHighlighting := true
