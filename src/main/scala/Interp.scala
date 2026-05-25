@@ -193,9 +193,6 @@ given Ring[VNum] with
     def +(rhs: VNum): VNum = VNum(x.i + rhs.i)
     def *(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
-given Conversion[VNum, Expr] with
-  def apply(v: VNum): Expr = ENum1(v.i)
-
 // TODO: can a type have multiple implementations of the same algebra?
 given freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
@@ -231,9 +228,12 @@ object AddMulRingExprImpl extends Ring[Expr]:
       else if (x == zero || rhs == zero) zero
       else EBinOp("*", x, rhs, Some(Sta))
 
-type RingNormalForm = AddMulRingCoproductImpl.Coprod
+given Conversion[VNum, Expr] with
+  def apply(v: VNum): Expr = ENum1(v.i)
 
-def dyn(x: String): RingNormalForm =
+type NormalForm = AddMulRingCoproductImpl.Coprod
+
+def dyn(x: String): NormalForm =
   AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
 
 object CachedRingExpr:
@@ -247,34 +247,32 @@ object CachedRingExpr:
 
 // let x3 = x1 + x3 in let x4 = x3 * x3 is equivalent to
 // (x1 + x3) * (x1 + x3)
-def equivalent(e1: Expr, e2: Expr)(using c: Cache): Boolean =
-  (e1, e2) match
-    case (ENum(i1), ENum(i2)) => i1 == i2
-    case (EBool(b1), EBool(b2)) => b1 == b2
-    case (EVar(x1), _) if c.inv.contains(x1) => equivalent(c.inv(x1), e2)
-    case (_, EVar(x2)) if c.inv.contains(x2) => equivalent(e1, c.inv(x2))
-    case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
-      op1 == op2 && equivalent(e11, e21) && equivalent(e12, e22)
-    case _ => e1 == e2
+extension (e1: Expr)
+  def equivalent(e2: Expr)(using c: Cache): Boolean =
+    (e1, e2) match
+      case (EVar(x1), _) if c.inv.contains(x1) => c.inv(x1).equivalent(e2)
+      case (_, EVar(x2)) if c.inv.contains(x2) => e1.equivalent(c.inv(x2))
+      case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
+        op1 == op2 && e11.equivalent(e21) && e12.equivalent(e22)
+      case _ => e1 == e2
 
-object UnnormalizedRingExpr:
+object UnnormalizedExpr:
   def unapply(e: Expr)(using c: Cache): Option[Expr] =
     e match
       case CachedRingExpr(_, _, _) =>
         val normalized =
-          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalRingPS(e))
-        if equivalent(e, normalized) then None else Some(e)
+          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
+        if e.equivalent(normalized) then None else Some(e)
       case _ => None
 
-def evalRingPS(expr: Expr)(using c: Cache): RingNormalForm =
-  given Ring[RingNormalForm] = AddMulRingCoproductImpl.ac
+def evalPS(expr: Expr)(using c: Cache): NormalForm =
   expr match
-    case CachedRingExpr("+", e1, e2) => evalRingPS(e1) + evalRingPS(e2)
-    case CachedRingExpr("*", e1, e2) => evalRingPS(e1) * evalRingPS(e2)
+    case CachedRingExpr("+", e1, e2) => evalPS(e1) + evalPS(e2)
+    case CachedRingExpr("*", e1, e2) => evalPS(e1) * evalPS(e2)
     case ENum(i) => sta[Ring, VNum](VNum(i))
     case EVar(x) => dyn(x)
 
-def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
   // println(s"residualizePS: residualizing $code with repr = $repr")
   
@@ -290,8 +288,8 @@ def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: 
       case e => reflect(e, σ, k, γ)
   residualizeExpr(code, σ, k, γ)
 
-def reflectRingPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case UnnormalizedRingExpr(e) if Opt("ps") => residualizePS(evalRingPS(e), σ, k, γ)
+def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+  case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.
@@ -301,7 +299,7 @@ def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Sto
     reflectLam,
     reflectInline,
     reflectSimp, // There should be a reflectPS that replaces reflectSimp
-    reflectRingPS,
+    reflectPS,
     reflectCondSimp,
     reflectCse,
     reflectDce,
