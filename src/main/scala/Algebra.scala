@@ -129,13 +129,10 @@ class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
 
     def ⊗(rhs: Multinomial[X, T]): Multinomial[X, T] =
       x.terms.foldLeft(zero) { case (acc, (xs, c)) =>
-        acc ⊕ mul(rhs, xs, c)
+        acc ⊕ rhs.terms.foldLeft(zero) { case (Multinomial(acc), (rxs, coeff)) =>
+          Multinomial(acc + (rxs ⊔ xs -> c ⊗ coeff))
+        }
       }
-
-  private def mul(rhs: Multinomial[X, T], xs: Map[X, Int], c: T): Multinomial[X, T] =
-    rhs.terms.foldLeft(zero) { case (Multinomial(acc), (rxs, coeff)) =>
-      Multinomial(acc + (rxs ⊔ xs -> c ⊗ coeff))
-    }
 
 // Multinomial can be served as free extension of ring for any type
 class FreeRing [T] extends Free[Ring, T]:
@@ -169,24 +166,6 @@ class FreeRing [T] extends Free[Ring, T]:
   def pbind[C: Ring](freeA: FreeA)(f: T => C): C =
     val ring = summon[Ring[C]]
     evalMN(initMN)(f)(freeA.terms)
-
-  private def coeffToC[C: Ring](coeff: Int): C =
-    val ring = summon[Ring[C]]
-    if (coeff == 0) ring.zero
-    else if (coeff == 1) ring.one
-    else ring.one ⊕ coeffToC(coeff - 1)
-
-  private def power[C: Ring](a: C, n: Int): C =
-    val ring = summon[Ring[C]]
-    n match
-      case 0 => ring.one
-      case 1 => a
-      case _ if n % 2 == 1 =>
-        val x = power(a, (n - 1) / 2)
-        x ⊗ x ⊗ a
-      case _ =>
-        val x = power(a, n / 2)
-        x ⊗ x
 
 // We can create a Coproduct of Monoid and FreeCMonoid.
 def coproductFromFreeMonoid[A, B](using m: Monoid[A], f: Free[Monoid, B]): Coproduct[Monoid, A, f.FreeA] =
