@@ -341,7 +341,7 @@ given Conversion[VNum, Expr] with
   def apply(v: VNum): Expr = ENum1(v.i)
 
 // TODO: can a type have multiple implementations of the same algebra?
-val freeRingCode: FreeRing[Code] = new FreeRing[Code]
+given freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
 object AddMulRingCoproductImpl extends Coproduct[Ring, VNum, freeRingCode.FreeA]:
   val inst: Coproduct[Ring, VNum, freeRingCode.FreeA] =
@@ -356,6 +356,8 @@ object AddMulRingCoproductImpl extends Coproduct[Ring, VNum, freeRingCode.FreeA]
 
   override def eva[C: Ring](fa: VNum => C)(fb: freeRingCode.FreeA => C)(co: Coprod): C =
     inst.eva(fa)(fb)(co)
+
+given AddMulRingCoproductImpl.type = AddMulRingCoproductImpl
 
 object AddMulRingExprImpl extends Ring[Expr]:
   def zero: Expr = ENum(0).withNormalized
@@ -378,9 +380,6 @@ type RingNormalForm = AddMulRingCoproductImpl.Coprod
 def dyn(x: String): RingNormalForm =
   AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
 
-def sta(v: Int): RingNormalForm =
-  AddMulRingCoproductImpl.inl(VNum(v))
-
 object CachedRingExpr:
   val AddMulRingOps = Set("+", "*")
 
@@ -395,8 +394,8 @@ def evalRingPS(expr: Expr)(using c: Cache): RingNormalForm =
   expr match
     case CachedRingExpr("+", e1, e2) => evalRingPS(e1) + evalRingPS(e2)
     case CachedRingExpr("*", e1, e2) => evalRingPS(e1) * evalRingPS(e2)
+    case ENum(i) => sta[Ring, VNum](VNum(i))
     case EVar(x) => dyn(x)
-    case ENum(i) => sta(i)
 
 def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
