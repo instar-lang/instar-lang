@@ -15,13 +15,13 @@ object CBackend:
 
   def compile(value: Value, store: Store = Map.empty): String =
     value match
-      case VCode(expr) => Compiler(store).compileProgram(expr)
+      case VCode(expr) => CCompiler(store).compileProgram(expr)
       case other => throw CompileException(s"Expected VCode, found $other")
 
   def compileResult(result: (Value, Store)): String =
     compile(result._1, result._2)
 
-  private final class Compiler(store: Store):
+  private final class CCompiler(store: Store):
     private var nextId = 0
     private val lambdaDefs = ArrayBuffer.empty[String]
     private val liftedLocDecls = ArrayBuffer.empty[String]
