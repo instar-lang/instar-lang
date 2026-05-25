@@ -21,6 +21,7 @@ package instar.interp
 import instar.syntax.*
 import instar.Counter.*
 import instar.BiMap
+import instar.egg.*
 import instar.algebra.*
 import collection.mutable.HashSet
 
@@ -52,7 +53,7 @@ type Store = Map[Loc, Value]
 type StEnv = Map[String, Stage]
 type Cache = BiMap[Expr, String]
 
-type Cont = (Value, Store, MCont) => Cache ?=> (Value, Store)
+type Cont = (Value, Store, MCont) => Egg ?=> (Value, Store)
 type MCont = (Value, Store) => (Value, Store)
 
 type ⇀[A, B] = PartialFunction[A, B]
@@ -100,28 +101,28 @@ def evalExprStage(s: Option[Stage], ς: StEnv): Stage =
     case None => Sta
 
 object StaticLam:
-  def unapply(e: Expr)(using c: Cache): Option[ELam] =
+  def unapply(e: Expr)(using egg: Egg): Option[ELam] =
     e match
       case e@ELam(_, _, _, _) => Some(e)
-      case EVar(f) if c.inv.contains(f) => StaticLam.unapply(c.inv(f))
+      case EVar(f) if egg.cache.inv.contains(f) => StaticLam.unapply(egg.cache.inv(f))
       case _ => None
 
 object StaticConst:
-  def unapply(e: Expr)(using c: Cache): Option[Value] =
+  def unapply(e: Expr)(using egg: Egg): Option[Value] =
     e match
       case ENum(i) => Some(VNum(i))
       case EBool(b) => Some(VBool(b))
-      case EVar(x) if c.inv.contains(x) => StaticConst.unapply(c.inv(x))
+      case EVar(x) if egg.cache.inv.contains(x) => StaticConst.unapply(egg.cache.inv(x))
       case _ => None
 
-def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = e match
+def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) = e match
   case ELet(x, rhs, body) =>
     reflect(rhs, σ, { case (VCode(t), σ1, γ1) =>
       renormalize(body.subst(x, t), σ1, k, γ1)
     }, γ)
   case _ => k(VCode(e), σ, γ)
 
-def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectAtom(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case EUnit => k(VCode(EUnit), σ, γ)
   case ENum(i) => k(VCode(ENum(i)), σ, γ)
   case EBool(b) => k(VCode(EBool(b)), σ, γ)
@@ -131,7 +132,7 @@ def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value,
   case EVar(name) => k(VCode(EVar(name)), σ, γ)
 
 
-def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectLam(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case e@ELam(_, _, _, _) if Opt("no-let-lam") =>
     k(VCode(e), σ, γ)
 
@@ -140,13 +141,13 @@ def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
 // - borrowing ideas from Yallop's Partially-Static Data as Free Extension of Algebras
 // - integrate equality saturation based simplification
 // Note: technically we could use reify here, but seems a bit overkill
-def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectSimp(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case EBinOp(op, StaticConst(v1), StaticConst(v2), _) if Opt("rewriting") =>
     evalPrim(op, v1, v2) match
       case VNum(i) => reflect(ENum(i), σ, k, γ)
       case VBool(b) => reflect(EBool(b), σ, k, γ)
 
-def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectInline(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case EApp(StaticLam(ELam(x, _, body, _)), arg, _) if Opt("fun-inline") =>
     // Note: the function body is closed, as it may still refer to other second-stage variables,
     // so we cannot reuse reify to "partially evaluate" the body.
@@ -155,35 +156,35 @@ def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Valu
     // see Compiling with Continuations, Continued, Kennedy, ICFP 07.
     renormalize(body.subst(x, arg), σ, k, γ)
 
-def reflectCondSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectCondSimp(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case ECond(StaticConst(VBool(b)), e2, e3, _) if Opt("simp-cond") =>
     if b then renormalize(e2, σ, k, γ)
     else renormalize(e3, σ, k, γ)
 
 object CachedExpr:
-  def unapply(e: Expr)(using c: Cache): Option[EVar] =
-    if (e.isPure && c.contains(e)) Some(EVar(c(e)))
+  def unapply(e: Expr)(using egg: Egg): Option[EVar] =
+    if (e.isPure && egg.cache.contains(e)) Some(EVar(egg.cache(e)))
     else None
 
-def reflectCse(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectCse(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case CachedExpr(x) if Opt("cse") =>
     k(VCode(x), σ, γ)
 
-def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectDce(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case e if Opt("dce") && e.isPure =>
     val x = fresh()
     k(VCode(EVar(x)), σ, { case (VCode(body), σ1) =>
       if (!body.freeVar(x)) γ(VCode(body), σ1)
       else γ(VCode(ELet(x, e, body)), σ1)
-    })(using c + (e -> x))
+    })(using egg + (e -> x))
 
-def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+def reflectDefault(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case e =>
     val x = fresh()
     k(VCode(EVar(x)), σ, {
       case (VCode(body), σ1) =>
         γ(VCode(ELet(x, e, body)), σ1)
-    })(using c + (e -> x))
+    })(using egg + (e -> x))
 
 given Ring[VNum] with
   def zero: VNum = VNum(0)
@@ -236,102 +237,167 @@ type NormalForm = AddMulRingCoproductImpl.Coprod
 def dyn(x: String): NormalForm =
   AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
 
-object CachedRingExpr:
-  val AddMulRingOps = Set("+", "*")
+// object CachedRingExpr:
+//   val AddMulRingOps = Set("+", "*")
 
-  def unapply(e: Expr)(using c: Cache): Option[(String, Expr, Expr)] =
-    e match
-      case EBinOp(op, e1, e2, _) if AddMulRingOps(op) => Some((op, e1, e2))
-      case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
-      case _ => None
+//   def unapply(e: Expr)(using c: Cache): Option[(String, Expr, Expr)] =
+//     e match
+//       case EBinOp(op, e1, e2, _) if AddMulRingOps(op) => Some((op, e1, e2))
+//       case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
+//       case _ => None
 
-// let x3 = x1 + x3 in let x4 = x3 * x3 is equivalent to
-// (x1 + x3) * (x1 + x3)
-extension (e1: Expr)
-  def equivalent(e2: Expr)(using c: Cache): Boolean =
-    (e1, e2) match
-      case (EVar(x1), _) if c.inv.contains(x1) => c.inv(x1).equivalent(e2)
-      case (_, EVar(x2)) if c.inv.contains(x2) => e1.equivalent(c.inv(x2))
-      case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
-        op1 == op2 && e11.equivalent(e21) && e12.equivalent(e22)
-      case _ => e1 == e2
+// // let x3 = x1 + x3 in let x4 = x3 * x3 is equivalent to
+// // (x1 + x3) * (x1 + x3)
+// extension (e1: Expr)
+//   def equivalent(e2: Expr)(using c: Cache): Boolean =
+//     (e1, e2) match
+//       case (EVar(x1), _) if c.inv.contains(x1) => c.inv(x1).equivalent(e2)
+//       case (_, EVar(x2)) if c.inv.contains(x2) => e1.equivalent(c.inv(x2))
+//       case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
+//         op1 == op2 && e11.equivalent(e21) && e12.equivalent(e22)
+//       case _ => e1 == e2
 
-object UnnormalizedExpr:
-  def unapply(e: Expr)(using c: Cache): Option[Expr] =
-    e match
-      case CachedRingExpr(_, _, _) =>
-        val normalized =
-          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
-        if e.equivalent(normalized) then None else Some(e)
-      case _ => None
+// object UnnormalizedExpr:
+//   def unapply(e: Expr)(using c: Cache): Option[Expr] =
+//     e match
+//       case CachedRingExpr(_, _, _) =>
+//         val normalized =
+//           cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
+//         if e.equivalent(normalized) then None else Some(e)
+//       case _ => None
 
-def evalPS(expr: Expr)(using c: Cache): NormalForm =
-  expr match
-    case CachedRingExpr("+", e1, e2) => evalPS(e1) + evalPS(e2)
-    case CachedRingExpr("*", e1, e2) => evalPS(e1) * evalPS(e2)
-    case ENum(i) => sta[Ring, VNum](VNum(i))
-    case EVar(x) => dyn(x)
+// def evalPS(expr: Expr)(using c: Cache): NormalForm =
+//   expr match
+//     case CachedRingExpr("+", e1, e2) => evalPS(e1) + evalPS(e2)
+//     case CachedRingExpr("*", e1, e2) => evalPS(e1) * evalPS(e2)
+//     case ENum(i) => sta[Ring, VNum](VNum(i))
+//     case EVar(x) => dyn(x)
 
-def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-  val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
-  // println(s"residualizePS: residualizing $code with repr = $repr")
+// def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+//   val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
+//   // println(s"residualizePS: residualizing $code with repr = $repr")
   
-  def residualizeExpr(e: Expr, σ: Store, k: Cont, γ: MCont): (Value, Store) =
-    // This is basically an eval function
-    e match
-      case EBinOp(op, e1, e2, _) =>
-        residualizeExpr(e1, σ, { case (VCode(v1), σ1, γ1) =>
-          residualizeExpr(e2, σ1, { case (VCode(v2), σ2, γ2) =>
-            reflect(EBinOp(op, v1, v2, Some(Sta)), σ2, k, γ2)
-          }, γ1)
-        }, γ)
-      case e => reflect(e, σ, k, γ)
-  residualizeExpr(code, σ, k, γ)
+//   def residualizeExpr(e: Expr, σ: Store, k: Cont, γ: MCont): (Value, Store) =
+//     // This is basically an eval function
+//     e match
+//       case EBinOp(op, e1, e2, _) =>
+//         residualizeExpr(e1, σ, { case (VCode(v1), σ1, γ1) =>
+//           residualizeExpr(e2, σ1, { case (VCode(v2), σ2, γ2) =>
+//             reflect(EBinOp(op, v1, v2, Some(Sta)), σ2, k, γ2)
+//           }, γ1)
+//         }, γ)
+//       case e => reflect(e, σ, k, γ)
+//   residualizeExpr(code, σ, k, γ)
 
-def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
+// def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+//   case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
+
+def residualizeEClassExpr(eclass: String)(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
+  // This is basically an eval function
+  e match
+    case EBinOp(op, e1, e2, _) =>
+      residualizeEClassExpr(eclass)(e1, σ, { case (VCode(v1), σ1, γ1) =>
+        residualizeEClassExpr(eclass)(e2, σ1, { case (VCode(v2), σ2, γ2) =>
+          saturateEquality(EBinOp(op, v1, v2, Some(Sta)), σ2, k, γ2)
+        }, γ1)
+      }, γ)
+    case EUnaryOp(op, e1, _) =>
+      residualizeEClassExpr(eclass)(e1, σ, { case (VCode(v1), σ1, γ1) =>
+        saturateEquality(EUnaryOp(op, v1, Some(Sta)), σ1, k, γ1)
+      }, γ)
+    case e => saturateEquality(e, σ, k, γ)
+
+def rewrite(e: Expr)(using egg: Egg): List[Expr] =
+  val es = e match
+    case EBinOp("+", StaticConst(VNum(0)), e2, _) => List(e2)
+    case EBinOp("+", e1, StaticConst(VNum(0)), _) => List(e1)
+    case EBinOp("*", StaticConst(VNum(1)), e2, _) => List(e2)
+    case EBinOp("*", e1, StaticConst(VNum(1)), _) => List(e1)
+    case EBinOp("*", StaticConst(VNum(0)), _, _) => List(ENum(0))
+    case EBinOp("*", _, StaticConst(VNum(0)), _) => List(ENum(0))
+    case _ => Nil
+  es.filter(e => !egg.cache.contains(e))
+
+
+// A process of reaching a fixed point of new equalities discovered
+// worklist can be a list of any expression (non-ANF)
+def saturateEqualityWL(x: String)(wl: List[Expr], σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
+  println(s"Saturating equality for $x, worklist = $wl")
+  def helpKont(rest: List[Expr], e: Expr)(v: Value, σ: Store, γ: MCont)(using egg: Egg): (Value, Store) =
+    given Egg = egg.relate(EVar(x), e)
+    saturateEqualityWL(x)(rest ++ rewrite(e), σ, k, γ) 
+
+  wl match
+    case Nil => k(VCode(EVar(x)), σ, γ)
+    case e :: rest if egg.cache.contains(e) =>
+      // an expression that is already in the egg
+      saturateEqualityWL(x)(rest, σ, k, γ)
+    case e :: rest =>
+      // a new expression that is not already in the egg
+      residualizeEClassExpr(x)(e, σ, helpKont(rest, e), γ)
+
+def costModelKont(k: Cont)(v: Value, σ: Store, γ: MCont)(using egg: Egg): (Value, Store) =
+  v match {
+    case VCode(EVar(x)) =>
+      val optimal = egg.findOptimal(x)
+      k(VCode(EVar(optimal)), σ, γ)
+  }
+
+def saturateEquality(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
+  assert(e.isPure, "Internal error: only pure expressions can be saturated for equality")
+  reflectDce(σ, {
+      case (VCode(EVar(x)), σ, γ) =>
+        saturateEqualityWL(x)(List(e), σ, costModelKont(k), γ)
+  }, γ)(e)
+
+// We maintained a correspondence from the cache and continuation?
+def reflectEgg(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) = 
+  case e if e.isPure =>
+    reflectDce(σ, { 
+      case (VCode(EVar(x)), σ, γ) =>
+        saturateEquality(e, σ, k, γ)
+      }, γ)(e)
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.
-def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
   val funs = List(
     reflectAtom,
     reflectLam,
     reflectInline,
-    reflectSimp, // There should be a reflectPS that replaces reflectSimp
-    reflectPS,
+    reflectEgg,
     reflectCondSimp,
     reflectCse,
     reflectDce,
   )
   funs.foldRight(reflectDefault(σ, k, γ)) { (f, acc) => f(σ, k, γ).orElse(acc) }(e)
 
-def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, γ: MCont)(using c: Cache): (Value, Store) =
+def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, γ: MCont)(using egg: Egg): (Value, Store) =
   eval(e, ρ, ς, σ, (x, σ1, γ1) => γ1(x, σ1), γ)
 
 def idK(v: Value, σ: Store, γ: MCont): (Value, Store) = γ(v, σ)
 
-def hoistable(e: Expr)(using c: Cache): Boolean =
-  e.isPure && e.freeVar.intersect(c.allVals).isEmpty
+def hoistable(e: Expr)(using egg: Egg): Boolean =
+  e.isPure && e.freeVar.intersect(egg.cache.allVals).isEmpty
 
 // TODO: how to handle if with two branches?
-def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
   e match
     case ELet(x, rhs, body) if hoistable(rhs) =>
       println(s"Lift let-binding: $x = $rhs")
       // split hoisted lets into meta-continuation, body1 is supposed to be wrapped with ELam
       hoist(body, σ, k, { case (VCode(body1), σ1) =>
         γ(VCode(ELet(x, rhs, body1)), σ1)
-      })(using c + (rhs -> x))
+      })(using egg + (rhs -> x))
     case ELet(x, rhs, body) =>
       println(s"Sink let-binding: $x = $rhs")
       // split sunk lets into continuation
       hoist(body, σ, { case (VCode(body1), σ1, γ1) =>
         k(VCode(ELet(x, rhs, body1)), σ1, γ1)
-      }, γ)(using c + (rhs -> x))
+      }, γ)(using egg + (rhs -> x))
     case _ => k(VCode(e), σ, γ)
 
-def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
+def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using egg: Egg): (Value, Store) = v match
   case VUnit => reflect(EUnit, σ, k, γ)
   case VNum(i) => reflect(ENum(i), σ, k, γ)
   case VBool(b) => reflect(EBool(b), σ, k, γ)
@@ -351,21 +417,21 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
             // so we cannot directly pass it to the continuation, which would
             // expect variables/atomic expressions for ANF.
             renormalize(t1, σ3, k, γ)
-          })(using BiMap((EVar(y) -> y)))
+          })(using Egg((EVar(y) -> y)))
         else
           reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, k, γ)
       })
 
-def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
+def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using egg: Egg): (Value, Store) = v match
   case VCode(EVar(x)) =>
-    c.inv(x) match
+    egg.cache.inv(x) match
       case EApp(_, _, _) => k(VBool(true), σ, γ)
       case _ => k(VBool(false), σ, γ)
   case VCode(_) => k(VBool(false), σ, γ)
 
 // Note: fst-stage side effect will break semantics-preservation,
 // but we won't be handle/prevent that in the dynamic interpreter.
-def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
   e match
     case EUnit =>
       k(VUnit, σ, γ)
@@ -526,4 +592,4 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
 
 def eval(e: Expr): (Value, Store) =
   clear
-  eval(e, Map(), Map(), Map(), (x, σ, γ) => γ(x, σ), (x, σ) => (x, σ))(using BiMap())
+  eval(e, Map(), Map(), Map(), (x, σ, γ) => γ(x, σ), (x, σ) => (x, σ))(using Egg())
