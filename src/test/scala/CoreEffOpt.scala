@@ -480,7 +480,7 @@ class CoreEffOpt extends Base {
             EApp2(EVar("f"), EVar("z"))))),
         None)),
       None))
-    testEval(e1_5, "VCode(ELet(x7,ELam(x0,None,ELet(x6,ELam(x1,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x3,EApp(EVar(x1),EVar(x2),SNum(0)),ELet(x4,EApp(EVar(x1),EVar(x2),SNum(0)),ELet(x5,EBinOp(+,EVar(x4),EVar(x4),SNum(0)),EVar(x5))))),None),EVar(x6)),None),EVar(x7)))", Set("ps", "dce", "cse"))
+    testEval(e1_5, "VCode(ELet(x7,ELam(x0,None,ELet(x6,ELam(x1,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),SNum(0)),ELet(x3,EApp(EVar(x1),EVar(x2),SNum(0)),ELet(x4,EApp(EVar(x1),EVar(x2),SNum(0)),ELet(x5,EBinOp(+,EVar(x3),EVar(x4),SNum(0)),EVar(x5))))),None),EVar(x6)),None),EVar(x7)))", Set("ps", "dce", "cse"))
 
     // λx. 1 + (1 + (1 + (1 + (1 + x))))
     val e2 = ELift2(ELam("x", None,
