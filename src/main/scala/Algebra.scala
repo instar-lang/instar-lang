@@ -144,22 +144,10 @@ class FreeRing [T] extends Free[Ring, T]:
 
     extension (x: FreeA)
       def ⊕(rhs: FreeA): FreeA =
-        FreeA(Multinomial(
-          (x.terms.terms.keySet ++ rhs.terms.terms.keySet).map { k =>
-            k -> (x.terms.terms.getOrElse(k, 0) + rhs.terms.terms.getOrElse(k, 0))
-          }.toMap
-        ))
+        FreeA(x.terms ⊕ rhs.terms)
 
       def ⊗(rhs: FreeA): FreeA =
-        FreeA(Multinomial(
-          for {
-            (vars1, coeff1) <- x.terms.terms
-            (vars2, coeff2) <- rhs.terms.terms
-          } yield {
-            val combinedVars = vars1 ⊔ vars2
-            combinedVars -> (coeff1 * coeff2)
-          }
-        ))
+        FreeA(x.terms ⊗ rhs.terms)
 
   def pvar(x: T): FreeA = FreeA(Multinomial(Map(Map(x -> 1) -> 1)))
 
