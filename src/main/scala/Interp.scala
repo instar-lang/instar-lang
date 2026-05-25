@@ -125,11 +125,6 @@ def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value,
   case EUnit => k(VCode(EUnit), σ, γ)
   case ENum(i) => k(VCode(ENum(i)), σ, γ)
   case EBool(b) => k(VCode(EBool(b)), σ, γ)
-  // Variables are also an atom. We don't need this case for other evaluators since they maintain an invariant: never reflect variables.
-  // After adding partially static optimizations, we may reflect variables. We don't need to worry about the variable capture here since
-  // all the generated variables are distinct.
-  case EVar(name) => k(VCode(EVar(name)), σ, γ)
-
 
 def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case e@ELam(_, _, _, _) if Opt("no-let-lam") =>
@@ -190,10 +185,9 @@ given Ring[VNum] with
   def one: VNum = VNum(1)
 
   extension (x: VNum)
-    def +(rhs: VNum): VNum = VNum(x.i + rhs.i)
-    def *(rhs: VNum): VNum = VNum(x.i * rhs.i)
+    def ⊕(rhs: VNum): VNum = VNum(x.i + rhs.i)
+    def ⊗(rhs: VNum): VNum = VNum(x.i * rhs.i)
 
-// TODO: can a type have multiple implementations of the same algebra?
 given freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
 object AddMulRingCoproductImpl extends Coproduct[Ring, VNum, freeRingCode.FreeA]:
@@ -217,12 +211,12 @@ object AddMulRingExprImpl extends Ring[Expr]:
   def one: Expr = ENum(1)
 
   extension (x: Expr)
-    def +(rhs: Expr): Expr =
+    def ⊕(rhs: Expr): Expr =
       if (x == zero) rhs
       else if (rhs == zero) x
       else EBinOp("+", x, rhs, Some(Sta))
 
-    def *(rhs: Expr): Expr =
+    def ⊗(rhs: Expr): Expr =
       if (x == one) rhs
       else if (rhs == one) x
       else if (x == zero || rhs == zero) zero
@@ -267,8 +261,8 @@ object UnnormalizedExpr:
 
 def evalPS(expr: Expr)(using c: Cache): NormalForm =
   expr match
-    case CachedRingExpr("+", e1, e2) => evalPS(e1) + evalPS(e2)
-    case CachedRingExpr("*", e1, e2) => evalPS(e1) * evalPS(e2)
+    case CachedRingExpr("+", e1, e2) => evalPS(e1) ⊕ evalPS(e2)
+    case CachedRingExpr("*", e1, e2) => evalPS(e1) ⊗ evalPS(e2)
     case ENum(i) => sta[Ring, VNum](VNum(i))
     case EVar(x) => dyn(x)
 
@@ -277,7 +271,7 @@ def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cach
   // println(s"residualizePS: residualizing $code with repr = $repr")
   
   def residualizeExpr(e: Expr, σ: Store, k: Cont, γ: MCont): (Value, Store) =
-    // This is basically an eval function
+    // reflect an arithmetic expression recursively
     e match
       case EBinOp(op, e1, e2, _) =>
         residualizeExpr(e1, σ, { case (VCode(v1), σ1, γ1) =>
@@ -285,6 +279,11 @@ def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cach
             reflect(EBinOp(op, v1, v2, Some(Sta)), σ2, k, γ2)
           }, γ1)
         }, γ)
+      case EUnaryOp(op, e, _) =>
+        residualizeExpr(e, σ, { case (VCode(v), σ1, γ1) =>
+          reflect(EUnaryOp(op, v, Some(Sta)), σ1, k, γ1)
+        }, γ)
+      case e @ EVar(x) => k(VCode(EVar(x)), σ, γ)
       case e => reflect(e, σ, k, γ)
   residualizeExpr(code, σ, k, γ)
 

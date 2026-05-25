@@ -18,8 +18,8 @@ trait Ring[T]:
   def one: T
 
   extension (x: T)
-    def +(rhs: T): T
-    def *(rhs: T): T
+    def ⊕(rhs: T): T
+    def ⊗(rhs: T): T
 
 trait Coproduct[Algebra[_], A: Algebra, B: Algebra]:
   type Coprod
@@ -72,7 +72,7 @@ def initMN[R](n: Int)(using r: Ring[R]): R = n match
   case 1 => r.one
   case n if n >= 0 =>
     val half = initMN(n / 2)
-    if n % 2 == 0 then half + half else half + half + r.one
+    if n % 2 == 0 then half ⊕ half else half ⊕ half ⊕ r.one
 
 case class Multinomial[X, A](terms: Map[Map[X, Int], A])
 
@@ -86,8 +86,8 @@ given Ring[Int] with
   def one: Int = 1
 
   extension (x: Int)
-    def +(rhs: Int): Int = x + rhs
-    def *(rhs: Int): Int = x * rhs
+    def ⊕(rhs: Int): Int = x + rhs
+    def ⊗(rhs: Int): Int = x * rhs
 
 def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring[A], r2: Ring[B]): B =
   def power(a: B, n: Int)(using r2: Ring[B]): B = n match
@@ -95,10 +95,10 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
     case 1 => a
     case n if n % 2 == 1 =>
       val x = power(a, (n - 1) / 2)
-      x * x * a
+      x ⊗ x ⊗ a
     case _ =>
       val x = power(a, n / 2)
-      x * x
+      x ⊗ x
 
   m.terms.toSeq
     .sortBy { case (xs, _) =>
@@ -108,10 +108,10 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
       val monomial = xs.toSeq
         .sortBy { case (x, n) => (x.toString, n) }
         .foldLeft(f1(a)) { case (prod, (x, n)) =>
-          prod * power(f2(x), n)
+          prod ⊗ power(f2(x), n)
         }
 
-      sum + monomial
+      sum ⊕ monomial
     }
   
 // Multinomial itself is a ring structure
@@ -120,21 +120,21 @@ class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
   def one: Multinomial[X, T] = Multinomial(Map(Map() -> r.one))
 
   extension (x: Multinomial[X, T])
-    def +(rhs: Multinomial[X, T]): Multinomial[X, T] =
+    def ⊕(rhs: Multinomial[X, T]): Multinomial[X, T] =
       Multinomial(
         (x.terms.keySet ++ rhs.terms.keySet).map { k =>
-          k -> (x.terms.getOrElse(k, r.zero) + rhs.terms.getOrElse(k, r.zero))
+          k -> (x.terms.getOrElse(k, r.zero) ⊕ rhs.terms.getOrElse(k, r.zero))
         }.toMap
       )
 
-    def *(rhs: Multinomial[X, T]): Multinomial[X, T] =
+    def ⊗(rhs: Multinomial[X, T]): Multinomial[X, T] =
       x.terms.foldLeft(zero) { case (acc, (xs, c)) =>
-        acc + mul(rhs, xs, c)
+        acc ⊕ mul(rhs, xs, c)
       }
 
   private def mul(rhs: Multinomial[X, T], xs: Map[X, Int], c: T): Multinomial[X, T] =
     rhs.terms.foldLeft(zero) { case (Multinomial(acc), (rxs, coeff)) =>
-      Multinomial(acc + (rxs ⊔ xs -> c * coeff))
+      Multinomial(acc + (rxs ⊔ xs -> c ⊗ coeff))
     }
 
 // Multinomial can be served as free extension of ring for any type
@@ -146,14 +146,14 @@ class FreeRing [T] extends Free[Ring, T]:
     def one: FreeA = FreeA(Multinomial(Map(Map() -> 1)))
 
     extension (x: FreeA)
-      def +(rhs: FreeA): FreeA =
+      def ⊕(rhs: FreeA): FreeA =
         FreeA(Multinomial(
           (x.terms.terms.keySet ++ rhs.terms.terms.keySet).map { k =>
             k -> (x.terms.terms.getOrElse(k, 0) + rhs.terms.terms.getOrElse(k, 0))
           }.toMap
         ))
 
-      def *(rhs: FreeA): FreeA =
+      def ⊗(rhs: FreeA): FreeA =
         FreeA(Multinomial(
           for {
             (vars1, coeff1) <- x.terms.terms
@@ -174,7 +174,7 @@ class FreeRing [T] extends Free[Ring, T]:
     val ring = summon[Ring[C]]
     if (coeff == 0) ring.zero
     else if (coeff == 1) ring.one
-    else ring.one + coeffToC(coeff - 1)
+    else ring.one ⊕ coeffToC(coeff - 1)
 
   private def power[C: Ring](a: C, n: Int): C =
     val ring = summon[Ring[C]]
@@ -183,10 +183,10 @@ class FreeRing [T] extends Free[Ring, T]:
       case 1 => a
       case _ if n % 2 == 1 =>
         val x = power(a, (n - 1) / 2)
-        x * x * a
+        x ⊗ x ⊗ a
       case _ =>
         val x = power(a, n / 2)
-        x * x
+        x ⊗ x
 
 // We can create a Coproduct of Monoid and FreeCMonoid.
 def coproductFromFreeMonoid[A, B](using m: Monoid[A], f: Free[Monoid, B]): Coproduct[Monoid, A, f.FreeA] =
@@ -210,8 +210,8 @@ def coproductFromFreeRing[A, B](using r: Ring[A])(using f: FreeRing[B]): Coprodu
       def zero: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].zero)
       def one: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].one)
       extension (x: Coprod)
-        def +(rhs: Coprod): Coprod = Coprod(x.m + rhs.m)
-        def *(rhs: Coprod): Coprod = Coprod(x.m * rhs.m)
+        def ⊕(rhs: Coprod): Coprod = Coprod(x.m ⊕ rhs.m)
+        def ⊗(rhs: Coprod): Coprod = Coprod(x.m ⊗ rhs.m)
 
     def inl(a: A): Coprod = Coprod(Multinomial(Map(Map.empty[B, Int] -> a)))
     def inr(b: f.FreeA): Coprod = Coprod(Multinomial(b.terms.terms.map( { case (vars, coeff) =>
