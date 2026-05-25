@@ -1,0 +1,3 @@
+let fib = fix@2 fib. lift[2](fun(n: Code[Int]): Code[Int] =>
+  if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
+in fib(lift[2](5))@2

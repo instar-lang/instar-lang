@@ -1,4 +1,6 @@
-package spmp.eff.opt
+package instar.algebra
+
+import instar.syntax.*
 
 extension [T](m1: Map[T, Int])
   def ⊔(m2: Map[T, Int]): Map[T, Int] =
@@ -73,6 +75,19 @@ def initMN[R](n: Int)(using r: Ring[R]): R = n match
     if n % 2 == 0 then half + half else half + half + r.one
 
 case class Multinomial[X, A](terms: Map[Map[X, Int], A])
+
+type Code = Expr.EVar
+
+// For any Ring[T], we can automatically get a Ring[Multinomial[X, T]]
+given [X, T](using r: Ring[T]): Ring[Multinomial[X, T]] = new MultinomialRing[X, T]
+
+given Ring[Int] with
+  def zero: Int = 0
+  def one: Int = 1
+
+  extension (x: Int)
+    def +(rhs: Int): Int = x + rhs
+    def *(rhs: Int): Int = x * rhs
 
 def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring[A], r2: Ring[B]): B =
   def power(a: B, n: Int)(using r2: Ring[B]): B = n match

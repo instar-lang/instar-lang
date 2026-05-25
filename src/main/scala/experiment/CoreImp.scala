@@ -1,10 +1,10 @@
-package spmp.core.imp
+package instar.experiment.imp
 
 // Note: this version uses global mutable states to manage scope and inserted let-bindings,
 // pretty much close to the POPL 18 paper's big-step evaluator.
 // This version is mainly for easier comparison with the 2CPS version (Core.scala).
 
-import spmp.Counter.*
+import instar.Counter.*
 
 enum Stage:
   case SNum(n: Int)
@@ -175,7 +175,7 @@ def eval(e: Expr, ρ: Env): Value =
     case EAscribe(e, _) => eval(e, ρ)
 
 def eval(e: Expr): Ans =
-  reset
+  clear
   stBlock = List()
   val v = eval(e, Map())
   if stBlock.isEmpty then v

@@ -1,4 +1,4 @@
-package spmp
+package instar
 
 case class BiMap[A, B](forward: Map[A, B], backward: Map[B, A]):
   def +(ab: (A, B)): BiMap[A, B] =

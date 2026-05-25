@@ -1,6 +1,6 @@
-## Stage-Polymorphic Meta-programming Language
+## Instar: A Stage-Polymorphic Meta-programming Language
 
-### Getting Started 
+### Getting Started
 
 Requirements: JDK 17+, Scala, sbt
 
@@ -8,59 +8,52 @@ Install Scala: https://www.scala-lang.org/download/
 
 Run `sbt` to start an interactive console.
 
-### Interpreter
+### Features
 
-Currently there are three variant interpreters for the elaborated core language:
+The distinctive feature of Instar is stage polymorphism, which allows us to write code that can be
+instantiated at different stages.
+For example, we can write the stage-polymorphic `power` function
+with the stage parameter `s`, which can be instantiated as either stage 1 and stage 2.
 
-- `Core.scala` the pure two-level language (no recursion, no mutable store)
-- `CoreEff.scala` imperative core with recursion and mutable stores
-- `CoreEffOpt.scala` imperative core with additional optimizations for second-stage code
+```instar
+letrec power[s](x: Int@s)(n: Int): Int@s =
+  if n == 0
+  then 1
+  else x * power[s](x)(n - 1) in
+let power3 =
+  fun@2(x: Code[Int]) => power[2](x)(3) in
+power3(4)
+```
 
-### TODO
+In the above example, we instantiate `power` at stage 2, and
+generate a specialized `power3`, which will be called at the second stage as well.
 
-High priority
+### Try Examples
 
-- [x] need a name for the language
-- [ ] surface language syntax and parser
-  - [ ] antlr4 grammar
-  - [ ] ast definitions (Surface.scala)
-  - [ ] parsing to ast
-- [ ] type checking/inference/elaboration
-  - [ ] type checking for core language (without bidirectional typing)
-    - [ ] scala implementation
-      - we need a type checker for this fully annotated language to build up
-        correct understanding of the type system, and to see how many
-        annotations can be inferred and removed.
-    - [ ] lean mechanization
-      - this will be an extension of the existing mechanization for the pldi26
-        submission.
-    - [ ] formalization of typing rules (in latex)
-      - this will be an extension of pldi26 submission to include stage
-        polymorphism.
-  - [ ] type checking for surface language, elaborating surface language to core language (with bidirectional typing)
-    - [ ] lean mechanization
-    - [ ] formalization of typing rules (in latex)
-- [ ] case study
-  - [ ] explore stage-polymorphic standard library
-  - [ ] stream fusion
+To run an Instar program:
 
-Medium priority
+```
+sbt:instar-lang> run --emit-c tests/impPower.instar
+```
 
-- [ ] optimizations
-  - [ ] lambda lifting or closure conversion
-  - [ ] lambda dropping
-  - [x] common sub-expression elimination (pure)
-  - [ ] code motion
-  - [x] function inlining
-  - [x] simplification of pure expressions
-  - [x] dead code elimination (pure)
+With the `--emit-c` flag, the next-stage C code will be generated at `tests/impPower.c`.
 
-Low priority
+To run inlined program:
 
-- [ ] back-end codegen
-  - [ ] C backend
-  - [ ] Wasm backend
-  - [ ] Rust backend?
-- [ ] type system tracking aliases and separation
-- [ ] type polymorphism a la F
+```
+sbt:instar-lang> run --program "1 + 2 * 3"
+```
 
+### Coverage
+
+To get statement coverage for the current test suite:
+
+- `sbt coverageAll`
+
+To focus on the main parser/interpreter/C-backend suites:
+
+- `sbt coverageMain`
+
+The HTML and XML reports are written under:
+
+- `target/scala-3.7.4/scoverage-report/`

@@ -1,4 +1,4 @@
-package spmp.core
+package instar.experiment.noeff
 
 import Stage.*
 import Expr.*

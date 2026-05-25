@@ -1,4 +1,4 @@
-package spmp
+package instar
 
 object Counter:
   var x: Int = 0
@@ -6,4 +6,4 @@ object Counter:
     val n = x
     x += 1
     s"$prefix$n"
-  def reset: Unit = x = 0
+  def clear: Unit = x = 0

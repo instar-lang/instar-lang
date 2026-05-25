@@ -1,10 +1,10 @@
-package spmp.eff
+package instar.experiment.eff
 
 // On top of the Core language, additionally supports
 // - mutable references
 // - letrec for defining recursive functions
 
-import spmp.Counter.*
+import instar.Counter.*
 
 enum Stage:
   case SNum(n: Int)
@@ -293,5 +293,5 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont): (Value, St
       })
 
 def eval(e: Expr): (Value, Store) =
-  reset
+  clear
   eval(e, Map(), Map(), Map(), (x, σ, γ) => γ(x, σ), (x, σ) => (x, σ))

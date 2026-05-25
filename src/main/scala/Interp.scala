@@ -1,4 +1,4 @@
-package spmp.eff.opt
+package instar.interp
 
 // On top of the Core language, additionally supports
 // - mutable references
@@ -18,82 +18,11 @@ package spmp.eff.opt
 // - TODO: lambda lifting https://link.springer.com/chapter/10.1007/3-540-45788-7_8
 // - TODO: deforestation, loop fusion, and domain-specific optimizations
 
-import spmp.Counter.*
-import spmp.BiMap
-import collection.mutable.{HashSet, HashMap}
-import spmp.eff.opt.Opt.opt
-import scala.annotation.init
-import scala.Conversion
-
-enum Stage:
-  case SNum(n: Int)
-  case SVar(x: String)
-
-enum Type:
-  case TUnit, TInt, TBool
-  case TFun(t1: Type, t2: Type)
-  case TRef(t: Type)
-  case TForallSt(s: String, t: Type)
-  case TAt(t: Type, s: Stage)
-  case TCode(t: Type)
-
-enum Expr:
-  var ty: Option[Type] = None
-  def withType(t: Type): Expr = { ty = Some(t); this }
-  var normalized: Boolean = false
-  def withNormalized: Expr = { normalized = true; this }
-  case EUnit
-  case ENum(i: Int)
-  case EBool(b: Boolean)
-  case EVar(name: String)
-  case ESLam(x: String, body: Expr)
-  case ESApp(e: Expr, st: Stage)
-  case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
-  case EApp(e1: Expr, e2: Expr, st: Stage)
-  case ELift(t: Expr, to: Stage)
-  case ERun(t: Expr)
-  case ELet(x: String, rhs: Expr, body: Expr)
-  case ELetRec(f: String, fnty: Type, rhs: Expr, body: Expr) // letrec f: ty = λx.e in e'
-  case ECond(e1: Expr, e2: Expr, e3: Expr, st: Stage)
-  case EBinOp(op: String, e1: Expr, e2: Expr, st: Stage)
-  case EUnaryOp(op: String, e: Expr, st: Stage)
-  case EPrimOp(op: String, rands: List[Expr], st: Stage)
-  case EAlloc(e: Expr, st: Stage)
-  case EDeref(e: Expr, st: Stage)
-  case EAssign(e1: Expr, e2: Expr, st: Stage)
-  case EAscribe(e: Expr, asTy: Type)
-  case EFix(f: String, e: Expr, st: Stage)
-  case ELoc(l: Loc)
-  // Experimental:
-  // extend the language to allow programmers to inspect code values
-  case EIsApp(e: Expr)
-  // TODO: what's the general pattern matching form on Code?
-
-val Sta = Stage.SNum(0)
-val Dyn = Stage.SNum(1)
-
-def ENum1(i: Int): Expr = ENum(i)
-def ENum2(i: Int): Expr = ELift2(ENum(i))
-def EBool1(b: Boolean): Expr = EBool(b)
-def EBool2(b: Boolean): Expr = ELift2(EBool(b))
-def EApp1(e1: Expr, e2: Expr): Expr = EApp(e1, e2, Sta)
-def EApp2(e1: Expr, e2: Expr): Expr = EApp(e1, e2, Dyn)
-def ECond1(e1: Expr, e2: Expr, e3: Expr): Expr = ECond(e1, e2, e3, Sta)
-def ECond2(e1: Expr, e2: Expr, e3: Expr): Expr = ECond(e1, e2, e3, Dyn)
-def EBinOp1(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Sta)
-def EBinOp2(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Dyn)
-def EUnaryOp1(op: String, e: Expr): Expr = EUnaryOp(op, e, Sta)
-def EUnaryOp2(op: String, e: Expr): Expr = EUnaryOp(op, e, Dyn)
-def EAlloc1(e: Expr): Expr = EAlloc(e, Sta)
-def EAlloc2(e: Expr): Expr = EAlloc(e, Dyn)
-def EDeref1(e: Expr): Expr = EDeref(e, Sta)
-def EDeref2(e: Expr): Expr = EDeref(e, Dyn)
-def EAssign1(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Sta)
-def EAssign2(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Dyn)
-
-// Note: they lift term to stage 1/2, but lift itself can only be at stage 1
-def ELift1(e: Expr): Expr = ELift(e, Sta)
-def ELift2(e: Expr): Expr = ELift(e, Dyn)
+import instar.syntax.*
+import instar.Counter.*
+import instar.BiMap
+import instar.algebra.*
+import collection.mutable.HashSet
 
 enum Value:
   case VUnit
@@ -102,7 +31,9 @@ enum Value:
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
+  case VBNClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
+  case VThunk(e: Expr, ρ: Env, ς: StEnv)
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -116,7 +47,6 @@ import Expr.*
 import Type.*
 import Value.*
 
-type Loc = Int
 type Env = Map[String, Loc]
 type Store = Map[Loc, Value]
 type StEnv = Map[String, Stage]
@@ -142,72 +72,6 @@ object Opt:
   def disable(id: String): Unit = opt.remove(id)
   def disableAll: Unit = opt.clear
 
-extension (e: Expr)
-  def isPure: Boolean =
-    e match
-      case EUnit | ENum(_) | EBool(_) | EVar(_) => true
-      case ESLam(_, _) | ELam(_, _, _, _) => true
-      case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
-      case ESApp(_, _) | EApp(_, _, _) => false
-      case ELift(t, _) => false
-      case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
-      case ERun(t) => t.isPure
-      case ELet(_, rhs, body) => rhs.isPure && body.isPure
-      case ELetRec(_, _, rhs, body) => rhs.isPure && body.isPure
-      case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
-      case EAscribe(e, _) => e.isPure
-      case EFix(_, e, _) => e.isPure
-      case _ => false
-
-  def freeVar: Set[String] =
-    e match
-      case EUnit | ENum(_) | EBool(_) => Set()
-      case EVar(x) => Set(x)
-      case ESLam(x, body) => body.freeVar
-      case ESApp(e, _) => e.freeVar
-      case ELam(x, _, body, _) => body.freeVar - x
-      case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
-      case ELift(t, _) => t.freeVar
-      case ERun(t) => t.freeVar
-      case ELet(x, rhs, body) => rhs.freeVar ++ (body.freeVar - x)
-      case ELetRec(f, _, rhs, body) => (rhs.freeVar - f) ++ (body.freeVar - f)
-      case ECond(e1, e2, e3, _) => e1.freeVar ++ e2.freeVar ++ e3.freeVar
-      case EBinOp(_, e1, e2, _) => e1.freeVar ++ e2.freeVar
-      case EUnaryOp(_, e, _) => e.freeVar
-      case EAlloc(e, _) => e.freeVar
-      case EDeref(e, _) => e.freeVar
-      case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
-      case EAscribe(e, _) => e.freeVar
-      case EFix(f, e, _) => e.freeVar - f
-
-  // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
-  // and all variables after reflect are distinct, so we do not need to consider variable capture here.
-  def subst(from: String, to: Expr): Expr =
-    e match
-      case EUnit | ENum(_) | EBool(_) => e
-      case EVar(x) => if x == from then to else e
-      case ESLam(x, body) => ESLam(x, body.subst(from, to))
-      case ESApp(e, st) => ESApp(e.subst(from, to), st)
-      case ELam(x, argTy, body, retTy) =>
-        ELam(x, argTy, body.subst(from, to), retTy)
-      case EApp(e1, e2, st) => EApp(e1.subst(from, to), e2.subst(from, to), st)
-      case ELift(t, s) => ELift(t.subst(from, to), s)
-      case ERun(t) => ERun(t.subst(from, to))
-      case ELet(x, rhs, body) =>
-        ELet(x, rhs.subst(from, to), body.subst(from, to))
-      case ELetRec(f, fnty, rhs, body) =>
-        ELetRec(f, fnty, rhs.subst(from, to), body.subst(from, to))
-      case ECond(e1, e2, e3, s) =>
-        ECond(e1.subst(from, to), e2.subst(from, to), e3.subst(from, to), s)
-      case EBinOp(op, e1, e2, s) => EBinOp(op, e1.subst(from, to), e2.subst(from, to), s)
-      case EUnaryOp(op, e, s) => EUnaryOp(op, e.subst(from, to), s)
-      case EAlloc(e, s) => EAlloc(e.subst(from, to), s)
-      case EDeref(e, s) => EDeref(e.subst(from, to), s)
-      case EAssign(e1, e2, s) => EAssign(e1.subst(from, to), e2.subst(from, to), s)
-      case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
-      case EFix(f, e, s) =>
-        EFix(f, e.subst(from, to), s)
-
 def evalPrim(op: String, v1: Value, v2: Value): Value =
   (op, v1, v2) match
     case ("+", VNum(i1), VNum(i2)) => VNum(i1 + i2)
@@ -229,6 +93,11 @@ def evalStVar(s: Stage, ς: StEnv): Stage =
   s match
     case SVar(st) => ς(st)
     case _ => s
+
+def evalExprStage(s: Option[Stage], ς: StEnv): Stage =
+  s match
+    case Some(st) => evalStVar(st, ς)
+    case None => Sta
 
 object StaticLam:
   def unapply(e: Expr)(using c: Cache): Option[ELam] =
@@ -316,19 +185,6 @@ def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Val
         γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
 
-given [X, T](using r: Ring[T]): Ring[Multinomial[X, T]] = new MultinomialRing[X, T]
-
-given Ring[Int] with
-  def zero: Int = 0
-  def one: Int = 1
-
-  extension (x: Int)
-    def +(rhs: Int): Int = x + rhs
-    def *(rhs: Int): Int = x * rhs
-
-// Let Code be a monomorphic type Expr
-type Code = EVar
-
 given Ring[VNum] with
   def zero: VNum = VNum(0)
   def one: VNum = VNum(1)
@@ -360,20 +216,20 @@ object AddMulRingCoproductImpl extends Coproduct[Ring, VNum, freeRingCode.FreeA]
 given AddMulRingCoproductImpl.type = AddMulRingCoproductImpl
 
 object AddMulRingExprImpl extends Ring[Expr]:
-  def zero: Expr = ENum(0).withNormalized
-  def one: Expr = ENum(1).withNormalized
+  def zero: Expr = ENum(0)
+  def one: Expr = ENum(1)
 
   extension (x: Expr)
     def +(rhs: Expr): Expr =
-      if (x == zero) rhs.withNormalized
-      else if (rhs == zero) x.withNormalized
-      else EBinOp("+", x, rhs, Sta).withNormalized
+      if (x == zero) rhs
+      else if (rhs == zero) x
+      else EBinOp("+", x, rhs, Some(Sta))
 
     def *(rhs: Expr): Expr =
-      if (x == one) rhs.withNormalized
-      else if (rhs == one) x.withNormalized
+      if (x == one) rhs
+      else if (rhs == one) x
       else if (x == zero || rhs == zero) zero
-      else EBinOp("*", x, rhs, Sta).withNormalized
+      else EBinOp("*", x, rhs, Some(Sta))
 
 type RingNormalForm = AddMulRingCoproductImpl.Coprod
 
@@ -407,7 +263,7 @@ def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: 
       case EBinOp(op, e1, e2, _) =>
         residualizeExpr(e1, σ, { case (VCode(v1), σ1, γ1) =>
           residualizeExpr(e2, σ1, { case (VCode(v2), σ2, γ2) =>
-            reflect(EBinOp(op, v1, v2, Sta).withNormalized, σ2, k, γ2)
+            reflect(EBinOp(op, v1, v2, Some(Sta)).withNormalized, σ2, k, γ2)
           }, γ1)
         }, γ)
       case e => reflect(e, σ, k, γ)
@@ -434,51 +290,27 @@ def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Sto
 def reify(e: Expr, ρ: Env, ς: StEnv, σ: Store, γ: MCont)(using c: Cache): (Value, Store) =
   eval(e, ρ, ς, σ, (x, σ1, γ1) => γ1(x, σ1), γ)
 
-/*
-def hoistLam(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
-  println(s"HoistLam: e = $e")
-  e match
-    case ELam(x, argTy, body, retTy) =>
-      hoist(body, σ, BiMap(EVar(x) -> x), {
-        case (VCode(t1), σ1, c1, γ1) =>
-          //reflect(ELam(x, argTy.erase, t1, retTy.erase), σ1, c1, (x, σ1, c1, γ1) => γ1(x, σ1), γ1)
-          γ1(VCode(ELam(x, argTy.erase, t1, retTy.erase)), σ1)
-      }, {
-        case (VCode(t1), σ1) =>
-          k(VCode(t1), σ1, c, γ)
-        /*
-          //renormalize(t1, σ1, c, k, γ)
-        */
-      })
+def idK(v: Value, σ: Store, γ: MCont): (Value, Store) = γ(v, σ)
 
-def hoist(e: Expr, σ: Store, c: Cache, k: Cont, γ: MCont): (Value, Store) =
-  val allVars = c.allVals
-  println(s"Hoist: allVars = $allVars, e = $e")
+def hoistable(e: Expr)(using c: Cache): Boolean =
+  e.isPure && e.freeVar.intersect(c.allVals).isEmpty
+
+// TODO: how to handle if with two branches?
+def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   e match
-    case ELet(x, rhs, body) if rhs.isPure && rhs.freeVar.intersect(allVars).isEmpty =>
-      // rhs is pure and does not depend on variables in the lambda's scope,
-      // so we can lift it out of the lambda
-      println(s"  Hoist let-binding: $x = $rhs")
-      // FIXME: this is still buggy
-      hoist(body, σ, c, k, { case (VCode(body1), σ1) =>
-          γ(VCode(ELet(x, rhs, body1)), σ1)
-      })
-      /*
-      hoist(body, σ, c, {
-        case (body1, σ1, c1, γ1) => k(body1, σ1, c1, {
-          case (VCode(body2), σ1) =>
-            γ1(VCode(ELet(x, rhs, body2)), σ1)
-        })
-      }, γ)
-      */
+    case ELet(x, rhs, body) if hoistable(rhs) =>
+      println(s"Lift let-binding: $x = $rhs")
+      // split hoisted lets into meta-continuation, body1 is supposed to be wrapped with ELam
+      hoist(body, σ, k, { case (VCode(body1), σ1) =>
+        γ(VCode(ELet(x, rhs, body1)), σ1)
+      })(using c + (rhs -> x))
     case ELet(x, rhs, body) =>
-      println(s"  Drop let-binding: $x = $rhs")
-      hoist(body, σ, c + (rhs -> x), {
-        case (VCode(body1), σ1, c1, γ1) => k(VCode(ELet(x, rhs, body1)), σ1, c1, γ1)
-      }, γ)
-    case _ =>
-      k(VCode(e), σ, c, γ)
-*/
+      println(s"Sink let-binding: $x = $rhs")
+      // split sunk lets into continuation
+      hoist(body, σ, { case (VCode(body1), σ1, γ1) =>
+        k(VCode(ELet(x, rhs, body1)), σ1, γ1)
+      }, γ)(using c + (rhs -> x))
+    case _ => k(VCode(e), σ, γ)
 
 def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
   case VUnit => reflect(EUnit, σ, k, γ)
@@ -488,36 +320,29 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
   case VClo(x, argTy, body, retTy, ρf, ςf) =>
     val l = σ.size
     val y = fresh()
-    if (Opt("lam-hoist"))
-      /*
-      //eval(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), c, (x, σ1, c1, γ1) => γ1(x, σ1), {
-      reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), c, {
-        case (VCode(t), σ2) =>
-          hoistLam(ELam(y, argTy.erase, t, retTy.erase), σ2, c, k, γ)
-          /*
-          k(cd, σ2, c, γ)
-          hoist(t, σ2, BiMap(EVar(y) -> y), {
-            case (VCode(t1), σ1, c1, γ1) =>
-              reflect(ELam(y, argTy.erase, t1, retTy.erase), σ1, c1, k, γ1)
-          }, γ)
-          */
-          /*
-          hoist(t, σ2, BiMap(EVar(y) -> y), {
-            case (VCode(t1), σ1, c1, γ1) =>
-              reflect(ELam(y, argTy.erase, t1, retTy.erase), σ1, c1, (x, σ1, c1, γ1) => γ1(x, σ1), γ1)
-          }, {
-            case (VCode(t1), σ1) =>
-              k(VCode(t1), σ1, c, γ)
-          })
-          */
-      })
-      */
-      ???
-    else
-      reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
-        case (VCode(t), σ2) =>
+    reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
+      case (VCode(t), σ2) =>
+        if (Opt("lam-hoist"))
+          hoist(t, σ2, { case (VCode(t1), σ3, γ1) =>
+            println(s"Hoisted lambda body: $t1")
+            reflect(ELam(y, argTy.erase, t1, retTy.erase), σ3, (v, σ3, γ1) => γ1(v, σ3), γ1)
+          }, { case (VCode(t1), σ3) =>
+            println(s"Hoisted whole term: $t1")
+            // now we need to renormalize the whole term, as it may contain lifted bindings,
+            // so we cannot directly pass it to the continuation, which would
+            // expect variables/atomic expressions for ANF.
+            renormalize(t1, σ3, k, γ)
+          })(using BiMap((EVar(y) -> y)))
+        else
           reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, k, γ)
       })
+
+def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
+  case VCode(EVar(x)) =>
+    c.inv(x) match
+      case EApp(_, _, _) => k(VBool(true), σ, γ)
+      case _ => k(VBool(false), σ, γ)
+  case VCode(_) => k(VBool(false), σ, γ)
 
 // Note: fst-stage side effect will break semantics-preservation,
 // but we won't be handle/prevent that in the dynamic interpreter.
@@ -532,7 +357,9 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
     case ELoc(l) =>
       k(VLoc(l), σ, γ)
     case EVar(x) =>
-      k(σ(ρ(x)), σ, γ)
+      σ(ρ(x)) match
+        case VThunk(e, ρ, ς) => eval(e, ρ, ς, σ, k, γ)
+        case v => k(v, σ, γ)
     case ESLam(x, body) =>
       k(VSClo(x, body, ρ, ς), σ, γ)
     case ESApp(e, st) =>
@@ -541,14 +368,21 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       }, γ)
     case ELam(x, argTy, e, retTy) =>
       k(VClo(x, argTy, e, retTy, ρ, ς), σ, γ)
-    case EApp(e1, e2, s) if evalStVar(s, ς) == Sta =>
-      eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
-        eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
-          val l = σ2.size
-          eval(body, ρf + (x -> l), ςf, σ2 + (l -> v2), k, γ2)
-        }, γ1)
+    case EBNLam(x, argTy, e, retTy) =>
+      k(VBNClo(x, argTy, e, retTy, ρ, ς), σ, γ)
+    case EApp(e1, e2, s) if evalExprStage(s, ς) == Sta =>
+      eval(e1, ρ, ς, σ, {
+        case (VBNClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
+          val v2 = VThunk(e2, ρ, ς)
+          val l = σ1.size
+          eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
+        case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
+          eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
+            val l = σ2.size
+            eval(body, ρf + (x -> l), ςf, σ2 + (l -> v2), k, γ2)
+          }, γ1)
       }, γ)
-    case EApp(e1, e2, s) if evalStVar(s, ς) == Dyn =>
+    case EApp(e1, e2, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
           reflect(EApp1(x1, x2), σ2, k, γ2)
@@ -567,7 +401,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       eval(rhs, ρ, ς, σ, (v, σ1, γ1) =>
         val l = σ1.size
         eval(e, ρ + (x -> l), ς, σ1 + (l -> v), k, γ1), γ)
-    case ELetRec(f, _, rhs, e) =>
+    case ELetRec(f, rhs, e) =>
       eval(rhs, ρ, ς, σ, {
         case (VClo(x, argTy, body, retTy, ρf, ςf), σ1, γ1) =>
           val l = σ1.size
@@ -580,12 +414,12 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val v = VSClo(x, body, ρf1, ςf)
           eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
       }, γ)
-    case ECond(e1, e2, e3, s) if evalStVar(s, ς) == Sta =>
+    case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (VBool(b), σ1, γ1) =>
         if b then eval(e2, ρ, ς, σ1, k, γ1)
         else eval(e3, ρ, ς, σ1, k, γ1)
       }, γ)
-    case ECond(e1, e2, e3, s) if evalStVar(s, ς) == Dyn =>
+    case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         reify(e2, ρ, ς, σ1, { case (VCode(x2), σ2) =>
           reify(e3, ρ, ς, σ2, { case (VCode(x3), σ3) =>
@@ -593,57 +427,57 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           })
         })
       }, γ)
-    case EBinOp(op, e1, e2, s) if evalStVar(s, ς) == Sta =>
+    case EBinOp(op, e1, e2, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (v1, σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
           k(evalPrim(op, v1, v2), σ2, γ2)
         }, γ1)
       }, γ)
-    case EBinOp(op, e1, e2, s) if evalStVar(s, ς) == Dyn =>
+    case EBinOp(op, e1, e2, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
           reflect(EBinOp1(op, x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
-    case EUnaryOp(op, e, s) if evalStVar(s, ς) == Sta =>
+    case EUnaryOp(op, e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, { case (v, σ1, γ1) =>
         k(evalPrimUnary(op, v), σ1, γ1)
       }, γ)
-    case EUnaryOp(op, e, s) if evalStVar(s, ς) == Dyn =>
+    case EUnaryOp(op, e, s) if evalExprStage(s, ς) == Dyn =>
       eval(e, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
         reflect(EUnaryOp1(op, x), σ1, k, γ1)
       }, γ)
-    case EAlloc(e, s) if evalStVar(s, ς) == Sta =>
+    case EAlloc(e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, { case (v, σ1, γ1) =>
         val l = σ1.size
         k(VLoc(l), σ1 + (l -> v), γ1)
       }, γ)
-    case EAlloc(e, s) if evalStVar(s, ς) == Dyn =>
+    case EAlloc(e, s) if evalExprStage(s, ς) == Dyn =>
       eval(e, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
         reflect(EAlloc1(x), σ1, k, γ1)
       }, γ)
-    case EDeref(e, s) if evalStVar(s, ς) == Sta =>
+    case EDeref(e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, { case (VLoc(l), σ1, γ1) =>
         k(σ1(l), σ1, γ1)
       }, γ)
-    case EDeref(e, s) if evalStVar(s, ς) == Dyn =>
+    case EDeref(e, s) if evalExprStage(s, ς) == Dyn =>
       eval(e, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
         reflect(EDeref1(x), σ1, k, γ1)
       }, γ)
-    case EAssign(e1, e2, s) if evalStVar(s, ς) == Sta =>
+    case EAssign(e1, e2, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (VLoc(l), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (v2, σ2, γ2) =>
           k(VUnit, σ2 + (l -> v2), γ2)
         }, γ1)
       }, γ)
-    case EAssign(e1, e2, s) if evalStVar(s, ς) == Dyn =>
+    case EAssign(e1, e2, s) if evalExprStage(s, ς) == Dyn =>
       eval(e1, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
         eval(e2, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
           reflect(EAssign1(x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
     case EAscribe(e, _) => eval(e, ρ, ς, σ, k, γ)
-    case EFix(f, e, s) if evalStVar(s, ς) == Sta =>
+    case EFix(f, e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, {
         case (VClo(x, argTy, body, retTy, ρf, ςf), σ1, γ1) =>
           val l = σ1.size
@@ -654,24 +488,23 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val v = VSClo(x, body, ρf + (f -> l), ςf)
           k(v, σ1 + (l -> v), γ1)
       }, γ)
-    case EFix(f, e, s) if evalStVar(s, ς) == Dyn =>
+    case EFix(f, e, s) if evalExprStage(s, ς) == Dyn =>
       val l = σ.size
       val ρ1 = ρ + (f -> l)
       val g = fresh("f")
       val σ1 = σ + (l -> VCode(EVar(g)))
       reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
-        reflect(EFix(g, x, Sta), σ2, k, γ)
+        reflect(EFix(g, x, Some(Sta)), σ2, k, γ)
       })
-    case EIsApp(e) =>
-      eval(e, ρ, ς, σ, {
-        case (VCode(EVar(x)), σ1, γ1) =>
-          summon[Cache].inv(x) match
-            case EApp(_, _, _) => k(VBool(true), σ1, γ1)
-            case _ => k(VBool(false), σ1, γ1)
-        case (VCode(_), σ1, γ1) =>
-          k(VBool(false), σ1, γ1)
+    // Experimental features below:
+    case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
+    case ECBNApp(e1, e2) =>
+      eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
+        val v2 = VThunk(e2, ρ, ς)
+        val l = σ1.size
+        eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
       }, γ)
 
 def eval(e: Expr): (Value, Store) =
-  reset
+  clear
   eval(e, Map(), Map(), Map(), (x, σ, γ) => γ(x, σ), (x, σ) => (x, σ))(using BiMap())

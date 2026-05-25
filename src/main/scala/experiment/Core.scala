@@ -1,4 +1,4 @@
-package spmp.core
+package instar.experiment.noeff
 
 // The core language:
 // - After inference and elaboration phases, assuming programs are now well-typed.
@@ -7,7 +7,7 @@ package spmp.core
 // - `Stage` annotates can be either a stage index/number or a stage variable.
 //   Stage variables are introduced by `ESLam` e.g. Λs. app(t1, t2, s).
 
-import spmp.Counter.*
+import instar.Counter.*
 
 enum Stage:
   case SNum(n: Int)
@@ -210,5 +210,5 @@ def eval(e: Expr, ρ: Env, ς: StEnv, k: Cont, γ: MCont): Value =
     case EAscribe(e, _) => eval(e, ρ, ς, k, γ)
 
 def eval(e: Expr): Ans =
-  reset
+  clear
   eval(e, Map(), Map(), (x, γ) => γ(x), x => x)
