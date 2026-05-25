@@ -101,11 +101,17 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
       x * x
 
   m.terms.toSeq
-    .sortBy { case (k, v) => k.toString }
+    .sortBy { case (xs, _) =>
+      xs.toSeq.sortBy { case (x, n) => (x.toString, n) }.mkString("|")
+    }
     .foldLeft(r2.zero) { case (sum, (xs, a)) =>
-      sum + xs.foldLeft(f1(a)) { case (prod, (x, n)) =>
-        prod * power(f2(x), n)
-      }
+      val monomial = xs.toSeq
+        .sortBy { case (x, n) => (x.toString, n) }
+        .foldLeft(f1(a)) { case (prod, (x, n)) =>
+          prod * power(f2(x), n)
+        }
+
+      sum + monomial
     }
   
 // Multinomial itself is a ring structure

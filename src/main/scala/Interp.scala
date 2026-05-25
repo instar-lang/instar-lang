@@ -245,6 +245,27 @@ object CachedRingExpr:
       case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
       case _ => None
 
+// let x3 = x1 + x3 in let x4 = x3 * x3 is equivalent to
+// (x1 + x3) * (x1 + x3)
+def equivalent(e1: Expr, e2: Expr)(using c: Cache): Boolean =
+  (e1, e2) match
+    case (ENum(i1), ENum(i2)) => i1 == i2
+    case (EBool(b1), EBool(b2)) => b1 == b2
+    case (EVar(x1), _) if c.inv.contains(x1) => equivalent(c.inv(x1), e2)
+    case (_, EVar(x2)) if c.inv.contains(x2) => equivalent(e1, c.inv(x2))
+    case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
+      op1 == op2 && equivalent(e11, e21) && equivalent(e12, e22)
+    case _ => e1 == e2
+
+object UnnormalizedRingExpr:
+  def unapply(e: Expr)(using c: Cache): Option[Expr] =
+    e match
+      case CachedRingExpr(_, _, _) =>
+        val normalized =
+          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalRingPS(e))
+        if equivalent(e, normalized) then None else Some(e)
+      case _ => None
+
 def evalRingPS(expr: Expr)(using c: Cache): RingNormalForm =
   given Ring[RingNormalForm] = AddMulRingCoproductImpl.ac
   expr match
@@ -263,14 +284,14 @@ def residualizePS(repr: RingNormalForm, σ: Store, k: Cont, γ: MCont)(using c: 
       case EBinOp(op, e1, e2, _) =>
         residualizeExpr(e1, σ, { case (VCode(v1), σ1, γ1) =>
           residualizeExpr(e2, σ1, { case (VCode(v2), σ2, γ2) =>
-            reflect(EBinOp(op, v1, v2, Some(Sta)).withNormalized, σ2, k, γ2)
+            reflect(EBinOp(op, v1, v2, Some(Sta)), σ2, k, γ2)
           }, γ1)
         }, γ)
       case e => reflect(e, σ, k, γ)
   residualizeExpr(code, σ, k, γ)
 
 def reflectRingPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case e@CachedRingExpr(_, _, _) if Opt("ps") && !e.normalized => residualizePS(evalRingPS(e), σ, k, γ)
+  case UnnormalizedRingExpr(e) if Opt("ps") => residualizePS(evalRingPS(e), σ, k, γ)
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
 // When the result is different from the input, we apply the result.

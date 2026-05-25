@@ -19,8 +19,6 @@ type Loc = Int
 enum Expr:
   var ty: Option[Type] = None
   def withType(t: Type): Expr = { ty = Some(t); this }
-  var normalized: Boolean = false
-  def withNormalized: Expr = { normalized = true; this }
   case EUnit
   case ENum(i: Int)
   case EBool(b: Boolean)
