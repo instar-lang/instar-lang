@@ -1,6 +1,9 @@
 package instar.algebra
 
 import instar.syntax.*
+import instar.Counter.fresh
+import Expr.*
+import Stage.*
 
 extension [T](m1: Map[T, Int])
   def ⊔(m2: Map[T, Int]): Map[T, Int] =
@@ -187,3 +190,56 @@ def coproductFromFreeRing[A, B](using r: Ring[A])(using f: FreeRing[B]): Coprodu
 
     def eva[C: Ring](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
       evalMN(fa)((b: B) => fb(f.pvar(b)))(co.m)
+
+given freeRingCode: FreeRing[Code] = new FreeRing[Code]
+
+object AddMulRingCoproductImpl extends Coproduct[Ring, Int, freeRingCode.FreeA]:
+  val inst: Coproduct[Ring, Int, freeRingCode.FreeA] =
+    coproductFromFreeRing[Int, Code](using summon[Ring[Int]])(using freeRingCode)
+
+  type Coprod = inst.Coprod
+  given ac: Ring[Coprod] = inst.ac
+
+  override def inl(a: Int): Coprod = inst.inl(a)
+
+  override def inr(b: freeRingCode.FreeA): Coprod = inst.inr(b)
+
+  override def eva[C: Ring](fa: Int => C, fb: freeRingCode.FreeA => C, co: Coprod): C =
+    inst.eva(fa, fb, co)
+
+given AddMulRingCoproductImpl.type = AddMulRingCoproductImpl
+
+object AddMulRingExprImpl extends Ring[Expr]:
+  def zero: Expr = ENum(0)
+  def one: Expr = ENum(1)
+
+  def bindExpr(e: Expr)(k: Expr => Expr): Expr =
+    e match
+      case EUnit | ENum(_) | EBool(_) | EVar(_) => k(e)
+      case ELet(x, rhs, body) => ELet(x, rhs, bindExpr(body)(k))
+      case _ =>
+        val x = fresh()
+        ELet(x, e, k(EVar(x)))
+
+  def anfBinOp(op: String, lhs: Expr, rhs: Expr): Expr =
+    bindExpr(lhs) { lhsAtom =>
+      bindExpr(rhs) { rhsAtom =>
+        val x = fresh()
+        ELet(x, EBinOp(op, lhsAtom, rhsAtom, Some(Sta)), EVar(x))
+      }
+    }
+
+  extension (lhs: Expr)
+    def ⊕(rhs: Expr): Expr =
+      if (lhs == zero) rhs
+      else if (rhs == zero) lhs
+      else anfBinOp("+", lhs, rhs)
+
+    def ⊗(rhs: Expr): Expr =
+      if (lhs == one) rhs
+      else if (rhs == one) lhs
+      else if (lhs == zero || rhs == zero) zero
+      else anfBinOp("*", lhs, rhs)
+
+given Conversion[Int, Expr] with
+  def apply(i: Int): Expr = ENum1(i)

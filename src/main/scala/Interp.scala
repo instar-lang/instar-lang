@@ -22,6 +22,7 @@ import instar.syntax.*
 import instar.Counter.*
 import instar.BiMap
 import instar.algebra.*
+import instar.algebra.{freeRingCode, given}
 import collection.mutable.HashSet
 
 enum Value:
@@ -180,72 +181,6 @@ def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Val
         γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
 
-given Ring[VNum] with
-  def zero: VNum = VNum(0)
-  def one: VNum = VNum(1)
-
-  extension (x: VNum)
-    def ⊕(rhs: VNum): VNum = VNum(x.i + rhs.i)
-    def ⊗(rhs: VNum): VNum = VNum(x.i * rhs.i)
-
-given freeRingCode: FreeRing[Code] = new FreeRing[Code]
-
-object AddMulRingCoproductImpl extends Coproduct[Ring, VNum, freeRingCode.FreeA]:
-  val inst: Coproduct[Ring, VNum, freeRingCode.FreeA] =
-    coproductFromFreeRing[VNum, Code](using summon[Ring[VNum]])(using freeRingCode)
-
-  type Coprod = inst.Coprod
-  given ac: Ring[Coprod] = inst.ac
-
-  override def inl(a: VNum): Coprod = inst.inl(a)
-
-  override def inr(b: freeRingCode.FreeA): Coprod = inst.inr(b)
-
-  override def eva[C: Ring](fa: VNum => C, fb: freeRingCode.FreeA => C, co: Coprod): C =
-    inst.eva(fa, fb, co)
-
-given AddMulRingCoproductImpl.type = AddMulRingCoproductImpl
-
-object AddMulRingExprImpl extends Ring[Expr]:
-  def zero: Expr = ENum(0)
-  def one: Expr = ENum(1)
-
-  def bindExpr(e: Expr)(k: Expr => Expr): Expr =
-    e match
-      case EUnit | ENum(_) | EBool(_) | EVar(_) => k(e)
-      case ELet(x, rhs, body) => ELet(x, rhs, bindExpr(body)(k))
-      case _ =>
-        val x = fresh()
-        ELet(x, e, k(EVar(x)))
-
-  def anfBinOp(op: String, lhs: Expr, rhs: Expr): Expr =
-    bindExpr(lhs) { lhsAtom =>
-      bindExpr(rhs) { rhsAtom =>
-        val x = fresh()
-        ELet(x, EBinOp(op, lhsAtom, rhsAtom, Some(Sta)), EVar(x))
-      }
-    }
-
-  extension (lhs: Expr)
-    def ⊕(rhs: Expr): Expr =
-      if (lhs == zero) rhs
-      else if (rhs == zero) lhs
-      else anfBinOp("+", lhs, rhs)
-
-    def ⊗(rhs: Expr): Expr =
-      if (lhs == one) rhs
-      else if (rhs == one) lhs
-      else if (lhs == zero || rhs == zero) zero
-      else anfBinOp("*", lhs, rhs)
-
-given Conversion[VNum, Expr] with
-  def apply(v: VNum): Expr = ENum1(v.i)
-
-type NormalForm = AddMulRingCoproductImpl.Coprod
-
-def dyn(x: String): NormalForm =
-  AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
-
 object CachedRingExpr:
   val AddMulRingOps = Set("+", "*")
 
@@ -277,11 +212,16 @@ object UnnormalizedExpr:
         if e.equivalent(normalized) then None else Some(e)
       case _ => None
 
+type NormalForm = AddMulRingCoproductImpl.Coprod
+
+def dyn(x: String): NormalForm =
+  AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
+
 def evalPS(expr: Expr)(using c: Cache): NormalForm =
   expr match
     case CachedRingExpr("+", e1, e2) => evalPS(e1) ⊕ evalPS(e2)
     case CachedRingExpr("*", e1, e2) => evalPS(e1) ⊗ evalPS(e2)
-    case ENum(i) => sta[Ring, VNum](VNum(i))
+    case ENum(i) => sta[Ring, Int](i)
     case EVar(x) => dyn(x)
 
 def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
