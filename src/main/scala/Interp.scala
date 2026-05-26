@@ -21,6 +21,8 @@ package instar.interp
 import instar.syntax.*
 import instar.Counter.*
 import instar.BiMap
+import instar.algebra.*
+import instar.algebra.{freeRingCode, given}
 import collection.mutable.HashSet
 
 enum Value:
@@ -179,12 +181,66 @@ def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Val
         γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
 
+object CachedRingExpr:
+  val AddMulRingOps = Set("+", "*")
+
+  def unapply(e: Expr)(using c: Cache): Option[(String, Expr, Expr)] =
+    e match
+      case EBinOp(op, e1, e2, _) if AddMulRingOps(op) => Some((op, e1, e2))
+      case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
+      case _ => None
+
+// let x3 = x1 + x3 in let x4 = x3 * x3 is equivalent to
+// (x1 + x3) * (x1 + x3)
+extension (e1: Expr)
+  def equivalent(e2: Expr)(using c: Cache): Boolean =
+    (e1, e2) match
+      case (ELet(x1, e11, e12), _) => e12.equivalent(e2)(using c + (e11 -> x1))
+      case (_, ELet(x2, e21, e22)) => e1.equivalent(e22)(using c + (e21 -> x2))
+      case (EVar(x1), _) if c.inv.contains(x1) => c.inv(x1).equivalent(e2)
+      case (_, EVar(x2)) if c.inv.contains(x2) => e1.equivalent(c.inv(x2))
+      case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
+        op1 == op2 && e11.equivalent(e21) && e12.equivalent(e22)
+      case _ => e1 == e2
+
+object UnnormalizedExpr:
+  def unapply(e: Expr)(using c: Cache): Option[Expr] =
+    e match
+      case CachedRingExpr(_, _, _) if Opt("ps") =>
+        val normalized =
+          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
+        if e.equivalent(normalized) then None else Some(e)
+      case _ => None
+
+type NormalForm = AddMulRingCoproductImpl.Coprod
+
+def dyn(x: String): NormalForm =
+  AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
+
+def evalPS(expr: Expr)(using c: Cache): NormalForm =
+  expr match
+    case CachedRingExpr("+", e1, e2) => evalPS(e1) ⊕ evalPS(e2)
+    case CachedRingExpr("*", e1, e2) => evalPS(e1) ⊗ evalPS(e2)
+    case ENum(i) => sta[Ring, Int](i)
+    case EVar(x) => dyn(x)
+
+def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+  val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
+  // println(s"residualizePS: residualizing $code with repr = $repr")
+  renormalize(code, σ, k, γ)
+
+def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+  case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
+
+// A list of optimization functions. We apply each of them, until one of them can handle the current expression.
+// When the result is different from the input, we apply the result.
 def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val funs = List(
     reflectAtom,
     reflectLam,
     reflectInline,
-    reflectSimp,
+    reflectSimp, // There should be a reflectPS that replaces reflectSimp
+    reflectPS,
     reflectCondSimp,
     reflectCse,
     reflectDce,

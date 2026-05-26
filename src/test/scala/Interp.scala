@@ -537,14 +537,145 @@ class CoreEffOpt extends Base {
     testEval(e2, exp2, Set("rewriting", "simp-cond"))
   }
 
-  /*
   test("rewriting-partial") {
-    val e = ELift2(ELam("x", None,
+    val e1 = ELift2(ELam("x", None,
       EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
       None))
-    testEval(e, "FIXME", Set("rewriting"))
+    testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6))),None),EVar(x7)))", Set("ps"))
+
+    // λx. 1 + (1 + (1 + (1 + (1 + x))))
+    val e2 = ELift2(ELam("x", None,
+      EBinOp2("+", ENum2(1), EBinOp2("+",
+        ENum2(1), EBinOp2("+",
+          ENum2(1), EBinOp2("+",
+            ENum2(1), EBinOp2("+",
+              ENum2(1), EVar("x")))))),
+      None))
+    testEval(e2, "VCode(ELet(x19,ELam(x0,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x6,EBinOp(+,ENum(2),EVar(x0),Some(SNum(1))),ELet(x10,EBinOp(+,ENum(3),EVar(x0),Some(SNum(1))),ELet(x14,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),ELet(x18,EBinOp(+,ENum(5),EVar(x0),Some(SNum(1))),EVar(x18)))))),None),EVar(x19)))", Set("ps"))
+
+    // λx. λf. 1 + (1 + (1 + (1 + (1 + f x))))
+    val e3 = ELift2(ELam("x", None,
+      ELift2(ELam("f", None,
+        EBinOp2("+", ENum2(1), EBinOp2("+",
+          ENum2(1), EBinOp2("+",
+            ENum2(1), EBinOp2("+",
+              ENum2(1), EBinOp2("+",
+                ENum2(1), EApp2(EVar("f"), EVar("x"))))))),
+        None)),
+      None))
+    testEval(e3, "VCode(ELet(x22,ELam(x0,None,ELet(x21,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),Some(SNum(1))),ELet(x4,EBinOp(+,ENum(1),EVar(x2),Some(SNum(1))),ELet(x8,EBinOp(+,ENum(2),EVar(x2),Some(SNum(1))),ELet(x12,EBinOp(+,ENum(3),EVar(x2),Some(SNum(1))),ELet(x16,EBinOp(+,ENum(4),EVar(x2),Some(SNum(1))),ELet(x20,EBinOp(+,ENum(5),EVar(x2),Some(SNum(1))),EVar(x20))))))),None),EVar(x21)),None),EVar(x22)))", Set("ps"))
   }
-  */
+
+  test("rewriting-partial-dce") {
+    val e1 = ELift2(ELam("x", None,
+      EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
+      None))
+    testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
+
+    // λf. λx. let y = 1 + x in let z = x + 1 in f @[2] y + f @[2] z
+    val e1_5 = ELift2(ELam("x", None,
+      ELift2(ELam("f", None,
+        ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
+        ELet("z", EBinOp2("+", EVar("x"), ENum2(1)),
+          EBinOp2("+",
+            EApp2(EVar("f"), EVar("y")),
+            EApp2(EVar("f"), EVar("z"))))),
+        None)),
+      None))
+    testEval(e1_5, "VCode(ELet(x12,ELam(x0,None,ELet(x11,ELam(x1,None,ELet(x3,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x7,EApp(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x8,EApp(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x10,EBinOp(+,EVar(x7),EVar(x8),Some(SNum(1))),EVar(x10))))),None),EVar(x11)),None),EVar(x12)))", Set("ps", "dce", "cse"))
+
+    // λx. 1 + (1 + (1 + (1 + (1 + x))))
+    val e2 = ELift2(ELam("x", None,
+      EBinOp2("+", ENum2(1), EBinOp2("+",
+        ENum2(1), EBinOp2("+",
+          ENum2(1), EBinOp2("+",
+            ENum2(1), EBinOp2("+",
+              ENum2(1), EVar("x")))))),
+      None))
+    testEval(e2, "VCode(ELet(x19,ELam(x0,None,ELet(x18,EBinOp(+,ENum(5),EVar(x0),Some(SNum(1))),EVar(x18)),None),EVar(x19)))", Set("ps", "dce"))
+
+    // λx. λf. 1 + (1 + (1 + (1 + (1 + f x))))
+    val e3 = ELift2(ELam("x", None,
+      ELift2(ELam("f", None,
+        EBinOp2("+", ENum2(1), EBinOp2("+",
+          ENum2(1), EBinOp2("+",
+            ENum2(1), EBinOp2("+",
+              ENum2(1), EBinOp2("+",
+                ENum2(1), EApp2(EVar("f"), EVar("x"))))))),
+        None)),
+      None))
+    testEval(e3, "VCode(ELet(x22,ELam(x0,None,ELet(x21,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),Some(SNum(1))),ELet(x20,EBinOp(+,ENum(5),EVar(x2),Some(SNum(1))),EVar(x20))),None),EVar(x21)),None),EVar(x22)))", Set("ps", "dce"))
+
+    // λx. λy. (1 + x) + (1 + y)
+    val e4 = ELift2(ELam("x", None,
+      ELift2(ELam("y", None,
+        EBinOp2("+",
+          EBinOp2("+", ENum2(1), EVar("x")),
+          EBinOp2("+", ENum2(1), EVar("y"))),
+        None)),
+      None))
+    testEval(e4, "VCode(ELet(x7,ELam(x0,None,ELet(x6,ELam(x1,None,ELet(x4,EBinOp(+,ENum(2),EVar(x0),Some(SNum(1))),ELet(x5,EBinOp(+,EVar(x1),EVar(x4),Some(SNum(1))),EVar(x5))),None),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
+
+    // λf. λx. λy. (1 + f x) + (1 + (1 + f y))
+    // the normalization shouldn't change the order of effects
+    val e5 = ELift2(ELam("f", None,
+      ELift2(ELam("x", None,
+        ELift2(ELam("y", None,
+          EBinOp2("+",
+            EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x"))),
+            EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y"))))),
+          None)),
+        None)),
+      None))
+    testEval(e5, "VCode(ELet(x12,ELam(x0,None,ELet(x11,ELam(x1,None,ELet(x10,ELam(x2,None,ELet(x3,EApp(EVar(x0),EVar(x1),Some(SNum(1))),ELet(x5,EApp(EVar(x0),EVar(x2),Some(SNum(1))),ELet(x8,EBinOp(+,ENum(3),EVar(x3),Some(SNum(1))),ELet(x9,EBinOp(+,EVar(x5),EVar(x8),Some(SNum(1))),EVar(x9))))),None),EVar(x10)),None),EVar(x11)),None),EVar(x12)))", Set("ps", "dce"))
+
+    // This is an example that only has add operation, but we can generate a more optimized code by applying ring laws.
+    // λx. let y = (x + x) in λz. y + 2 + y + 1
+    val e6 = ELift2(ELam("x", None,
+      ELet("y",
+        EBinOp2("+",
+          EBinOp2("+", EVar("x"), EVar("x")),
+          EVar("x")),
+        ELift2(ELam("z", None,
+          EBinOp2("+",
+            EBinOp2("+", EVar("y"), ENum2(2)),
+            EBinOp2("+", EVar("y"), ENum2(1))),
+        None))),
+      None))
+    testEval(e6, "VCode(ELet(x11,ELam(x0,None,ELet(x10,ELam(x3,None,ELet(x8,EBinOp(*,ENum(6),EVar(x0),Some(SNum(1))),ELet(x9,EBinOp(+,ENum(3),EVar(x8),Some(SNum(1))),EVar(x9))),None),EVar(x10)),None),EVar(x11)))", Set("ps", "dce"))
+    // testEval(e6, "VCode(ELet(x14,ELam(x0,None,ELet(x2,EBinOp(+,EVar(x0),EVar(x0),Some(SNum(1))),ELet(x13,ELam(x4,None,ELet(x9,EBinOp(+,EVar(x2),EVar(x2),Some(SNum(1))),ELet(x10,EBinOp(+,EVar(x0),EVar(x0),Some(SNum(1))),ELet(x11,EBinOp(+,EVar(x9),EVar(x10),Some(SNum(1))),ELet(x12,EBinOp(+,ENum(3),EVar(x11),Some(SNum(1))),EVar(x12))))),None),EVar(x13))),None),EVar(x14)))", Set("ps", "dce"))
+
+    // Another example that combines both ring and commutative monoid laws.
+    // λx. let y = x + x in let f= λz. λw. y + 1 + y + 1 in f y
+    // ~> λ x0 . λ x4 . (2 + (4 * x0))
+    val e7 = ELift2(ELam("x", None,
+      ELet("y",
+        EBinOp2("+",
+          EVar("x"),
+          EVar("x")),
+        ELet("f",
+          ELift2(ELam("z", None,
+            ELift2(ELam("w", None,
+              EBinOp2("+",
+                EBinOp2("+", EVar("y"), ENum2(1)),
+                EBinOp2("+", EVar("y"), ENum2(1))),
+            None)),
+          None)),
+        EApp2(EVar("f"), EVar("y")))),
+      None))
+    testEval(e7, "VCode(ELet(x13,ELam(x0,None,ELet(x1,EBinOp(*,ENum(2),EVar(x0),Some(SNum(1))),ELet(x11,ELam(x2,None,ELet(x10,ELam(x3,None,ELet(x8,EBinOp(*,ENum(4),EVar(x0),Some(SNum(1))),ELet(x9,EBinOp(+,ENum(2),EVar(x8),Some(SNum(1))),EVar(x9))),None),EVar(x10)),None),ELet(x12,EApp(EVar(x11),EVar(x1),Some(SNum(1))),EVar(x12)))),None),EVar(x13)))", Set("ps", "dce"))
+    // testEval(e7, "VCode(ELet(x15,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),EVar(x0),Some(SNum(1))),ELet(x13,ELam(x2,None,ELet(x12,ELam(x3,None,ELet(x8,EBinOp(+,EVar(x0),EVar(x0),Some(SNum(1))),ELet(x9,EBinOp(+,EVar(x8),EVar(x0),Some(SNum(1))),ELet(x10,EBinOp(+,EVar(x9),EVar(x0),Some(SNum(1))),ELet(x11,EBinOp(+,ENum(2),EVar(x10),Some(SNum(1))),EVar(x11))))),None),EVar(x12)),None),ELet(x14,EApp(EVar(x13),EVar(x1),Some(SNum(1))),EVar(x14)))),None),EVar(x15)))", Set("ps", "dce"))
+
+
+    // λx. (x + 1) * (x + 1)
+    // ~> x^2 + 2x + 1
+    val e8 = ELift2(ELam("x", None,
+      EBinOp2("*",
+        EBinOp2("+", EVar("x"), ENum2(1)),
+        EBinOp2("+", EVar("x"), ENum2(1))),
+      None))
+    testEval(e8, "VCode(ELet(x8,ELam(x0,None,ELet(x3,EBinOp(*,ENum(2),EVar(x0),Some(SNum(1))),ELet(x4,EBinOp(+,ENum(1),EVar(x3),Some(SNum(1))),ELet(x6,EBinOp(*,EVar(x0),EVar(x0),Some(SNum(1))),ELet(x7,EBinOp(+,EVar(x4),EVar(x6),Some(SNum(1))),EVar(x7))))),None),EVar(x8)))", Set("ps", "dce"))
+  }
 }
 
 class CoreEffAnalysis extends Base {
