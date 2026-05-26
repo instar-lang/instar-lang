@@ -26,13 +26,13 @@ trait Coproduct[Algebra[_], A: Algebra, B: Algebra]:
   given ac: Algebra[Coprod]
   def inl(a: A): Coprod
   def inr(b: B): Coprod
-  def eva[C: Algebra](fa: A => C)(fb: B => C)(co: Coprod): C
+  def eva[C: Algebra](fa: A => C, fb: B => C, co: Coprod): C
 
 trait Free[Algebra[_], T]:
   type FreeA
   given af: Algebra[FreeA]
   def pvar(x: T): FreeA
-  def pbind[C: Algebra](freeA: FreeA)(f: T => C): C
+  def pbind[C: Algebra](freeA: FreeA, f: T => C): C
 
 def sta[Algebra[_], A: Algebra](a: A)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA]): c.Coprod =
   c.inl(a)
@@ -42,11 +42,11 @@ def code[Algebra[_], A: Algebra](code: Code)(using f: Free[Algebra, Code], c: Co
 
 def evaCode[Algebra[_], A: Algebra](f1: A => Code)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA])
                                    (f2: f.FreeA => Code, co: c.Coprod)(using Algebra[Code]): Code =
-  c.eva(f1)(f2)(co)
+  c.eva(f1, f2, co)
 
 def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code], a: Algebra[Expr], c: Coproduct[Algebra, A, f.FreeA], lift: Conversion[A, Expr])
                               (co: c.Coprod) =
-  c.eva(lift)((frc) => f.pbind(frc)((x => x: Expr)))(co)
+  c.eva(lift, (frc) => f.pbind(frc, (x => x: Expr)), co)
 
 case class MonomialRepr[T](vars: Map[T, Int])
 
@@ -61,7 +61,7 @@ class FreeCMonoid[T] extends Free[Monoid, T]:
 
   def pvar(x: T): FreeA = MonomialRepr(Map(x -> 1))
 
-  def pbind[C: Monoid](freeA: FreeA)(f: T => C): C =
+  def pbind[C: Monoid](freeA: FreeA, f: T => C): C =
     freeA.vars.foldLeft(summon[Monoid[C]].empty) { case (acc, (v, count)) =>
       val term = List.fill(count)(f(v)).reduce(_ ⊗ _)
       acc ⊗ term
@@ -151,7 +151,7 @@ class FreeRing [T] extends Free[Ring, T]:
 
   def pvar(x: T): FreeA = FreeA(Multinomial(Map(Map(x -> 1) -> 1)))
 
-  def pbind[C: Ring](freeA: FreeA)(f: T => C): C =
+  def pbind[C: Ring](freeA: FreeA, f: T => C): C =
     val ring = summon[Ring[C]]
     evalMN(initMN)(f)(freeA.terms)
 
@@ -166,7 +166,7 @@ def coproductFromFreeMonoid[A, B](using m: Monoid[A], f: Free[Monoid, B]): Copro
 
     def inl(a: A): Coprod = Coprod(a, summon[Monoid[f.FreeA]].empty)
     def inr(b: f.FreeA): Coprod = Coprod(m.empty, b)
-    def eva[C: Monoid](fa: A => C)(fb: f.FreeA => C)(co: Coprod): C =
+    def eva[C: Monoid](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
       fa(co.a) ⊗ fb(co.b)
 
 // We can create a Coproduct of Ring and FreeRing.
@@ -185,5 +185,5 @@ def coproductFromFreeRing[A, B](using r: Ring[A])(using f: FreeRing[B]): Coprodu
       vars -> initMN(coeff)(using r)
     })))
 
-    def eva[C: Ring](fa: A => C)(fb: f.FreeA => C)(co: Coprod): C =
+    def eva[C: Ring](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
       evalMN(fa)((b: B) => fb(f.pvar(b)))(co.m)

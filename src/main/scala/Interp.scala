@@ -201,8 +201,8 @@ object AddMulRingCoproductImpl extends Coproduct[Ring, VNum, freeRingCode.FreeA]
 
   override def inr(b: freeRingCode.FreeA): Coprod = inst.inr(b)
 
-  override def eva[C: Ring](fa: VNum => C)(fb: freeRingCode.FreeA => C)(co: Coprod): C =
-    inst.eva(fa)(fb)(co)
+  override def eva[C: Ring](fa: VNum => C, fb: freeRingCode.FreeA => C, co: Coprod): C =
+    inst.eva(fa, fb, co)
 
 given AddMulRingCoproductImpl.type = AddMulRingCoproductImpl
 
