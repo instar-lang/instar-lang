@@ -210,17 +210,33 @@ object AddMulRingExprImpl extends Ring[Expr]:
   def zero: Expr = ENum(0)
   def one: Expr = ENum(1)
 
-  extension (x: Expr)
+  def bindExpr(e: Expr)(k: Expr => Expr): Expr =
+    e match
+      case EUnit | ENum(_) | EBool(_) | EVar(_) => k(e)
+      case ELet(x, rhs, body) => ELet(x, rhs, bindExpr(body)(k))
+      case _ =>
+        val x = fresh()
+        ELet(x, e, k(EVar(x)))
+
+  def anfBinOp(op: String, lhs: Expr, rhs: Expr): Expr =
+    bindExpr(lhs) { lhsAtom =>
+      bindExpr(rhs) { rhsAtom =>
+        val x = fresh()
+        ELet(x, EBinOp(op, lhsAtom, rhsAtom, Some(Sta)), EVar(x))
+      }
+    }
+
+  extension (lhs: Expr)
     def ⊕(rhs: Expr): Expr =
-      if (x == zero) rhs
-      else if (rhs == zero) x
-      else EBinOp("+", x, rhs, Some(Sta))
+      if (lhs == zero) rhs
+      else if (rhs == zero) lhs
+      else anfBinOp("+", lhs, rhs)
 
     def ⊗(rhs: Expr): Expr =
-      if (x == one) rhs
-      else if (rhs == one) x
-      else if (x == zero || rhs == zero) zero
-      else EBinOp("*", x, rhs, Some(Sta))
+      if (lhs == one) rhs
+      else if (rhs == one) lhs
+      else if (lhs == zero || rhs == zero) zero
+      else anfBinOp("*", lhs, rhs)
 
 given Conversion[VNum, Expr] with
   def apply(v: VNum): Expr = ENum1(v.i)
@@ -244,6 +260,8 @@ object CachedRingExpr:
 extension (e1: Expr)
   def equivalent(e2: Expr)(using c: Cache): Boolean =
     (e1, e2) match
+      case (ELet(x1, e11, e12), _) => e12.equivalent(e2)(using c + (e11 -> x1))
+      case (_, ELet(x2, e21, e22)) => e1.equivalent(e22)(using c + (e21 -> x2))
       case (EVar(x1), _) if c.inv.contains(x1) => c.inv(x1).equivalent(e2)
       case (_, EVar(x2)) if c.inv.contains(x2) => e1.equivalent(c.inv(x2))
       case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
@@ -253,7 +271,7 @@ extension (e1: Expr)
 object UnnormalizedExpr:
   def unapply(e: Expr)(using c: Cache): Option[Expr] =
     e match
-      case CachedRingExpr(_, _, _) =>
+      case CachedRingExpr(_, _, _) if Opt("ps") =>
         val normalized =
           cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
         if e.equivalent(normalized) then None else Some(e)
@@ -269,23 +287,7 @@ def evalPS(expr: Expr)(using c: Cache): NormalForm =
 def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
   // println(s"residualizePS: residualizing $code with repr = $repr")
-  
-  def residualizeExpr(e: Expr, σ: Store, k: Cont, γ: MCont): (Value, Store) =
-    // reflect an arithmetic expression recursively
-    e match
-      case EBinOp(op, e1, e2, _) =>
-        residualizeExpr(e1, σ, { case (VCode(v1), σ1, γ1) =>
-          residualizeExpr(e2, σ1, { case (VCode(v2), σ2, γ2) =>
-            reflect(EBinOp(op, v1, v2, Some(Sta)), σ2, k, γ2)
-          }, γ1)
-        }, γ)
-      case EUnaryOp(op, e, _) =>
-        residualizeExpr(e, σ, { case (VCode(v), σ1, γ1) =>
-          reflect(EUnaryOp(op, v, Some(Sta)), σ1, k, γ1)
-        }, γ)
-      case e @ EVar(x) => k(VCode(EVar(x)), σ, γ)
-      case e => reflect(e, σ, k, γ)
-  residualizeExpr(code, σ, k, γ)
+  renormalize(code, σ, k, γ)
 
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)

@@ -541,7 +541,7 @@ class CoreEffOpt extends Base {
     val e1 = ELift2(ELam("x", None,
       EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
       None))
-    testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x2,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x2))),None),EVar(x3)))", Set("ps"))
+    testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6))),None),EVar(x7)))", Set("ps"))
 
     // λx. 1 + (1 + (1 + (1 + (1 + x))))
     val e2 = ELift2(ELam("x", None,
@@ -551,7 +551,7 @@ class CoreEffOpt extends Base {
             ENum2(1), EBinOp2("+",
               ENum2(1), EVar("x")))))),
       None))
-    testEval(e2, "VCode(ELet(x6,ELam(x0,None,ELet(x1,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x2,EBinOp(+,ENum(2),EVar(x0),Some(SNum(1))),ELet(x3,EBinOp(+,ENum(3),EVar(x0),Some(SNum(1))),ELet(x4,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),ELet(x5,EBinOp(+,ENum(5),EVar(x0),Some(SNum(1))),EVar(x5)))))),None),EVar(x6)))", Set("ps"))
+    testEval(e2, "VCode(ELet(x19,ELam(x0,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x6,EBinOp(+,ENum(2),EVar(x0),Some(SNum(1))),ELet(x10,EBinOp(+,ENum(3),EVar(x0),Some(SNum(1))),ELet(x14,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),ELet(x18,EBinOp(+,ENum(5),EVar(x0),Some(SNum(1))),EVar(x18)))))),None),EVar(x19)))", Set("ps"))
 
     // λx. λf. 1 + (1 + (1 + (1 + (1 + f x))))
     val e3 = ELift2(ELam("x", None,
@@ -563,14 +563,14 @@ class CoreEffOpt extends Base {
                 ENum2(1), EApp2(EVar("f"), EVar("x"))))))),
         None)),
       None))
-    testEval(e3, "VCode(ELet(x9,ELam(x0,None,ELet(x8,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),Some(SNum(1))),ELet(x3,EBinOp(+,ENum(1),EVar(x2),Some(SNum(1))),ELet(x4,EBinOp(+,ENum(2),EVar(x2),Some(SNum(1))),ELet(x5,EBinOp(+,ENum(3),EVar(x2),Some(SNum(1))),ELet(x6,EBinOp(+,ENum(4),EVar(x2),Some(SNum(1))),ELet(x7,EBinOp(+,ENum(5),EVar(x2),Some(SNum(1))),EVar(x7))))))),None),EVar(x8)),None),EVar(x9)))", Set("ps"))
+    testEval(e3, "VCode(ELet(x22,ELam(x0,None,ELet(x21,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),Some(SNum(1))),ELet(x4,EBinOp(+,ENum(1),EVar(x2),Some(SNum(1))),ELet(x8,EBinOp(+,ENum(2),EVar(x2),Some(SNum(1))),ELet(x12,EBinOp(+,ENum(3),EVar(x2),Some(SNum(1))),ELet(x16,EBinOp(+,ENum(4),EVar(x2),Some(SNum(1))),ELet(x20,EBinOp(+,ENum(5),EVar(x2),Some(SNum(1))),EVar(x20))))))),None),EVar(x21)),None),EVar(x22)))", Set("ps"))
   }
 
   test("rewriting-partial-dce") {
     val e1 = ELift2(ELam("x", None,
       EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x"))),
       None))
-    testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x2,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x2)),None),EVar(x3)))", Set("ps", "dce"))
+    testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
 
     // λf. λx. let y = 1 + x in let z = x + 1 in f @[2] y + f @[2] z
     val e1_5 = ELift2(ELam("x", None,
@@ -582,7 +582,7 @@ class CoreEffOpt extends Base {
             EApp2(EVar("f"), EVar("z"))))),
         None)),
       None))
-    testEval(e1_5, "VCode(ELet(x7,ELam(x0,None,ELet(x6,ELam(x1,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x3,EApp(EVar(x1),EVar(x2),Some(SNum(1))),ELet(x4,EApp(EVar(x1),EVar(x2),Some(SNum(1))),ELet(x5,EBinOp(+,EVar(x3),EVar(x4),Some(SNum(1))),EVar(x5))))),None),EVar(x6)),None),EVar(x7)))", Set("ps", "dce", "cse"))
+    testEval(e1_5, "VCode(ELet(x12,ELam(x0,None,ELet(x11,ELam(x1,None,ELet(x3,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x7,EApp(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x8,EApp(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x10,EBinOp(+,EVar(x7),EVar(x8),Some(SNum(1))),EVar(x10))))),None),EVar(x11)),None),EVar(x12)))", Set("ps", "dce", "cse"))
 
     // λx. 1 + (1 + (1 + (1 + (1 + x))))
     val e2 = ELift2(ELam("x", None,
@@ -592,7 +592,7 @@ class CoreEffOpt extends Base {
             ENum2(1), EBinOp2("+",
               ENum2(1), EVar("x")))))),
       None))
-    testEval(e2, "VCode(ELet(x6,ELam(x0,None,ELet(x5,EBinOp(+,ENum(5),EVar(x0),Some(SNum(1))),EVar(x5)),None),EVar(x6)))", Set("ps", "dce"))
+    testEval(e2, "VCode(ELet(x19,ELam(x0,None,ELet(x18,EBinOp(+,ENum(5),EVar(x0),Some(SNum(1))),EVar(x18)),None),EVar(x19)))", Set("ps", "dce"))
 
     // λx. λf. 1 + (1 + (1 + (1 + (1 + f x))))
     val e3 = ELift2(ELam("x", None,
@@ -604,7 +604,7 @@ class CoreEffOpt extends Base {
                 ENum2(1), EApp2(EVar("f"), EVar("x"))))))),
         None)),
       None))
-    testEval(e3, "VCode(ELet(x9,ELam(x0,None,ELet(x8,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),Some(SNum(1))),ELet(x7,EBinOp(+,ENum(5),EVar(x2),Some(SNum(1))),EVar(x7))),None),EVar(x8)),None),EVar(x9)))", Set("ps", "dce"))
+    testEval(e3, "VCode(ELet(x22,ELam(x0,None,ELet(x21,ELam(x1,None,ELet(x2,EApp(EVar(x1),EVar(x0),Some(SNum(1))),ELet(x20,EBinOp(+,ENum(5),EVar(x2),Some(SNum(1))),EVar(x20))),None),EVar(x21)),None),EVar(x22)))", Set("ps", "dce"))
 
     // λx. λy. (1 + x) + (1 + y)
     val e4 = ELift2(ELam("x", None,
