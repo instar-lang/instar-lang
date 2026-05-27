@@ -1,3 +1,6 @@
+// Section 3.2: 2-CPS definitional interpreter — fully tail-call, evaluation-strategy independent.
+// Introduces a meta-continuation to complete let-expression assembly in tail position.
+
 package instar.experiment.twocps
 
 import instar.Counter.*

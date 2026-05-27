@@ -1,3 +1,6 @@
+// Shared core two-stage language syntax (Figure 1).
+// Used by all definitional interpreters and the CEKM machine.
+
 package instar.experiment
 
 enum Stage:

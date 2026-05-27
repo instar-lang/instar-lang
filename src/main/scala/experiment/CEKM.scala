@@ -1,3 +1,6 @@
+// Section 4: CEKM abstract machine — defunctionalized 2-CPS interpreter.
+// Explicitly represents continuations and meta-continuations as stacks.
+
 package instar.experiment.cekm
 
 import instar.Counter.*
