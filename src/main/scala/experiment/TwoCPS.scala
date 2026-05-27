@@ -1,4 +1,4 @@
-package instar.experiment.noeff
+package instar.experiment.twocps
 
 import instar.Counter.*
 import instar.experiment.*

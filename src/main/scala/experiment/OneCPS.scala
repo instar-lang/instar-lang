@@ -1,4 +1,4 @@
-package instar.experiment.imp.cps1
+package instar.experiment.onecps
 
 import instar.Counter.*
 import instar.experiment.*

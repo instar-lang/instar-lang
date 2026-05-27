@@ -1,8 +1,8 @@
-package instar.experiment.imp
+package instar.experiment.wadlerfest
 
 import instar.experiment.*
 
-class CoreImpTest extends munit.FunSuite:
+class WadlerFestTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*

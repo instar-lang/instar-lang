@@ -1,8 +1,8 @@
-package instar.experiment.absmach
+package instar.experiment.twocps
 
 import instar.experiment.*
 
-class CoreAbsMachTest extends munit.FunSuite:
+class CoreTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*

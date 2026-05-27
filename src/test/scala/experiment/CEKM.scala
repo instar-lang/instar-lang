@@ -1,8 +1,8 @@
-package instar.experiment.noeff
+package instar.experiment.cekm
 
 import instar.experiment.*
 
-class CoreTest extends munit.FunSuite:
+class CoreAbsMachTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*
