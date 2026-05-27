@@ -1,43 +1,43 @@
 package instar.experiment.delimited
 
 import instar.Counter.*
-import instar.Cont.*
+import instar.experiment.*
 
-enum Stage:
-  case Sta, Dyn
+trait Monad[F[_]]:
+  def pure[A](a: A): F[A]
+  extension [A](fa: F[A])
+    def flatMap[B](f: A => F[B]): F[B]
+    def map[B](f: A => B): F[B] =
+      fa.flatMap(a => pure(f(a)))
 
-enum Expr:
-  case EUnit
-  case ENum(i: Int)
-  case EBool(b: Boolean)
-  case EVar(name: String)
-  case ELam(x: String, body: Expr)
-  case EApp(e1: Expr, e2: Expr, st: Stage)
-  case ELift(t: Expr)
-  case ERun(t: Expr)
-  case ELet(x: String, rhs: Expr, body: Expr)
-  case ECond(e1: Expr, e2: Expr, e3: Expr, st: Stage)
-  case EBinOp(op: String, e1: Expr, e2: Expr, st: Stage)
+object Cont:
+  opaque type Cont[R, A] = (A => R) => R
+  def apply[R, A](run: (A => R) => R): Cont[R, A] = run
 
-def EApp1(e1: Expr, e2: Expr): Expr = EApp(e1, e2, Sta)
-def EApp2(e1: Expr, e2: Expr): Expr = EApp(e1, e2, Dyn)
-def ECond1(e1: Expr, e2: Expr, e3: Expr): Expr = ECond(e1, e2, e3, Sta)
-def ECond2(e1: Expr, e2: Expr, e3: Expr): Expr = ECond(e1, e2, e3, Dyn)
-def EBinOp1(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Sta)
-def EBinOp2(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Dyn)
+  def runCont[A](cont: Cont[A, A]): A = cont(identity)
 
-enum Value:
-  case VUnit
-  case VNum(i: Int)
-  case VBool(b: Boolean)
-  case VClo(x: String, body: Expr, ρ: Env)
-  case VCode(e: Expr)
+  def pure[R, A](a: A): Cont[R, A] = Cont(k => k(a))
 
-type Env = Map[String, Value]
+  def reset[R, A](cont: Cont[A, A]): Cont[R, A] =
+    pure(runCont(cont))
+
+  def shift[R, A](f: (A => Cont[R, R]) => Cont[R, R]): Cont[R, A] =
+    Cont(k => runCont(f(a => pure(k(a)))))
+
+  given contMonad[R]: Monad[[A] =>> Cont[R, A]] with
+    def pure[A](a: A): Cont[R, A] = Cont.pure(a)
+
+    extension [A](fa: Cont[R, A])
+      def flatMap[B](f: A => Cont[R, B]): Cont[R, B] =
+        Cont(k => fa(a => f(a)(k)))
+
+      def withFilter(p: A => Boolean): Cont[R, A] =
+        Cont(k => fa(a => if p(a) then k(a) else throw new MatchError(a)))
 
 import Stage.*
 import Expr.*
 import Value.*
+import Cont.*
 
 def evalPrim(op: String, v1: Value, v2: Value): Value =
   (op, v1, v2) match
@@ -54,8 +54,6 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
 
 def reflect(e: Expr): Cont[Value, Value] =
   e match
-    // Note: here we decide what needs to be let-inserted based on syntactic form.
-    // We could also avoid let-inserting for λ-terms and fix as they are pure.
     case EUnit | ENum(_) | EBool(_) => pure(VCode(e))
     case _ =>
       val x = fresh()
