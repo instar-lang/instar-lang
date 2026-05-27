@@ -1,4 +1,4 @@
-// Shared core two-stage language syntax (Figure 1).
+// Shared core two-stage language syntax (Figure 2).
 // Used by all definitional interpreters and the CEKM machine.
 
 package instar.experiment
@@ -40,5 +40,37 @@ def EBinOp1(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Sta)
 def EBinOp2(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Dyn)
 def EUnaryOp1(op: String, e: Expr): Expr = EUnaryOp(op, e, Sta)
 def EUnaryOp2(op: String, e: Expr): Expr = EUnaryOp(op, e, Dyn)
-def ENum2(i: Int): Expr = ELift(ENum(i))
-def EBool2(b: Boolean): Expr = ELift(EBool(b))
+
+def show(e: Expr): String = pprint(e, 0)
+
+private def pprint(e: Expr, d: Int): String =
+  val I = "  " * d
+  e match
+    case EUnit => "()"
+    case ENum(i) => i.toString
+    case EBool(b) => b.toString
+    case EVar(x) => x
+    case ELam(x, b) => s"λ$x.\n${pprint(b, d + 1)}"
+    case EApp(e1, e2, Sta) => s"(${show(e1)} ${show(e2)})"
+    case EApp(e1, e2, Dyn) => s"(${show(e1)} @² ${show(e2)})"
+    case ELift(t) => s"lift(${show(t)})"
+    case ERun(t) => s"run(${show(t)})"
+    case ELet(x, r, b) =>
+      val bodyStr = pprint(b, d)
+      val body = if bodyStr.contains('\n') then bodyStr else s"$I$bodyStr"
+      s"${I}let $x = ${pprint(r, d)} in\n$body"
+    case ECond(e1, e2, e3, Sta) =>
+      s"if ${show(e1)}\n${I}then\n${pprint(e2, d + 1)}\n${I}else\n${pprint(e3, d + 1)}"
+    case ECond(e1, e2, e3, Dyn) =>
+      s"if² ${show(e1)}\n${I}then\n${pprint(e2, d + 1)}\n${I}else\n${pprint(e3, d + 1)}"
+    case EBinOp(op, e1, e2, Sta) => s"(${pprint(e1, 0)} $op ${pprint(e2, 0)})"
+    case EBinOp(op, e1, e2, Dyn) => s"(${pprint(e1, 0)} $op² ${pprint(e2, 0)})"
+    case EUnaryOp(op, e, Sta) => s"($op ${pprint(e, 0)})"
+    case EUnaryOp(op, e, Dyn) => s"($op² ${pprint(e, 0)})"
+
+def show(v: Value): String = v match
+  case Value.VCode(e) => s"⟨code:\n${pprint(e, 1)}⟩"
+  case Value.VClo(x, b, _) => s"⟨closure: λ$x.\n${pprint(b, 1)}⟩"
+  case Value.VNum(i) => i.toString
+  case Value.VBool(b) => b.toString
+  case Value.VUnit => "()"

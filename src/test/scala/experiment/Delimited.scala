@@ -2,7 +2,7 @@ package instar.experiment.delimited
 
 import instar.experiment.*
 
-class CoreDelimitedTest extends munit.FunSuite:
+class DelimitedTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*
@@ -20,36 +20,69 @@ class CoreDelimitedTest extends munit.FunSuite:
     ELam("y", EBinOp2("*", EVar("y"), ELift(ENum(42))))
   )
 
-  val e4 = ECond(
+  val e4 = ECond2(
     ELift(EBool(true)),
     EApp2(e2, ELift(ENum(10))),
-    EApp2(e3, ELift(ENum(20))),
-    Dyn
+    EApp2(e3, ELift(ENum(20)))
   )
 
-  def testEval(e: Expr, str: String): Unit =
-    assertEquals(eval(e).toString, str)
+  def testEval(e: Expr, expected: String): Unit =
+    assertEquals(show(eval(e)), expected)
 
   test("lam-app"):
     testEval(e1,
-      "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),ELet(x3,EApp(EVar(x2),ENum(41),Sta),EVar(x3))))")
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  let x3 = (x2 41) in
+        |  x3⟩""".stripMargin)
     testEval(e2,
-      "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),EVar(x2)))")
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  x2⟩""".stripMargin)
 
   test("cond"):
     testEval(e4,
-      "VCode(ELet(x8,ECond(EBool(true),ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),ELet(x3,EApp(EVar(x2),ENum(10),Sta),EVar(x3))),ELet(x6,ELam(x4,ELet(x5,EBinOp(*,EVar(x4),ENum(42),Sta),EVar(x5))),ELet(x7,EApp(EVar(x6),ENum(20),Sta),EVar(x7))),Sta),EVar(x8)))")
+      """⟨code:
+        |  let x8 = if true
+        |  then
+        |    let x2 = λx0.
+        |      let x1 = (x0 + 1) in
+        |      x1 in
+        |    let x3 = (x2 10) in
+        |    x3
+        |  else
+        |    let x6 = λx4.
+        |      let x5 = (x4 * 42) in
+        |      x5 in
+        |    let x7 = (x6 20) in
+        |    x7 in
+        |  x8⟩""".stripMargin)
 
   test("run"):
-    testEval(ENum(1), "VNum(1)")
-    testEval(ERun(ELift(ENum(1))), "VNum(1)")
+    testEval(ENum(1), "1")
+    testEval(ERun(ELift(ENum(1))), "1")
 
     testEval(e2,
-      "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),EVar(x2)))")
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  x2⟩""".stripMargin)
     testEval(ERun(e2),
-      "VClo(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1)),Map())")
+      """⟨closure: λx0.
+        |  let x1 = (x0 + 1) in
+        |  x1⟩""".stripMargin)
 
     val e2App = ELet("y", e2, EApp2(EVar("y"), ELift(ENum(1))))
     testEval(e2App,
-      "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),ELet(x3,EApp(EVar(x2),ENum(1),Sta),EVar(x3))))")
-    testEval(ERun(e2App), "VNum(2)")
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  let x3 = (x2 1) in
+        |  x3⟩""".stripMargin)
+    testEval(ERun(e2App), "2")
