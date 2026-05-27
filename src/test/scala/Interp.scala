@@ -195,8 +195,14 @@ class LamHoist extends Base {
 class CoreEffOpt extends Base {
 
   test("opt-egg") {
+    // λx. 0 + x
     val e1 = ELift2(ELam("x", None, EBinOp2("+", ENum2(0), EVar("x")), None))
-    testEval(e1, "VCode(ELet(x3,ELam(x0,None,ELet(x1,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),ELet(x2,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x2))),None),EVar(x3)))", Set("dce"))
+    testEval(e1, "VCode(ELet(x2,ELam(x0,None,EVar(x0),None),EVar(x2)))", Set("dce"))
+
+
+    // λx. 1 + 0 + x
+    val e2 = ELift2(ELam("x", None, EBinOp2("+", EBinOp2("+", ENum2(1), ENum2(0)), EVar("x")), None))
+    testEval(e2, "VCode(ELet(x3,ELam(x0,None,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Some(SNum(1))),EVar(x2)),None),EVar(x3)))", Set("dce"))
   }
 
 

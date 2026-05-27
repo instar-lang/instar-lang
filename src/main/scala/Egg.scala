@@ -3,7 +3,6 @@ package instar.egg
 import instar.syntax.*
 import instar.syntax.Expr.*
 import instar.BiMap
-import instar.Counter.fresh
 
 // A non-functional unionfind
 final class UnionFind[A](items: Iterable[A]) {
@@ -46,45 +45,53 @@ final class UnionFind[A](items: Iterable[A]) {
 
   def connected(a: A, b: A): Boolean =
     find(a) == find(b)
+
+  def allItems: Iterable[A] =
+    parent.keys
 }
 
 type Cache = BiMap[Expr, String]
 
-case class Egg(cache: Cache, unionFind: UnionFind[String]):
-  def findOptimal(x: String): String =
-    val root = unionFind.find(x)
-    val candidates = cache.allVals.filter(y => unionFind.find(y) == unionFind.find(root))
-    println(s"findOptimal($x): candidates = ${candidates.map(y => s"$y -> ${cache.inv(y)}").mkString(", ")}")
-    if candidates.isEmpty then root
-    else candidates.minBy(y => (cost(cache.inv(y)), nameOrder(y)))
+case class Egg(cache: Cache, unionFind: UnionFind[Expr]):
+  def findOptimal(e: Expr): Expr =
+    val root = unionFind.find(e)
+    val candidates = unionFind.allItems.filter(candidate => unionFind.find(candidate) == root)
+    println(s"findOptimal($e): candidates = ${candidates.mkString(", ")}")
+    if candidates.isEmpty then e
+    else candidates.minBy(candidateKey)
 
   def +(ex: (Expr, String)): Egg =
-    val (_, x) = ex
-    unionFind.find(x)
+    val (e, x) = ex
+    val v = EVar(x)
+    unionFind.union(e, v)
     Egg(cache + ex, unionFind)
 
   def relate(e1: Expr, e2: Expr): Egg =
-    val (egg1, x1) = classOf(e1, None)
-    val (egg2, x2) = egg1.classOf(e2, Some(x1))
-    unionFind.union(x1, x2)
-    egg2
+    // If under the current cache, two expressions stand for same computation, we can relate them in the egraph.
+    // e.g. if we have let x2 = x1 + x0, then we can relate x2 and x1 + x0 in the egraph.
+    unionFind.union(e1, e2)
+    this
 
-  private def classOf(e: Expr, preferred: Option[String]): (Egg, String) =
+  private def candidateKey(e: Expr): (Int, Int, String) =
+    (candidateCost(e), candidateRank(e), e.toString)
+
+  private def candidateCost(e: Expr): Int =
     e match
-      case EVar(x) =>
-        unionFind.find(x)
-        if cache.inv.contains(x) then (this, x) else (this + (e -> x), x)
-      case _ if cache.contains(e) =>
-        val x = cache(e)
-        unionFind.find(x)
-        (this, x)
+      case EVar(x) if cache.inv.contains(x) && cache.inv(x) != e =>
+        cost(cache.inv(x))
       case _ =>
-        val x = preferred.getOrElse(fresh())
-        (this + (e -> x), x)
+        cost(e)
+
+  private def candidateRank(e: Expr): Int =
+    e match
+      case EVar(_) => 0
+      case EUnit | ENum(_) | EBool(_) | ELoc(_) => 1
+      case _ => 2
 
   private def cost(e: Expr): Int =
+    // cost model
     e match
-      case EUnit | ENum(_) | EBool(_) | EVar(_) => 1
+      case EUnit | ENum(_) | EBool(_) | EVar(_) => 1 // TODO: EVar should not be just 1, the cost of EVar should look up the cache
       case ESLam(_, body) => 1 + cost(body)
       case ESApp(e, _) => 1 + cost(e)
       case ELam(_, _, body, _) => 1 + cost(body)
@@ -106,16 +113,9 @@ case class Egg(cache: Cache, unionFind: UnionFind[String]):
       case EIsApp(e) => 1 + cost(e)
       case ECBNApp(e1, e2) => 1 + cost(e1) + cost(e2)
 
-  private def nameOrder(x: String): (String, Int, String) =
-    val (prefix, suffix) = x.span(!_.isDigit)
-    val n = suffix.toIntOption.getOrElse(Int.MaxValue)
-    (prefix, n, x)
-
-
 object Egg:
   def apply(ex: (Expr, String)): Egg = 
     Egg() + ex
   def apply(): Egg =
     Egg(BiMap.empty, new UnionFind(Nil))
-
 

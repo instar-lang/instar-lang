@@ -117,10 +117,20 @@ object StaticConst:
 
 def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) = e match
   case ELet(x, rhs, body) =>
-    reflect(rhs, σ, { case (VCode(t), σ1, γ1) =>
+    renormalize(rhs, σ, { case (VCode(t), σ1, γ1) =>
       renormalize(body.subst(x, t), σ1, k, γ1)
     }, γ)
-  case _ => k(VCode(e), σ, γ)
+  case EBinOp(op, e1, e2, s) =>
+    renormalize(e1, σ, { case (VCode(t1), σ1, γ1) =>
+      renormalize(e2, σ1, { case (VCode(t2), σ2, γ2) =>
+        reflect(EBinOp(op, t1, t2, s), σ2, k, γ2)
+      }, γ1)
+    }, γ)
+  case EUnaryOp(op, e1, s) =>
+    renormalize(e1, σ, { case (VCode(t1), σ1, γ1) =>
+      reflect(EUnaryOp(op, t1, s), σ1, k, γ1)
+    }, γ)
+  case _ => reflect(e, σ, k, γ)
 
 def reflectAtom(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) =
   case EUnit => k(VCode(EUnit), σ, γ)
@@ -292,23 +302,8 @@ def dyn(x: String): NormalForm =
 // def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
 //   case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
 
-def residualizeEClassExpr(eclass: String)(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
-  // This is basically an eval function
-  e match
-    case EBinOp(op, e1, e2, _) =>
-      residualizeEClassExpr(eclass)(e1, σ, { case (VCode(v1), σ1, γ1) =>
-        residualizeEClassExpr(eclass)(e2, σ1, { case (VCode(v2), σ2, γ2) =>
-          saturateEquality(EBinOp(op, v1, v2, Some(Sta)), σ2, k, γ2)
-        }, γ1)
-      }, γ)
-    case EUnaryOp(op, e1, _) =>
-      residualizeEClassExpr(eclass)(e1, σ, { case (VCode(v1), σ1, γ1) =>
-        saturateEquality(EUnaryOp(op, v1, Some(Sta)), σ1, k, γ1)
-      }, γ)
-    case e => saturateEquality(e, σ, k, γ)
-
 def rewrite(e: Expr)(using egg: Egg): List[Expr] =
-  val es = e match
+  e match
     case EBinOp("+", StaticConst(VNum(0)), e2, _) => List(e2)
     case EBinOp("+", e1, StaticConst(VNum(0)), _) => List(e1)
     case EBinOp("*", StaticConst(VNum(1)), e2, _) => List(e2)
@@ -316,46 +311,34 @@ def rewrite(e: Expr)(using egg: Egg): List[Expr] =
     case EBinOp("*", StaticConst(VNum(0)), _, _) => List(ENum(0))
     case EBinOp("*", _, StaticConst(VNum(0)), _) => List(ENum(0))
     case _ => Nil
-  es.filter(e => !egg.cache.contains(e))
 
-
-// A process of reaching a fixed point of new equalities discovered
-// worklist can be a list of any expression (non-ANF)
-def saturateEqualityWL(x: String)(wl: List[Expr], σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
-  println(s"Saturating equality for $x, worklist = $wl")
-  def helpKont(rest: List[Expr], e: Expr)(v: Value, σ: Store, γ: MCont)(using egg: Egg): (Value, Store) =
-    given Egg = egg.relate(EVar(x), e)
-    saturateEqualityWL(x)(rest ++ rewrite(e), σ, k, γ) 
-
-  wl match
-    case Nil => k(VCode(EVar(x)), σ, γ)
-    case e :: rest if egg.cache.contains(e) =>
-      // an expression that is already in the egg
-      saturateEqualityWL(x)(rest, σ, k, γ)
-    case e :: rest =>
-      // a new expression that is not already in the egg
-      residualizeEClassExpr(x)(e, σ, helpKont(rest, e), γ)
 
 def costModelKont(k: Cont)(v: Value, σ: Store, γ: MCont)(using egg: Egg): (Value, Store) =
   v match {
-    case VCode(EVar(x)) =>
-      val optimal = egg.findOptimal(x)
-      k(VCode(EVar(optimal)), σ, γ)
+    case VCode(e) =>
+      // e is an atomic expression.
+      val optimal = egg.findOptimal(e)
+      reflect(optimal, σ, k, γ)
   }
 
-def saturateEquality(e: Expr, σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
-  assert(e.isPure, "Internal error: only pure expressions can be saturated for equality")
-  reflectDce(σ, {
-      case (VCode(EVar(x)), σ, γ) =>
-        saturateEqualityWL(x)(List(e), σ, costModelKont(k), γ)
-  }, γ)(e)
+def renormalizeEClassList(e0: Expr)(es: List[Expr], σ: Store, k: Cont, γ: MCont)(using egg: Egg): (Value, Store) =
+  es match
+    case Nil => k(VCode(e0), σ, γ)
+    case e :: rest =>
+      renormalize(e, σ, { case (VCode(t), σ1, γ1) =>
+        egg.relate(e0, t)
+        renormalizeEClassList(e0)(rest, σ1, k, γ1)
+      }, γ)
 
-// We maintained a correspondence from the cache and continuation?
+// We have to maintain a correspondence from the cache and continuation?
 def reflectEgg(σ: Store, k: Cont, γ: MCont)(using egg: Egg): Expr ⇀ (Value, Store) = 
-  case e if e.isPure =>
+  case e if e.isPure && !egg.cache.contains(e) =>
+    // reflecting an expression that is not in egraph
     reflectDce(σ, { 
-      case (VCode(EVar(x)), σ, γ) =>
-        saturateEquality(e, σ, k, γ)
+      case (VCode(e0), σ, γ) =>
+        val es = rewrite(e)
+        println(s"rewrite $e to ${es.mkString(", ")}")
+        renormalizeEClassList(e0)(es, σ, costModelKont(k), γ)
       }, γ)(e)
 
 // A list of optimization functions. We apply each of them, until one of them can handle the current expression.
