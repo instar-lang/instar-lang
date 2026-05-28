@@ -225,7 +225,7 @@ object AddMulRingExprImpl extends Ring[Expr]:
     bindExpr(lhs) { lhsAtom =>
       bindExpr(rhs) { rhsAtom =>
         val x = fresh()
-        ELet(x, EBinOp(op, lhsAtom, rhsAtom, Some(Sta)), EVar(x))
+        ELet(x, EBinOp(op, lhsAtom, rhsAtom, Sta), EVar(x))
       }
     }
 

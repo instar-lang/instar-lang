@@ -32,6 +32,10 @@ type Env = Map[String, Value]
 import Stage.*
 import Expr.*
 
+def ENum1(i: Int): Expr = ENum(i)
+def ENum2(i: Int): Expr = ELift(ENum(i))
+def EBool1(b: Boolean): Expr = EBool(b)
+def EBool2(b: Boolean): Expr = ELift(EBool(b))
 def EApp1(e1: Expr, e2: Expr): Expr = EApp(e1, e2, Sta)
 def EApp2(e1: Expr, e2: Expr): Expr = EApp(e1, e2, Dyn)
 def ECond1(e1: Expr, e2: Expr, e3: Expr): Expr = ECond(e1, e2, e3, Sta)
