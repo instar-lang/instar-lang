@@ -18,21 +18,10 @@ import instar.algebra.*
 import instar.algebra.{freeRingCode, given}
 import collection.mutable.HashSet
 
-enum Value:
-  case VUnit
-  case VNum(i: Int)
-  case VBool(b: Boolean)
-  case VLoc(loc: Loc)
-  case VClo(x: String, body: Expr, ρ: Env)
-  case VBNClo(x: String, body: Expr, ρ: Env)
-  case VCode(t: Expr)
-  case VThunk(e: Expr, ρ: Env)
-
 import Stage.*
 import Expr.*
 import Value.*
 
-type Env = Map[String, Loc]
 type Store = Map[Loc, Value]
 type Cache = BiMap[Expr, String]
 type Cont = (Value, Store, MCont) => Cache ?=> (Value, Store)

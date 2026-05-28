@@ -28,7 +28,17 @@ enum Expr:
   case EIsApp(e: Expr)
   case ECBNApp(e1: Expr, e2: Expr)
 
-import Stage.*
+enum Value:
+  case VUnit
+  case VNum(i: Int)
+  case VBool(b: Boolean)
+  case VLoc(loc: Loc)
+  case VClo(x: String, body: Expr, ρ: Env)
+  case VBNClo(x: String, body: Expr, ρ: Env)
+  case VCode(t: Expr)
+  case VThunk(e: Expr, ρ: Env)
+
+type Env = Map[String, Loc]
 
 extension (e: Expr)
   def isPure: Boolean =
@@ -90,7 +100,9 @@ extension (e: Expr)
       case EFix(f, e, s) => EFix(f, e.subst(from, to), s)
       case EIsApp(e) => EIsApp(e.subst(from, to))
 
+import Stage.*
 import Expr.*
+import Value.*
 
 def ENum1(i: Int): Expr = ENum(i)
 def ENum2(i: Int): Expr = ELift(ENum(i))
@@ -110,3 +122,60 @@ def EDeref1(e: Expr): Expr = EDeref(e, Sta)
 def EDeref2(e: Expr): Expr = EDeref(e, Dyn)
 def EAssign1(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Sta)
 def EAssign2(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Dyn)
+
+def show(e: Expr): String = pprint(e, 0)
+
+def pprint(e: Expr, d: Int): String =
+  val I = "  " * d
+  e match
+    case EUnit => "()"
+    case ENum(i) => i.toString
+    case EBool(b) => b.toString
+    case EVar(x) => x
+    case ELam(x, b) =>
+      val bodyStr = pprint(b, d + 1)
+      val body = if bodyStr.contains('\n') then bodyStr else s"${"  " * (d + 1)}$bodyStr"
+      s"λ$x.\n$body"
+    case EBNLam(x, b) =>
+      val bodyStr = pprint(b, d + 1)
+      val body = if bodyStr.contains('\n') then bodyStr else s"${"  " * (d + 1)}$bodyStr"
+      s"λb$x.\n$body"
+    case EApp(e1, e2, Sta) => s"(${show(e1)} ${show(e2)})"
+    case EApp(e1, e2, Dyn) => s"(${show(e1)} @² ${show(e2)})"
+    case ELift(t) => s"lift(${show(t)})"
+    case ERun(t) => s"run(${show(t)})"
+    case ELet(x, r, b) =>
+      val bodyStr = pprint(b, d)
+      val body = if bodyStr.contains('\n') then bodyStr else s"$I$bodyStr"
+      s"${I}let $x = ${pprint(r, d)} in\n$body"
+    case ELetRec(f, r, b) =>
+      s"${I}letrec $f = ${pprint(r, d)} in\n${pprint(b, d + 1)}"
+    case ECond(e1, e2, e3, Sta) =>
+      s"if ${show(e1)}\n${I}then\n${pprint(e2, d + 1)}\n${I}else\n${pprint(e3, d + 1)}"
+    case ECond(e1, e2, e3, Dyn) =>
+      s"if² ${show(e1)}\n${I}then\n${pprint(e2, d + 1)}\n${I}else\n${pprint(e3, d + 1)}"
+    case EBinOp(op, e1, e2, Sta) => s"(${pprint(e1, 0)} $op ${pprint(e2, 0)})"
+    case EBinOp(op, e1, e2, Dyn) => s"(${pprint(e1, 0)} $op² ${pprint(e2, 0)})"
+    case EUnaryOp(op, e, Sta) => s"($op ${pprint(e, 0)})"
+    case EUnaryOp(op, e, Dyn) => s"($op² ${pprint(e, 0)})"
+    case EAlloc(e, Sta) => s"ref ${pprint(e, 0)}"
+    case EAlloc(e, Dyn) => s"ref² ${pprint(e, 0)}"
+    case EDeref(e, Sta) => s"!${pprint(e, 0)}"
+    case EDeref(e, Dyn) => s"!²${pprint(e, 0)}"
+    case EAssign(e1, e2, Sta) => s"(${pprint(e1, 0)} := ${pprint(e2, 0)})"
+    case EAssign(e1, e2, Dyn) => s"(${pprint(e1, 0)} :=² ${pprint(e2, 0)})"
+    case EFix(f, e, Sta) => s"fix $f. ${pprint(e, 0)}"
+    case EFix(f, e, Dyn) => s"fix² $f. ${pprint(e, 0)}"
+    case ELoc(l) => s"<loc: $l>"
+    case EIsApp(e) => s"isApp(${pprint(e, 0)})"
+    case ECBNApp(e1, e2) => s"(${pprint(e1, 0)} @@ ${pprint(e2, 0)})"
+
+def show(v: Value): String = v match
+  case VCode(e) => s"⟨code:\n${pprint(e, 1)}⟩"
+  case VClo(x, b, _) => s"⟨closure: λ$x.\n${pprint(b, 1)}⟩"
+  case VBNClo(x, b, _) => s"⟨by-name closure: λ$x.\n${pprint(b, 1)}⟩"
+  case VNum(i) => i.toString
+  case VBool(b) => b.toString
+  case VUnit => "()"
+  case VLoc(l) => s"<loc: $l>"
+  case VThunk(e, _) => s"⟨thunk: ${pprint(e, 0)}⟩"

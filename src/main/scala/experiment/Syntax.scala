@@ -31,6 +31,7 @@ type Env = Map[String, Value]
 
 import Stage.*
 import Expr.*
+import Value.*
 
 def ENum1(i: Int): Expr = ENum(i)
 def ENum2(i: Int): Expr = ELift(ENum(i))
@@ -73,8 +74,8 @@ private def pprint(e: Expr, d: Int): String =
     case EUnaryOp(op, e, Dyn) => s"($op² ${pprint(e, 0)})"
 
 def show(v: Value): String = v match
-  case Value.VCode(e) => s"⟨code:\n${pprint(e, 1)}⟩"
-  case Value.VClo(x, b, _) => s"⟨closure: λ$x.\n${pprint(b, 1)}⟩"
-  case Value.VNum(i) => i.toString
-  case Value.VBool(b) => b.toString
-  case Value.VUnit => "()"
+  case VCode(e) => s"⟨code:\n${pprint(e, 1)}⟩"
+  case VClo(x, b, _) => s"⟨closure: λ$x.\n${pprint(b, 1)}⟩"
+  case VNum(i) => i.toString
+  case VBool(b) => b.toString
+  case VUnit => "()"
