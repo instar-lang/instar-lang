@@ -10,7 +10,7 @@ trait Base extends munit.FunSuite {
     Opt.disableAll
     Opt.enable(opt.toSeq*)
     val (v, _) = eval(e)
-    assertEquals(v.toString, str)
+    assertEquals(show(v), str)
 }
 
 // -- Section 6: Common sub-expression elimination ------------------------
@@ -20,40 +20,64 @@ class Section6_CSE extends Base {
   test("cse-1") {
     val e5 = EBinOp2("+",
       EBinOp2("*", ENum2(2), ENum2(3)),
-      EBinOp2("*", ENum2(2), ENum2(3))
-    )
-    testEval(e5, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),Sta),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),Sta),EVar(x1))))", Set("cse"))
+      EBinOp2("*", ENum2(2), ENum2(3)))
+    testEval(e5,
+      """⟨code:
+        |  let x0 = (2 * 3) in
+        |  let x1 = (x0 + x0) in
+        |  x1⟩""".stripMargin, Set("cse"))
   }
 
   test("cse-2") {
     val e1 = EBinOp2("+",
       EBinOp2("*", ENum2(2), ENum2(3)),
-      EBinOp2("*", ENum2(2), ENum2(3))
-    )
+      EBinOp2("*", ENum2(2), ENum2(3)))
     val e2 = EBinOp2("/", e1, e1)
-    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),Sta),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),Sta),ELet(x2,EBinOp(/,EVar(x1),EVar(x1),Sta),EVar(x2)))))", Set("cse"))
+    testEval(e2,
+      """⟨code:
+        |  let x0 = (2 * 3) in
+        |  let x1 = (x0 + x0) in
+        |  let x2 = (x1 / x1) in
+        |  x2⟩""".stripMargin, Set("cse"))
   }
 
   test("cse-lam-1") {
-    val f = ELift(ELam("y", ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
-        ELet("z2", EBinOp2("*", ENum2(2), ENum2(3)),
-          EBinOp2("+", EVar("y"), EVar("z2"))))))
+    val f = ELift(ELam("y", 
+      ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
+      ELet("z2", EBinOp2("*", ENum2(2), ENum2(3)),
+      EBinOp2("+", EVar("y"), EVar("z2"))))))
     val e =
       ELet("f", f,
-        ELet("x1", EBinOp2("*", ENum2(2), ENum2(3)),
-          EApp2(EVar("f"), ENum2(3))))
-    testEval(e, "VCode(ELet(x3,ELam(x0,ELet(x1,EBinOp(*,ENum(2),ENum(3),Sta),ELet(x2,EBinOp(+,EVar(x0),EVar(x1),Sta),EVar(x2)))),ELet(x4,EBinOp(*,ENum(2),ENum(3),Sta),ELet(x5,EApp(EVar(x3),ENum(3),Sta),EVar(x5)))))", Set("cse"))
+      ELet("x1", EBinOp2("*", ENum2(2), ENum2(3)),
+      EApp2(EVar("f"), ENum2(3))))
+    testEval(e,
+      """⟨code:
+        |  let x3 = λx0.
+        |    let x1 = (2 * 3) in
+        |    let x2 = (x0 + x1) in
+        |    x2 in
+        |  let x4 = (2 * 3) in
+        |  let x5 = (x3 3) in
+        |  x5⟩""".stripMargin, Set("cse"))
   }
 
   test("cse-lam-2") {
-    val f = ELift(ELam("y", ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
-        ELet("z2", EBinOp2("*", ENum2(2), ENum2(3)),
-          EBinOp2("+", EVar("y"), EVar("z2"))))))
+    val f = ELift(ELam("y", 
+      ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
+      ELet("z2", EBinOp2("*", ENum2(2), ENum2(3)),
+      EBinOp2("+", EVar("y"), EVar("z2"))))))
     val e =
       ELet("x1", EBinOp2("*", ENum2(2), ENum2(3)),
-        ELet("f", f,
-          EApp2(EVar("f"), ENum2(3))))
-    testEval(e, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),Sta),ELet(x3,ELam(x1,ELet(x2,EBinOp(+,EVar(x1),EVar(x0),Sta),EVar(x2))),ELet(x4,EApp(EVar(x3),ENum(3),Sta),EVar(x4)))))", Set("cse"))
+      ELet("f", f,
+      EApp2(EVar("f"), ENum2(3))))
+    testEval(e,
+      """⟨code:
+        |  let x0 = (2 * 3) in
+        |  let x3 = λx1.
+        |    let x2 = (x1 + x0) in
+        |    x2 in
+        |  let x4 = (x3 3) in
+        |  x4⟩""".stripMargin, Set("cse"))
   }
 
   test("cse-cond-1") {
@@ -62,17 +86,37 @@ class Section6_CSE extends Base {
       EBinOp2("*", ENum2(2), ENum2(3)),
       EBinOp2("*", ENum2(2), ENum2(3)),
     )
-    testEval(e, "VCode(ELet(x0,EBinOp(==,ENum(1),ENum(2),Sta),ELet(x3,ECond(EVar(x0),ELet(x1,EBinOp(*,ENum(2),ENum(3),Sta),EVar(x1)),ELet(x2,EBinOp(*,ENum(2),ENum(3),Sta),EVar(x2)),Sta),EVar(x3))))", Set("cse"))
+    testEval(e,
+      """⟨code:
+        |  let x0 = (1 == 2) in
+        |  let x3 = if x0
+        |  then
+        |    let x1 = (2 * 3) in
+        |    x1
+        |  else
+        |    let x2 = (2 * 3) in
+        |    x2 in
+        |  x3⟩""".stripMargin, Set("cse"))
   }
 
   test("cse-cond-2") {
-    val e = ELet("x0", EBinOp2("*", ENum2(2), ENum2(3)),
+    val e = 
+      ELet("x0", EBinOp2("*", ENum2(2), ENum2(3)),
       ECond2(
         EBinOp2("==", ENum2(1), ENum2(2)),
         EBinOp2("*", ENum2(2), ENum2(3)),
         EBinOp2("*", ENum2(2), ENum2(3)),
     ))
-    testEval(e, "VCode(ELet(x0,EBinOp(*,ENum(2),ENum(3),Sta),ELet(x1,EBinOp(==,ENum(1),ENum(2),Sta),ELet(x2,ECond(EVar(x1),EVar(x0),EVar(x0),Sta),EVar(x2)))))", Set("cse"))
+    testEval(e,
+      """⟨code:
+        |  let x0 = (2 * 3) in
+        |  let x1 = (1 == 2) in
+        |  let x2 = if x1
+        |  then
+        |    x0
+        |  else
+        |    x0 in
+        |  x2⟩""".stripMargin, Set("cse"))
   }
 }
 
@@ -83,18 +127,24 @@ class Section7_Folding extends Base {
   test("folding-1") {
     val e1 = ELet("x", EBinOp2("+", ENum2(1), ENum2(2)),
       ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
-        EBinOp2("*", EVar("x"), EVar("y"))
-      ))
-    testEval(e1, "VCode(ENum(9))", Set("rewriting"))
+      EBinOp2("*", EVar("x"), EVar("y"))))
+    testEval(e1,
+      """⟨code:
+        |  9⟩""".stripMargin, Set("rewriting"))
   }
 
   test("folding-2") {
-    val e1 =
-      ELift(ELam("z", ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
-          ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
-            EBinOp2("*", EVar("x"), EVar("y"))
-          ))))
-    testEval(e1, "VCode(ELet(x3,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(2),Sta),ELet(x2,EBinOp(*,EVar(x1),ENum(3),Sta),EVar(x2)))),EVar(x3)))", Set("rewriting"))
+    val e1 = ELift(ELam("z",
+      ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
+      ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
+      EBinOp2("*", EVar("x"), EVar("y"))))))
+    testEval(e1,
+      """⟨code:
+        |  let x3 = λx0.
+        |    let x1 = (x0 + 2) in
+        |    let x2 = (x1 * 3) in
+        |    x2 in
+        |  x3⟩""".stripMargin, Set("rewriting"))
   }
 }
 
@@ -103,9 +153,14 @@ class Section7_Folding extends Base {
 class Section8_DCE extends Base {
 
   test("dce") {
-    val e2 = ELift(ELam("y", ELet("z", EBinOp2("+", EVar("y"), ENum2(2)),
-        EVar("y"))))
-    testEval(e2, "VCode(ELet(x2,ELam(x0,EVar(x0)),EVar(x2)))", Set("dce"))
+    val e2 = ELift(ELam("y",
+      ELet("z", EBinOp2("+", EVar("y"), ENum2(2)),
+      EVar("y"))))
+    testEval(e2,
+      """⟨code:
+        |  let x2 = λx0.
+        |    x0 in
+        |  x2⟩""".stripMargin, Set("dce"))
   }
 }
 
@@ -115,102 +170,221 @@ class Section9_PSD extends Base {
 
   test("psd-1") {
     val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
-    testEval(e1, "VCode(ELet(x7,ELam(x0,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Sta),ELet(x6,EBinOp(+,ENum(4),EVar(x0),Sta),EVar(x6)))),EVar(x7)))", Set("ps"))
+    testEval(e1,
+      """⟨code:
+        |  let x7 = λx0.
+        |    let x2 = (1 + x0) in
+        |    let x6 = (4 + x0) in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps"))
   }
 
   test("psd-2") {
-    val e2 = ELift(ELam("x", EBinOp2("+", ENum2(1), EBinOp2("+",
-        ENum2(1), EBinOp2("+",
-          ENum2(1), EBinOp2("+",
-            ENum2(1), EBinOp2("+",
-              ENum2(1), EVar("x"))))))))
-    testEval(e2, "VCode(ELet(x19,ELam(x0,ELet(x2,EBinOp(+,ENum(1),EVar(x0),Sta),ELet(x6,EBinOp(+,ENum(2),EVar(x0),Sta),ELet(x10,EBinOp(+,ENum(3),EVar(x0),Sta),ELet(x14,EBinOp(+,ENum(4),EVar(x0),Sta),ELet(x18,EBinOp(+,ENum(5),EVar(x0),Sta),EVar(x18))))))),EVar(x19)))", Set("ps"))
+    val e2 = ELift(ELam("x",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EVar("x"))))))))
+    testEval(e2,
+      """⟨code:
+        |  let x19 = λx0.
+        |    let x2 = (1 + x0) in
+        |    let x6 = (2 + x0) in
+        |    let x10 = (3 + x0) in
+        |    let x14 = (4 + x0) in
+        |    let x18 = (5 + x0) in
+        |    x18 in
+        |  x19⟩""".stripMargin, Set("ps"))
   }
 
   test("psd-3") {
-    val e3 = ELift(ELam("x", ELift(ELam("f", EBinOp2("+", ENum2(1), EBinOp2("+",
-          ENum2(1), EBinOp2("+",
-            ENum2(1), EBinOp2("+",
-              ENum2(1), EBinOp2("+",
-                ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
-    testEval(e3, "VCode(ELet(x22,ELam(x0,ELet(x21,ELam(x1,ELet(x2,EApp(EVar(x1),EVar(x0),Sta),ELet(x4,EBinOp(+,ENum(1),EVar(x2),Sta),ELet(x8,EBinOp(+,ENum(2),EVar(x2),Sta),ELet(x12,EBinOp(+,ENum(3),EVar(x2),Sta),ELet(x16,EBinOp(+,ENum(4),EVar(x2),Sta),ELet(x20,EBinOp(+,ENum(5),EVar(x2),Sta),EVar(x20)))))))),EVar(x21))),EVar(x22)))", Set("ps"))
+    val e3 = ELift(ELam("x",
+      ELift(ELam("f",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
+    testEval(e3,
+      """⟨code:
+        |  let x22 = λx0.
+        |    let x21 = λx1.
+        |      let x2 = (x1 x0) in
+        |      let x4 = (1 + x2) in
+        |      let x8 = (2 + x2) in
+        |      let x12 = (3 + x2) in
+        |      let x16 = (4 + x2) in
+        |      let x20 = (5 + x2) in
+        |      x20 in
+        |    x21 in
+        |  x22⟩""".stripMargin, Set("ps"))
   }
 
   test("psd-dce-1") {
     val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
-    testEval(e1, "VCode(ELet(x7,ELam(x0,ELet(x6,EBinOp(+,ENum(4),EVar(x0),Sta),EVar(x6))),EVar(x7)))", Set("ps", "dce"))
+    testEval(e1,
+      """⟨code:
+        |  let x7 = λx0.
+        |    let x6 = (4 + x0) in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-2") {
-    val e1_5 = ELift(ELam("x", ELift(ELam("f", ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
-        ELet("z", EBinOp2("+", EVar("x"), ENum2(1)),
-          EBinOp2("+",
-            EApp2(EVar("f"), EVar("y")),
-            EApp2(EVar("f"), EVar("z")))))))))
-    testEval(e1_5, "VCode(ELet(x12,ELam(x0,ELet(x11,ELam(x1,ELet(x3,EBinOp(+,ENum(1),EVar(x0),Sta),ELet(x7,EApp(EVar(x1),EVar(x3),Sta),ELet(x8,EApp(EVar(x1),EVar(x3),Sta),ELet(x10,EBinOp(+,EVar(x7),EVar(x8),Sta),EVar(x10)))))),EVar(x11))),EVar(x12)))", Set("ps", "dce", "cse"))
+    val e1_5 = ELift(ELam("x",
+      ELift(ELam("f",
+      ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
+      ELet("z", EBinOp2("+", EVar("x"), ENum2(1)),
+      EBinOp2("+",
+        EApp2(EVar("f"), EVar("y")),
+        EApp2(EVar("f"), EVar("z")))))))))
+    testEval(e1_5,
+      """⟨code:
+        |  let x12 = λx0.
+        |    let x11 = λx1.
+        |      let x3 = (1 + x0) in
+        |      let x7 = (x1 x3) in
+        |      let x8 = (x1 x3) in
+        |      let x10 = (x7 + x8) in
+        |      x10 in
+        |    x11 in
+        |  x12⟩""".stripMargin, Set("ps", "dce", "cse"))
   }
 
   test("psd-dce-3") {
-    val e2 = ELift(ELam("x", EBinOp2("+", ENum2(1), EBinOp2("+",
-        ENum2(1), EBinOp2("+",
-          ENum2(1), EBinOp2("+",
-            ENum2(1), EBinOp2("+",
-              ENum2(1), EVar("x"))))))))
-    testEval(e2, "VCode(ELet(x19,ELam(x0,ELet(x18,EBinOp(+,ENum(5),EVar(x0),Sta),EVar(x18))),EVar(x19)))", Set("ps", "dce"))
+    val e2 = ELift(ELam("x",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EVar("x"))))))))
+    testEval(e2,
+      """⟨code:
+        |  let x19 = λx0.
+        |    let x18 = (5 + x0) in
+        |    x18 in
+        |  x19⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-4") {
-    val e3 = ELift(ELam("x", ELift(ELam("f", EBinOp2("+", ENum2(1), EBinOp2("+",
-          ENum2(1), EBinOp2("+",
-            ENum2(1), EBinOp2("+",
-              ENum2(1), EBinOp2("+",
-                ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
-    testEval(e3, "VCode(ELet(x22,ELam(x0,ELet(x21,ELam(x1,ELet(x2,EApp(EVar(x1),EVar(x0),Sta),ELet(x20,EBinOp(+,ENum(5),EVar(x2),Sta),EVar(x20)))),EVar(x21))),EVar(x22)))", Set("ps", "dce"))
+    val e3 = ELift(ELam("x",
+      ELift(ELam("f",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
+    testEval(e3,
+      """⟨code:
+        |  let x22 = λx0.
+        |    let x21 = λx1.
+        |      let x2 = (x1 x0) in
+        |      let x20 = (5 + x2) in
+        |      x20 in
+        |    x21 in
+        |  x22⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-5") {
-    val e4 = ELift(ELam("x", ELift(ELam("y", EBinOp2("+",
-          EBinOp2("+", ENum2(1), EVar("x")),
-          EBinOp2("+", ENum2(1), EVar("y")))))))
-    testEval(e4, "VCode(ELet(x16,ELam(x0,ELet(x15,ELam(x1,ELet(x11,EBinOp(+,ENum(2),EVar(x0),Sta),ELet(x14,EBinOp(+,EVar(x11),EVar(x1),Sta),EVar(x14)))),EVar(x15))),EVar(x16)))", Set("ps", "dce"))
+    val e4 = ELift(ELam("x",
+      ELift(ELam("y",
+      EBinOp2("+",
+        EBinOp2("+", ENum2(1), EVar("x")),
+        EBinOp2("+", ENum2(1), EVar("y")))))))
+    testEval(e4,
+      """⟨code:
+        |  let x16 = λx0.
+        |    let x15 = λx1.
+        |      let x11 = (2 + x0) in
+        |      let x14 = (x11 + x1) in
+        |      x14 in
+        |    x15 in
+        |  x16⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-6") {
-    val e5 = ELift(ELam("f", ELift(ELam("x", ELift(ELam("y", EBinOp2("+",
-            EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x"))),
-            EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y")))))))))))
-    testEval(e5, "VCode(ELet(x24,ELam(x0,ELet(x23,ELam(x1,ELet(x22,ELam(x2,ELet(x3,EApp(EVar(x0),EVar(x1),Sta),ELet(x6,EApp(EVar(x0),EVar(x2),Sta),ELet(x18,EBinOp(+,ENum(3),EVar(x3),Sta),ELet(x21,EBinOp(+,EVar(x18),EVar(x6),Sta),EVar(x21)))))),EVar(x22))),EVar(x23))),EVar(x24)))", Set("ps", "dce"))
+    val e5 = ELift(ELam("f",
+      ELift(ELam("x",
+      ELift(ELam("y",
+      EBinOp2("+",
+        EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x"))),
+        EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y")))))))))))
+    testEval(e5,
+      """⟨code:
+        |  let x24 = λx0.
+        |    let x23 = λx1.
+        |      let x22 = λx2.
+        |        let x3 = (x0 x1) in
+        |        let x6 = (x0 x2) in
+        |        let x18 = (3 + x3) in
+        |        let x21 = (x18 + x6) in
+        |        x21 in
+        |      x22 in
+        |    x23 in
+        |  x24⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-7") {
-    val e6 = ELift(ELam("x", ELet("y",
+    val e6 = ELift(ELam("x",
+      ELet("y",
         EBinOp2("+",
           EBinOp2("+", EVar("x"), EVar("x")),
           EVar("x")),
-        ELift(ELam("z", EBinOp2("+",
-            EBinOp2("+", EVar("y"), ENum2(2)),
-            EBinOp2("+", EVar("y"), ENum2(1))))))))
-    testEval(e6, "VCode(ELet(x38,ELam(x0,ELet(x37,ELam(x9,ELet(x33,EBinOp(*,ENum(6),EVar(x0),Sta),ELet(x36,EBinOp(+,ENum(3),EVar(x33),Sta),EVar(x36)))),EVar(x37))),EVar(x38)))", Set("ps", "dce"))
+      ELift(ELam("z",
+      EBinOp2("+",
+        EBinOp2("+", EVar("y"), ENum2(2)),
+        EBinOp2("+", EVar("y"), ENum2(1))))))))
+    testEval(e6,
+      """⟨code:
+        |  let x38 = λx0.
+        |    let x37 = λx9.
+        |      let x33 = (6 * x0) in
+        |      let x36 = (3 + x33) in
+        |      x36 in
+        |    x37 in
+        |  x38⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-8") {
-    val e7 = ELift(ELam("x", ELet("y",
+    val e7 = ELift(ELam("x",
+      ELet("y", EBinOp2("+", EVar("x"), EVar("x")),
+      ELet("f",
+        ELift(ELam("z",
+        ELift(ELam("w",
         EBinOp2("+",
-          EVar("x"),
-          EVar("x")),
-        ELet("f",
-          ELift(ELam("z", ELift(ELam("w", EBinOp2("+",
-                EBinOp2("+", EVar("y"), ENum2(1)),
-                EBinOp2("+", EVar("y"), ENum2(1))))))),
-        EApp2(EVar("f"), EVar("y"))))))
-    testEval(e7, "VCode(ELet(x37,ELam(x0,ELet(x4,EBinOp(*,ENum(2),EVar(x0),Sta),ELet(x35,ELam(x5,ELet(x34,ELam(x6,ELet(x30,EBinOp(*,ENum(4),EVar(x0),Sta),ELet(x33,EBinOp(+,ENum(2),EVar(x30),Sta),EVar(x33)))),EVar(x34))),ELet(x36,EApp(EVar(x35),EVar(x4),Sta),EVar(x36))))),EVar(x37)))", Set("ps", "dce"))
+          EBinOp2("+", EVar("y"), ENum2(1)),
+          EBinOp2("+", EVar("y"), ENum2(1))))))),
+      EApp2(EVar("f"), EVar("y"))))))
+    testEval(e7,
+      """⟨code:
+        |  let x37 = λx0.
+        |    let x4 = (2 * x0) in
+        |    let x35 = λx5.
+        |      let x34 = λx6.
+        |        let x30 = (4 * x0) in
+        |        let x33 = (2 + x30) in
+        |        x33 in
+        |      x34 in
+        |    let x36 = (x35 x4) in
+        |    x36 in
+        |  x37⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-9") {
-    val e8 = ELift(ELam("x", EBinOp2("*",
+    val e8 = ELift(ELam("x",
+      EBinOp2("*",
         EBinOp2("+", EVar("x"), ENum2(1)),
         EBinOp2("+", EVar("x"), ENum2(1)))))
-    testEval(e8, "VCode(ELet(x29,ELam(x0,ELet(x18,EBinOp(*,ENum(2),EVar(x0),Sta),ELet(x21,EBinOp(+,ENum(1),EVar(x18),Sta),ELet(x23,EBinOp(*,EVar(x0),EVar(x0),Sta),ELet(x28,EBinOp(+,EVar(x21),EVar(x23),Sta),EVar(x28)))))),EVar(x29)))", Set("ps", "dce"))
+    testEval(e8,
+      """⟨code:
+        |  let x29 = λx0.
+        |    let x18 = (2 * x0) in
+        |    let x21 = (1 + x18) in
+        |    let x23 = (x0 * x0) in
+        |    let x28 = (x21 + x23) in
+        |    x28 in
+        |  x29⟩""".stripMargin, Set("ps", "dce"))
   }
 }
 
@@ -222,51 +396,68 @@ class Section10_Inlining extends Base {
     val f = ELift(ELam("y", EBinOp2("+", EVar("y"), ENum2(2))))
     val arg = ENum2(3)
     val e3 = EApp2(f, arg)
-    testEval(e3, "VCode(ELet(x2,EApp(ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(2),Sta),EVar(x1))),ENum(3),Sta),EVar(x2)))", Set("no-let-lam"))
+    testEval(e3,
+      """⟨code:
+        |  let x2 = (λx0.
+        |  let x1 = (x0 + 2) in
+        |  x1 3) in
+        |  x2⟩""".stripMargin, Set("no-let-lam"))
   }
 
   test("inline-1") {
     val f = ELift(ELam("y", EBinOp2("+", EVar("y"), ENum2(2))))
     val arg = ENum2(3)
     val e4 = EApp2(f, arg)
-    testEval(e4, "VCode(ELet(x2,EBinOp(+,ENum(3),ENum(2),Sta),EVar(x2)))", Set("fun-inline", "no-let-lam"))
+    testEval(e4,
+      """⟨code:
+        |  let x2 = (3 + 2) in
+        |  x2⟩""".stripMargin, Set("fun-inline", "no-let-lam"))
   }
 
   test("inline-2") {
     val f = ELift(ELam("y", EBinOp2("+", EVar("y"), ENum2(2))))
     val arg = ENum2(3)
     val e4 = EApp2(f, arg)
-    testEval(e4, "VCode(ELet(x3,EBinOp(+,ENum(3),ENum(2),Sta),EVar(x3)))", Set("fun-inline", "dce"))
+    testEval(e4,
+      """⟨code:
+        |  let x3 = (3 + 2) in
+        |  x3⟩""".stripMargin, Set("fun-inline", "dce"))
   }
 
   test("inline-3") {
     val e = ELift(ELam("z", EApp2(EVar("z"), ENum2(3))))
-    testEval(e, "VCode(ELet(x2,ELam(x0,ELet(x1,EApp(EVar(x0),ENum(3),Sta),EVar(x1))),EVar(x2)))", Set("fun-inline"))
+    testEval(e,
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 3) in
+        |    x1 in
+        |  x2⟩""".stripMargin, Set("fun-inline"))
   }
 
   test("inline-4") {
     val e =
       ELet("a", EBinOp2("+", ENum2(42), ENum2(42)),
-      ELift(ELam("z", ELet("f", ELift(ELam("z", ELet("x", EBinOp2("+", EVar("z"), EVar("a")),
-            ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
-              EBinOp2("*", EVar("x"), EVar("y"))
-            )))),
+      ELift(ELam("z",
+        ELet("f",
+          ELift(ELam("z",
+          ELet("x", EBinOp2("+", EVar("z"), EVar("a")),
+          ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
+          EBinOp2("*", EVar("x"), EVar("y")))))),
         EApp2(EVar("f"), EVar("z"))))))
-    val exp = """
-    VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),Sta),
-      ELet(x10,ELam(x1,
-        ELet(x6,ELam(x2,
-          ELet(x3,EBinOp(+,EVar(x2),EVar(x0),Sta),
-          ELet(x4,EBinOp(+,ENum(1),ENum(2),Sta),
-          ELet(x5,EBinOp(*,EVar(x3),EVar(x4),Sta),EVar(x5))))),
-        ELet(x7,EBinOp(+,EVar(x1),EVar(x0),Sta),
-        ELet(x8,EBinOp(+,ENum(1),ENum(2),Sta),
-        ELet(x9,EBinOp(*,EVar(x7),EVar(x8),Sta),
-        EVar(x9)))))),
-      EVar(x10))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, exp, Set("fun-inline"))
+    testEval(e,
+      """⟨code:
+        |  let x0 = (42 + 42) in
+        |  let x10 = λx1.
+        |    let x6 = λx2.
+        |      let x3 = (x2 + x0) in
+        |      let x4 = (1 + 2) in
+        |      let x5 = (x3 * x4) in
+        |      x5 in
+        |    let x7 = (x1 + x0) in
+        |    let x8 = (1 + 2) in
+        |    let x9 = (x7 * x8) in
+        |    x9 in
+        |  x10⟩""".stripMargin, Set("fun-inline"))
   }
 
   test("inline-nested") {
@@ -274,120 +465,129 @@ class Section10_Inlining extends Base {
     val f2 = ELift(ELam("z", EApp2(f1, EVar("z"))))
     val arg = ENum2(3)
     val e = EApp2(f2, arg)
-    testEval(e, "VCode(ELet(x6,EBinOp(+,ENum(3),ENum(2),Sta),EVar(x6)))" , Set("fun-inline", "dce"))
+    testEval(e,
+      """⟨code:
+        |  let x6 = (3 + 2) in
+        |  x6⟩""".stripMargin, Set("fun-inline", "dce"))
   }
 
   test("inline-cse-1") {
-    val f1 = ELift(ELam("y", EBinOp2("+",
+    val f1 = ELift(ELam("y",
+      EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
         EBinOp2("+", EVar("y"), ENum2(2)))))
     val e = ELet("f1", f1,
       ELet("r", EApp2(EVar("f1"), ENum2(3)),
       ELet("a", EBinOp2("*", ENum2(42), ENum2(100)),
       EBinOp2("/", EVar("r"), EVar("a")))))
-    val expNoOpt = """
-    |VCode(ELet(x4,
-    |  ELam(x0,
-    |    ELet(x1,EBinOp(*,ENum(42),ENum(100),Sta),
-    |    ELet(x2,EBinOp(+,EVar(x0),ENum(2),Sta),
-    |    ELet(x3,EBinOp(+,EVar(x1),EVar(x2),Sta),EVar(x3))))),
-    |ELet(x5,EApp(EVar(x4),ENum(3),Sta),
-    |ELet(x6,EBinOp(*,ENum(42),ENum(100),Sta),
-    |ELet(x7,EBinOp(/,EVar(x5),EVar(x6),Sta),
-    |EVar(x7))))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, expNoOpt)
+    testEval(e,
+      """⟨code:
+        |  let x4 = λx0.
+        |    let x1 = (42 * 100) in
+        |    let x2 = (x0 + 2) in
+        |    let x3 = (x1 + x2) in
+        |    x3 in
+        |  let x5 = (x4 3) in
+        |  let x6 = (42 * 100) in
+        |  let x7 = (x5 / x6) in
+        |  x7⟩""".stripMargin)
   }
 
   test("inline-cse-2") {
-    val f1 = ELift(ELam("y", EBinOp2("+",
+    val f1 = ELift(ELam("y",
+      EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
         EBinOp2("+", EVar("y"), ENum2(2)))))
     val e = ELet("f1", f1,
       ELet("r", EApp2(EVar("f1"), ENum2(3)),
       ELet("a", EBinOp2("*", ENum2(42), ENum2(100)),
       EBinOp2("/", EVar("r"), EVar("a")))))
-    val expInline = """
-    |VCode(ELet(x4,
-    |  ELam(x0,
-    |  ELet(x1,EBinOp(*,ENum(42),ENum(100),Sta),
-    |  ELet(x2,EBinOp(+,EVar(x0),ENum(2),Sta),
-    |  ELet(x3,EBinOp(+,EVar(x1),EVar(x2),Sta),EVar(x3))))),
-    |ELet(x5,EBinOp(*,ENum(42),ENum(100),Sta),
-    |ELet(x6,EBinOp(+,ENum(3),ENum(2),Sta),
-    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),Sta),
-    |ELet(x8,EBinOp(*,ENum(42),ENum(100),Sta),
-    |ELet(x9,EBinOp(/,EVar(x7),EVar(x8),Sta),EVar(x9))))))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, expInline, Set("fun-inline"))
+    testEval(e,
+      """⟨code:
+        |  let x4 = λx0.
+        |    let x1 = (42 * 100) in
+        |    let x2 = (x0 + 2) in
+        |    let x3 = (x1 + x2) in
+        |    x3 in
+        |  let x5 = (42 * 100) in
+        |  let x6 = (3 + 2) in
+        |  let x7 = (x5 + x6) in
+        |  let x8 = (42 * 100) in
+        |  let x9 = (x7 / x8) in
+        |  x9⟩""".stripMargin, Set("fun-inline"))
   }
 
   test("inline-cse-3") {
-    val f1 = ELift(ELam("y", EBinOp2("+",
+    val f1 = ELift(ELam("y",
+      EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
         EBinOp2("+", EVar("y"), ENum2(2)))))
     val e = ELet("f1", f1,
       ELet("r", EApp2(EVar("f1"), ENum2(3)),
       ELet("a", EBinOp2("*", ENum2(42), ENum2(100)),
       EBinOp2("/", EVar("r"), EVar("a")))))
-    val expInlineCse = """
-    |VCode(ELet(x4,
-    |  ELam(x0,
-    |    ELet(x1,EBinOp(*,ENum(42),ENum(100),Sta),
-    |    ELet(x2,EBinOp(+,EVar(x0),ENum(2),Sta),
-    |    ELet(x3,EBinOp(+,EVar(x1),EVar(x2),Sta),EVar(x3))))),
-    |ELet(x5,EBinOp(*,ENum(42),ENum(100),Sta),
-    |ELet(x6,EBinOp(+,ENum(3),ENum(2),Sta),
-    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),Sta),
-    |ELet(x8,EBinOp(/,EVar(x7),EVar(x5),Sta),EVar(x8)))))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, expInlineCse, Set("fun-inline", "cse"))
+    testEval(e,
+      """⟨code:
+        |  let x4 = λx0.
+        |    let x1 = (42 * 100) in
+        |    let x2 = (x0 + 2) in
+        |    let x3 = (x1 + x2) in
+        |    x3 in
+        |  let x5 = (42 * 100) in
+        |  let x6 = (3 + 2) in
+        |  let x7 = (x5 + x6) in
+        |  let x8 = (x7 / x5) in
+        |  x8⟩""".stripMargin, Set("fun-inline", "cse"))
   }
 
   test("inline-cse-4") {
-    val f1 = ELift(ELam("y", EBinOp2("+",
+    val f1 = ELift(ELam("y",
+      EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
         EBinOp2("+", EVar("y"), ENum2(2)))))
     val e = ELet("f1", f1,
       ELet("r", EApp2(EVar("f1"), ENum2(3)),
       ELet("a", EBinOp2("*", ENum2(42), ENum2(100)),
       EBinOp2("/", EVar("r"), EVar("a")))))
-    val expInlineCseDce = """
-    |VCode(
-    |ELet(x5,EBinOp(*,ENum(42),ENum(100),Sta),
-    |ELet(x6,EBinOp(+,ENum(3),ENum(2),Sta),
-    |ELet(x7,EBinOp(+,EVar(x5),EVar(x6),Sta),
-    |ELet(x8,EBinOp(/,EVar(x7),EVar(x5),Sta),EVar(x8))))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, expInlineCseDce, Set("fun-inline", "cse", "dce"))
+    testEval(e,
+      """⟨code:
+        |  let x5 = (42 * 100) in
+        |  let x6 = (3 + 2) in
+        |  let x7 = (x5 + x6) in
+        |  let x8 = (x7 / x5) in
+        |  x8⟩""".stripMargin, Set("fun-inline", "cse", "dce"))
   }
 
   test("inline-cse-5") {
-    val f1 = ELift(ELam("y", EBinOp2("+",
+    val f1 = ELift(ELam("y",
+      EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
         EBinOp2("+", EVar("y"), ENum2(2)))))
     val e = ELet("f1", f1,
       ELet("r", EApp2(EVar("f1"), ENum2(3)),
       ELet("a", EBinOp2("*", ENum2(42), ENum2(100)),
       EBinOp2("/", EVar("r"), EVar("a")))))
-    val expInlineCseSimp = """
-    VCode(ELet(x3,
-      ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(2),Sta),ELet(x2,EBinOp(+,ENum(4200),EVar(x1),Sta),EVar(x2)))),
-    ENum(1)))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, expInlineCseSimp, Set("fun-inline", "cse", "rewriting"))
+    testEval(e,
+      """⟨code:
+        |  let x3 = λx0.
+        |    let x1 = (x0 + 2) in
+        |    let x2 = (4200 + x1) in
+        |    x2 in
+        |  1⟩""".stripMargin, Set("fun-inline", "cse", "rewriting"))
   }
 
   test("inline-cse-6") {
-    val f1 = ELift(ELam("y", EBinOp2("+",
+    val f1 = ELift(ELam("y",
+      EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
         EBinOp2("+", EVar("y"), ENum2(2)))))
     val e = ELet("f1", f1,
       ELet("r", EApp2(EVar("f1"), ENum2(3)),
       ELet("a", EBinOp2("*", ENum2(42), ENum2(100)),
       EBinOp2("/", EVar("r"), EVar("a")))))
-    val expInlineCseSimpDce = "VCode(ENum(1))"
-    testEval(e, expInlineCseSimpDce, Set("fun-inline", "cse", "rewriting", "dce"))
+    testEval(e,
+      """⟨code:
+        |  1⟩""".stripMargin, Set("fun-inline", "cse", "rewriting", "dce"))
   }
 
   test("cond-simp-1") {
@@ -396,43 +596,45 @@ class Section10_Inlining extends Base {
       EBinOp2("*", ENum2(3), ENum2(4)),
       EBinOp2("*", ENum2(4), ENum2(5)),
     )
-    testEval(e1, "VCode(ENum(20))", Set("rewriting", "simp-cond"))
+    testEval(e1,
+      """⟨code:
+        |  20⟩""".stripMargin, Set("rewriting", "simp-cond"))
     val e2 = ECond2(
       EBinOp2("==", ENum2(2), ENum2(2)),
       EBinOp2("*", ENum2(3), ENum2(4)),
       EBinOp2("*", ENum2(4), ENum2(5)),
     )
-    testEval(e2, "VCode(ENum(12))", Set("rewriting", "simp-cond"))
+    testEval(e2,
+      """⟨code:
+        |  12⟩""".stripMargin, Set("rewriting", "simp-cond"))
   }
 
   test("cond-simp-2") {
-    val e1 = ELift(ELam("y", ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
+    val e1 = ELift(ELam("y",
+      ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
       ECond2(
         EBinOp2("==", EVar("z1"), ENum2(6)),
         EBinOp2("*", EVar("y"), ENum2(4)),
         EBinOp2("*", EVar("y"), EBinOp2("+", EVar("y"), ENum2(4)))))))
-    val exp1 = """
-    |VCode(ELet(x5,
-    |  ELam(x0,
-    |    ELet(x4,EBinOp(*,EVar(x0),ENum(4),Sta),
-    |    EVar(x4))),
-    |  EVar(x5)))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e1, exp1, Set("rewriting", "simp-cond"))
-    val e2 = ELift(ELam("y", ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
+    testEval(e1,
+      """⟨code:
+        |  let x5 = λx0.
+        |    let x4 = (x0 * 4) in
+        |    x4 in
+        |  x5⟩""".stripMargin, Set("rewriting", "simp-cond"))
+    val e2 = ELift(ELam("y",
+      ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
       ECond2(
         EBinOp2("==", EVar("z1"), ENum2(7)),
         EBinOp2("*", EVar("y"), ENum2(4)),
         EBinOp2("*", EVar("y"), EBinOp2("+", EVar("y"), ENum2(4)))))))
-    val exp2 = """
-    |VCode(ELet(x6,
-    |  ELam(x0,
-    |    ELet(x4,EBinOp(+,EVar(x0),ENum(4),Sta),
-    |    ELet(x5,EBinOp(*,EVar(x0),EVar(x4),Sta),
-    |    EVar(x5)))),
-    |  EVar(x6)))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e2, exp2, Set("rewriting", "simp-cond"))
+    testEval(e2,
+      """⟨code:
+        |  let x6 = λx0.
+        |    let x4 = (x0 + 4) in
+        |    let x5 = (x0 * x4) in
+        |    x5 in
+        |  x6⟩""".stripMargin, Set("rewriting", "simp-cond"))
   }
 }
 
@@ -441,85 +643,78 @@ class Section10_Inlining extends Base {
 class Section11_Hoisting extends Base {
 
   test("hoist-1") {
-    val e =
-      ELift(ELam("z", ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
-          ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
-            EBinOp2("*", EVar("x"), EVar("y"))
-          ))))
-    val exp = """
-    VCode(
-      ELet(x5,EBinOp(+,ENum(1),ENum(2),Sta),
-      ELet(x6,ELam(x0,
-        ELet(x1,EBinOp(+,EVar(x0),ENum(2),Sta),
-        ELet(x3,EBinOp(*,EVar(x1),EVar(x5),Sta),
-        EVar(x3)))),
-      EVar(x6))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, exp, Set("lam-hoist"))
+    val e = ELift(ELam("z",
+      ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
+      ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
+      EBinOp2("*", EVar("x"), EVar("y"))))))
+    testEval(e,
+      """⟨code:
+        |  let x5 = (1 + 2) in
+        |  let x6 = λx0.
+        |    let x1 = (x0 + 2) in
+        |    let x3 = (x1 * x5) in
+        |    x3 in
+        |  x6⟩""".stripMargin, Set("lam-hoist"))
   }
 
   test("hoist-2a") {
     val e =
       ELet("a", EBinOp2("+", ENum2(42), ENum2(42)),
-      ELift(ELam("z", ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
-          ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
-            EBinOp2("*", EVar("x"), EVar("y"))
-          )))))
-    val exp = """
-    VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),Sta),
-      ELet(x6,EBinOp(+,ENum(1),ENum(2),Sta),
-      ELet(x7,ELam(x1,
-        ELet(x2,EBinOp(+,EVar(x1),ENum(2),Sta),
-        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),Sta),
-        EVar(x4)))),
-      EVar(x7)))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, exp, Set("lam-hoist"))
+      ELift(ELam("z",
+        ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
+        ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
+        EBinOp2("*", EVar("x"), EVar("y")))))))
+    testEval(e,
+      """⟨code:
+        |  let x0 = (42 + 42) in
+        |  let x6 = (1 + 2) in
+        |  let x7 = λx1.
+        |    let x2 = (x1 + 2) in
+        |    let x4 = (x2 * x6) in
+        |    x4 in
+        |  x7⟩""".stripMargin, Set("lam-hoist"))
   }
 
   test("hoist-2b") {
     val e =
       ELet("a", EBinOp2("+", ENum2(42), ENum2(42)),
-      ELift(ELam("z", ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
-          ELet("y", EBinOp2("+", EVar("a"), ENum2(2)),
-            EBinOp2("*", EVar("x"), EVar("y"))
-          )))))
-    val exp = """
-    VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),Sta),
-      ELet(x6,EBinOp(+,EVar(x0),ENum(2),Sta),
-      ELet(x7,ELam(x1,
-        ELet(x2,EBinOp(+,EVar(x1),ENum(2),Sta),
-        ELet(x4,EBinOp(*,EVar(x2),EVar(x6),Sta),
-        EVar(x4)))),
-      EVar(x7)))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, exp, Set("lam-hoist"))
+      ELift(ELam("z",
+        ELet("x", EBinOp2("+", EVar("z"), ENum2(2)),
+        ELet("y", EBinOp2("+", EVar("a"), ENum2(2)),
+        EBinOp2("*", EVar("x"), EVar("y")))))))
+    testEval(e,
+      """⟨code:
+        |  let x0 = (42 + 42) in
+        |  let x6 = (x0 + 2) in
+        |  let x7 = λx1.
+        |    let x2 = (x1 + 2) in
+        |    let x4 = (x2 * x6) in
+        |    x4 in
+        |  x7⟩""".stripMargin, Set("lam-hoist"))
   }
 
   test("hoist-nested") {
     val e =
       ELet("a", EBinOp2("+", ENum2(42), ENum2(42)),
-      ELift(ELam("w", ELet("f", ELift(ELam("z", ELet("x", EBinOp2("+", EVar("z"), EVar("a")),
-            ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
-              EBinOp2("*", EVar("x"), EVar("y"))
-            )))),
+      ELift(ELam("w",
+        ELet("f",
+          ELift(ELam("z",
+          ELet("x", EBinOp2("+", EVar("z"), EVar("a")),
+          ELet("y", EBinOp2("+", ENum2(1), ENum2(2)),
+          EBinOp2("*", EVar("x"), EVar("y")))))),
         EApp2(EVar("f"), EVar("w"))))))
-    val exp = """
-    VCode(
-      ELet(x0,EBinOp(+,ENum(42),ENum(42),Sta),
-      ELet(x11,EBinOp(+,ENum(1),ENum(2),Sta),
-      ELet(x12,ELam(x1,
-        ELet(x8,ELam(x2,
-          ELet(x3,EBinOp(+,EVar(x2),EVar(x0),Sta),
-          ELet(x5,EBinOp(*,EVar(x3),EVar(x11),Sta),
-          EVar(x5)))),
-        ELet(x9,EApp(EVar(x8),EVar(x1),Sta),
-        EVar(x9)))),
-      EVar(x12)))))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, exp, Set("lam-hoist"))
+    testEval(e,
+      """⟨code:
+        |  let x0 = (42 + 42) in
+        |  let x11 = (1 + 2) in
+        |  let x12 = λx1.
+        |    let x8 = λx2.
+        |      let x3 = (x2 + x0) in
+        |      let x5 = (x3 * x11) in
+        |      x5 in
+        |    let x9 = (x8 x1) in
+        |    x9 in
+        |  x12⟩""".stripMargin, Set("lam-hoist"))
   }
 }
 
@@ -532,29 +727,37 @@ class Section12_CBN extends Base {
   test("cbn") {
     val e1 = ECBNApp(ELam("x", EBinOp("+", EVar("x"), EVar("x"), Dyn)),
              EBinOp2("*", ENum2(21), ENum2(2)))
-    testEval(e1, """
-    VCode(
-      ELet(x0,EBinOp(*,ENum(21),ENum(2),Sta),
-      ELet(x1,EBinOp(*,ENum(21),ENum(2),Sta),
-      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),Sta),EVar(x2)))))
-     """.stripMargin.replaceAll("\n", "").replaceAll(" ", ""))
+    testEval(e1,
+      """⟨code:
+        |  let x0 = (21 * 2) in
+        |  let x1 = (21 * 2) in
+        |  let x2 = (x0 + x1) in
+        |  x2⟩""".stripMargin)
     val e2 = EApp1(ELam("x", EBinOp("+", EVar("x"), EVar("x"), Dyn)),
              EBinOp2("*", ENum2(21), ENum2(2)))
-    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),Sta),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),Sta),EVar(x1))))")
+    testEval(e2,
+      """⟨code:
+        |  let x0 = (21 * 2) in
+        |  let x1 = (x0 + x0) in
+        |  x1⟩""".stripMargin)
   }
 
   test("cbn-lam") {
     val e1 = EApp(EBNLam("x", EBinOp("+", EVar("x"), EVar("x"), Dyn)),
              EBinOp2("*", ENum2(21), ENum2(2)), Sta)
-    testEval(e1, """
-    VCode(
-      ELet(x0,EBinOp(*,ENum(21),ENum(2),Sta),
-      ELet(x1,EBinOp(*,ENum(21),ENum(2),Sta),
-      ELet(x2,EBinOp(+,EVar(x0),EVar(x1),Sta),EVar(x2)))))
-     """.stripMargin.replaceAll("\n", "").replaceAll(" ", ""))
+    testEval(e1,
+      """⟨code:
+        |  let x0 = (21 * 2) in
+        |  let x1 = (21 * 2) in
+        |  let x2 = (x0 + x1) in
+        |  x2⟩""".stripMargin)
     val e2 = EApp1(ELam("x", EBinOp("+", EVar("x"), EVar("x"), Dyn)),
              EBinOp2("*", ENum2(21), ENum2(2)))
-    testEval(e2, "VCode(ELet(x0,EBinOp(*,ENum(21),ENum(2),Sta),ELet(x1,EBinOp(+,EVar(x0),EVar(x0),Sta),EVar(x1))))")
+    testEval(e2,
+      """⟨code:
+        |  let x0 = (21 * 2) in
+        |  let x1 = (x0 + x0) in
+        |  x1⟩""".stripMargin)
   }
 }
 
@@ -565,19 +768,31 @@ class Section12_Analysis extends Base {
   test("is-app-1") {
     val e =
       ELet("app", EApp2(ELift(ELam("x", EVar("x"))), ENum2(42)),
-        ECond1(EIsApp(EVar("app")), EBool2(true), EBool2(false)))
-    testEval(e, "VCode(ELet(x1,ELam(x0,EVar(x0)),ELet(x2,EApp(EVar(x1),ENum(42),Sta),EBool(true))))")
+      ECond1(EIsApp(EVar("app")), EBool2(true), EBool2(false)))
+    testEval(e,
+      """⟨code:
+        |  let x1 = λx0.
+        |    x0 in
+        |  let x2 = (x1 42) in
+        |  true⟩""".stripMargin)
   }
 
   test("is-app-2") {
     val e = EIsApp(ENum2(42))
-    testEval(e, "VBool(false)")
+    testEval(e, "false")
   }
 
   test("is-app-conflict") {
     val e = ELift(EIsApp(EApp2(ELift(ELam("x", EVar("x"))), ENum2(42))))
-    testEval(e, "VCode(ELet(x1,ELam(x0,EVar(x0)),ELet(x2,EApp(EVar(x1),ENum(42),Sta),EBool(true))))", Set("dce"))
-    testEval(e, "VCode(EBool(false))", Set("fun-inline", "dce"))
+    testEval(e,
+      """⟨code:
+        |  let x1 = λx0.
+        |    x0 in
+        |  let x2 = (x1 42) in
+        |  true⟩""".stripMargin, Set("dce"))
+    testEval(e,
+      """⟨code:
+        |  false⟩""".stripMargin, Set("fun-inline", "dce"))
   }
 }
 
@@ -586,11 +801,8 @@ class Section12_Analysis extends Base {
 class Section12_Extensions extends Base {
 
   val e1 = EApp2(
-    ELift(
-      ELam("x", EBinOp2("+", EVar("x"), ENum2(1)))
-    ),
-    ENum2(41),
-  )
+    ELift(ELam("x", EBinOp2("+", EVar("x"), ENum2(1)))),
+    ENum2(41))
 
   val e2 = ELift(ELam("x", EBinOp2("+", EVar("x"), ENum2(1))))
 
@@ -640,17 +852,43 @@ class Section12_Extensions extends Base {
   }
 
   test("lam-app") {
-    testEval(e1, "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),ELet(x3,EApp(EVar(x2),ENum(41),Sta),EVar(x3))))")
-    testEval(e2, "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),EVar(x2)))")
+    testEval(e1,
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  let x3 = (x2 41) in
+        |  x3⟩""".stripMargin)
+    testEval(e2,
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  x2⟩""".stripMargin)
   }
 
   test("cond") {
-    testEval(e4, "VCode(ELet(x8,ECond(EBool(true),ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),ELet(x3,EApp(EVar(x2),ENum(10),Sta),EVar(x3))),ELet(x6,ELam(x4,ELet(x5,EBinOp(*,EVar(x4),ENum(42),Sta),EVar(x5))),ELet(x7,EApp(EVar(x6),ENum(20),Sta),EVar(x7))),Sta),EVar(x8)))")
+    testEval(e4,
+      """⟨code:
+        |  let x8 = if true
+        |  then
+        |    let x2 = λx0.
+        |      let x1 = (x0 + 1) in
+        |      x1 in
+        |    let x3 = (x2 10) in
+        |    x3
+        |  else
+        |    let x6 = λx4.
+        |      let x5 = (x4 * 42) in
+        |      x5 in
+        |    let x7 = (x6 20) in
+        |    x7 in
+        |  x8⟩""".stripMargin)
   }
 
   test("rec") {
-    testEval(e6, "VNum(120)")
-    testEval(e7, "VNum(1024)")
+    testEval(e6, "120")
+    testEval(e7, "1024")
   }
 
   val e10 = {
@@ -673,52 +911,78 @@ class Section12_Extensions extends Base {
   }
 
   test("fix") {
-    testEval(e10, "VNum(120)")
+    testEval(e10, "120")
   }
 
   test("fix-second-stage") {
     testEval(e11,
-      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,ELet(x2,EBinOp(<=,EVar(x1),ENum(1),Sta),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),Sta),ELet(x4,EApp(EVar(f0),EVar(x3),Sta),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),Sta),EVar(x5)))),Sta),EVar(x6)))),EVar(x7)),Sta),ELet(x9,EApp(EVar(x8),ENum(5),Sta),EVar(x9))))")
+      """⟨code:
+        |  let x8 = fix f0. let x7 = λx1.
+        |  let x2 = (x1 <= 1) in
+        |  let x6 = if x2
+        |  then
+        |    1
+        |  else
+        |    let x3 = (x1 - 1) in
+        |    let x4 = (f0 x3) in
+        |    let x5 = (x1 * x4) in
+        |    x5 in
+        |  x6 in
+        |x7 in
+        |  let x9 = (x8 5) in
+        |  x9⟩""".stripMargin)
     val (VCode(e), _) = eval(e11)
-    testEval(e, "VNum(120)")
+    testEval(e, "120")
   }
 
   test("lift-loc") {
     val e = ELift(EAlloc1(ENum(42)))
-    testEval(e, "VCode(ELet(x0,ELoc(0),EVar(x0)))")
+    testEval(e,
+      """⟨code:
+        |  let x0 = <loc: 0> in
+        |  x0⟩""".stripMargin)
   }
 
   test("lift-curry-lam") {
     val e = ELift(ELam("x", ELift(ELam("y", EBinOp2("+", EVar("x"), EVar("y"))))))
-    val exp = """
-    VCode(ELet(x4,
-      ELam(x0,
-        ELet(x3,
-          ELam(x1,
-            ELet(x2,EBinOp(+,EVar(x0),EVar(x1),Sta),EVar(x2))),
-        EVar(x3))),
-      EVar(x4)))
-    """.stripMargin.replaceAll("\n", "").replaceAll(" ", "")
-    testEval(e, exp)
+    testEval(e,
+      """⟨code:
+        |  let x4 = λx0.
+        |    let x3 = λx1.
+        |      let x2 = (x0 + x1) in
+        |      x2 in
+        |    x3 in
+        |  x4⟩""".stripMargin)
   }
 
   test("run") {
-    testEval(ENum(1), "VNum(1)")
-    testEval(ERun(ENum2(1)), "VNum(1)")
+    testEval(ENum(1), "1")
+    testEval(ERun(ENum2(1)), "1")
     val e1 =
       ELift(ELam("x", EBinOp2("+", EVar("x"), ENum2(1))))
     testEval(e1,
-      "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),EVar(x2)))")
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  x2⟩""".stripMargin)
     testEval(ERun(e1),
-      "VClo(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1)),Map())")
+      """⟨closure: λx0.
+        |  let x1 = (x0 + 1) in
+        |  x1⟩""".stripMargin)
     val e2 = ELet(
       "y",
       ELift(ELam("x", EBinOp2("+", EVar("x"), ENum2(1)))),
       EApp2(EVar("y"), ENum2(1)))
     testEval(e2,
-      "VCode(ELet(x2,ELam(x0,ELet(x1,EBinOp(+,EVar(x0),ENum(1),Sta),EVar(x1))),ELet(x3,EApp(EVar(x2),ENum(1),Sta),EVar(x3))))")
-    testEval(ERun(e2), "VNum(2)")
+      """⟨code:
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 1) in
+        |    x1 in
+        |  let x3 = (x2 1) in
+        |  x3⟩""".stripMargin)
+    testEval(ERun(e2), "2")
     val e3 = EDeref1(ERun(ELift(EAlloc1(ENum(1)))))
-    testEval(e3, "VNum(1)")
+    testEval(e3, "1")
   }
 }

@@ -125,6 +125,8 @@ def EAssign2(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Dyn)
 
 def show(e: Expr): String = pprint(e, 0)
 
+private def line(e: Expr, d: Int): String = s"${"  " * d}${pprint(e, d)}"
+
 def pprint(e: Expr, d: Int): String =
   val I = "  " * d
   e match
@@ -132,28 +134,18 @@ def pprint(e: Expr, d: Int): String =
     case ENum(i) => i.toString
     case EBool(b) => b.toString
     case EVar(x) => x
-    case ELam(x, b) =>
-      val bodyStr = pprint(b, d + 1)
-      val body = if bodyStr.contains('\n') then bodyStr else s"${"  " * (d + 1)}$bodyStr"
-      s"λ$x.\n$body"
-    case EBNLam(x, b) =>
-      val bodyStr = pprint(b, d + 1)
-      val body = if bodyStr.contains('\n') then bodyStr else s"${"  " * (d + 1)}$bodyStr"
-      s"λb$x.\n$body"
+    case ELam(x, b) => s"λ$x.\n${line(b, d + 1)}"
+    case EBNLam(x, b) => s"λb$x.\n${line(b, d + 1)}"
     case EApp(e1, e2, Sta) => s"(${show(e1)} ${show(e2)})"
     case EApp(e1, e2, Dyn) => s"(${show(e1)} @² ${show(e2)})"
     case ELift(t) => s"lift(${show(t)})"
     case ERun(t) => s"run(${show(t)})"
-    case ELet(x, r, b) =>
-      val bodyStr = pprint(b, d)
-      val body = if bodyStr.contains('\n') then bodyStr else s"$I$bodyStr"
-      s"${I}let $x = ${pprint(r, d)} in\n$body"
-    case ELetRec(f, r, b) =>
-      s"${I}letrec $f = ${pprint(r, d)} in\n${pprint(b, d + 1)}"
+    case ELet(x, r, b) => s"let $x = ${pprint(r, d)} in\n${line(b, d)}"
+    case ELetRec(f, r, b) => s"letrec $f = ${pprint(r, d)} in\n${line(b, d + 1)}"
     case ECond(e1, e2, e3, Sta) =>
-      s"if ${show(e1)}\n${I}then\n${pprint(e2, d + 1)}\n${I}else\n${pprint(e3, d + 1)}"
+      s"if ${show(e1)}\n${I}then\n${line(e2, d + 1)}\n${I}else\n${line(e3, d + 1)}"
     case ECond(e1, e2, e3, Dyn) =>
-      s"if² ${show(e1)}\n${I}then\n${pprint(e2, d + 1)}\n${I}else\n${pprint(e3, d + 1)}"
+      s"if² ${show(e1)}\n${I}then\n${line(e2, d + 1)}\n${I}else\n${line(e3, d + 1)}"
     case EBinOp(op, e1, e2, Sta) => s"(${pprint(e1, 0)} $op ${pprint(e2, 0)})"
     case EBinOp(op, e1, e2, Dyn) => s"(${pprint(e1, 0)} $op² ${pprint(e2, 0)})"
     case EUnaryOp(op, e, Sta) => s"($op ${pprint(e, 0)})"
@@ -171,9 +163,9 @@ def pprint(e: Expr, d: Int): String =
     case ECBNApp(e1, e2) => s"(${pprint(e1, 0)} @@ ${pprint(e2, 0)})"
 
 def show(v: Value): String = v match
-  case VCode(e) => s"⟨code:\n${pprint(e, 1)}⟩"
-  case VClo(x, b, _) => s"⟨closure: λ$x.\n${pprint(b, 1)}⟩"
-  case VBNClo(x, b, _) => s"⟨by-name closure: λ$x.\n${pprint(b, 1)}⟩"
+  case VCode(e) => s"⟨code:\n${line(e, 1)}⟩"
+  case VClo(x, b, _) => s"⟨closure: λ$x.\n${line(b, 1)}⟩"
+  case VBNClo(x, b, _) => s"⟨by-name closure: λ$x.\n${line(b, 1)}⟩"
   case VNum(i) => i.toString
   case VBool(b) => b.toString
   case VUnit => "()"
