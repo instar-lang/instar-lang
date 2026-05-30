@@ -14,7 +14,7 @@ a reference implementation for the paper's exposition and claims. The artifact i
 organized as two complementary parts:
 
 1. **A family of definitional evaluators** (`src/main/scala/experiment/`) that
-   explains the derivation of different style of evaluation, from a stateful
+   explain the derivation of different style of evaluation, from a stateful
    evaluator to CPS interpreters, a direct-style interpreter using delimited
    control, and finally an abstract machine (§2–§4).
 2. **A single optimizing staged evaluator** (`src/main/scala/Interp.scala`) based
