@@ -2,22 +2,24 @@
 
 ## 1. Paper Summary
 
-This artifact accompanies the ICFP '26 pearl *"Let It Be Optimized"*.
+This artifact accompanies the ICFP '26 paper *"Let It Be Optimized: Building
+Multi-Stage Evaluators with Let-Insertion and Optimizations in Small Pieces
+(Functional Pearl)"*.
 The paper reconstructs optimizing staged evaluation as found in
 library-based multi-stage programming (MSP) systems (e.g., LMS, BuildIt) as a
 proper calculus with executable semantic artifacts.
 
 All semantic artifacts are implemented in Scala 3 as executable code, serving as
-a reference implementation for the paper's figures and claims. The artifact is
+a reference implementation for the paper's exposition and claims. The artifact is
 organized as two complementary parts:
 
 1. **A family of definitional evaluators** (`src/main/scala/experiment/`) that
-   trace the derivation of the calculus, from a stateful evaluator to a CPS
-   interpreter, a direct-style interpreter using delimited control, and finally
-   an abstract machine (§2–§4).
-2. **A single optimizing staged evaluator** (`src/main/scala/Interp.scala`) that
-   realizes each optimization from the paper (§5–§12) as a modular `reflect`
-   combinator, toggled independently at run time.
+   explains the derivation of different style of evaluation, from a stateful
+   evaluator to CPS interpreters, a direct-style interpreter using delimited
+   control, and finally an abstract machine (§2–§4).
+2. **A single optimizing staged evaluator** (`src/main/scala/Interp.scala`) based
+   one the 2-CPS interpreter that realizes each optimization from the paper (§5–§12)
+   as modular combinators, toggled independently at run time.
 
 Every claim in the paper is backed by an executable test. The artifact is
 self-contained: the only external dependency is the
@@ -26,17 +28,23 @@ the build tool.
 
 ### Claims supported by this artifact
 
-- The definitional evaluators in §2–§4 are equivalent: each produces the same
-  staged object code for the same input (see `src/test/scala/experiment/`).
-- Each optimization of §5–§12 (constant propagation, CSE, constant folding,
+- The definitional evaluators in §2–§4 are functionally equivalent: each
+  produces the same staged object code given the same input.
+  This is backed empirically by the test suit (see `src/test/scala/experiment/`)
+  and can be justified following the derivations in the paper.
+- Each optimization of §5–§11 (constant propagation, CSE, constant folding,
   dead-code elimination, partially-static data, inlining with renormalization,
   and λ-hoisting) is implemented as an independent, composable pass, and the
   examples shown in the paper reduce to the stated object code (see
   `src/test/scala/Interp.scala`).
+- Additional extensions (mutable references, by-name staging, etc.) can
+  be added to the same framework with minimal changes to the core evaluator (see
+  `src/main/scala/Interp.scala` eval cases and `src/test/scala/Interp.scala`
+  Section 12 tests).
 
 ## 2. Environment
 
-- **JDK**: 17 or later
+- **JDK**: 17
 - **Scala**: 3.8.0 (managed by sbt)
 - **Build tool**: sbt 1.11+
 
@@ -200,7 +208,6 @@ The optimizing evaluator is configured through string flags (`Opt(...)` in
 | `dce` | dead-code elimination | §8 |
 | `ps` | partially-static data | §9 |
 | `fun-inline` | function inlining | §10 |
-| `no-let-lam` | suppress let-binding of λ-abstractions | §10 |
 | `simp-cond` | conditional simplification | §10 |
 | `lam-hoist` | code motion / λ-hoisting | §11 |
 
