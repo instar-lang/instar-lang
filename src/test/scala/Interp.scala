@@ -462,7 +462,7 @@ class Section10_Inlining extends Base {
         |  x6⟩""".stripMargin, Set("fun-inline", "dce"))
   }
 
-  test("inline-cse-1") {
+  test("inline-1") {
     val f1 = ELift(ELam("y",
       EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
@@ -484,7 +484,7 @@ class Section10_Inlining extends Base {
         |  x7⟩""".stripMargin)
   }
 
-  test("inline-cse-2") {
+  test("inline-2") {
     val f1 = ELift(ELam("y",
       EBinOp2("+",
         EBinOp2("*", ENum2(42), ENum2(100)),
