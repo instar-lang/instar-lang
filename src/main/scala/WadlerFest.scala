@@ -1,10 +1,10 @@
 // Section 2: Revisiting the WadlerFest stateful evaluator.
 // A direct-style staged evaluator using mutable state for let-insertion.
 
-package instar.experiment.wadlerfest
+package instar.wadlerfest
 
 import instar.Counter.*
-import instar.experiment.*
+import instar.*
 
 import Stage.*
 import Expr.*

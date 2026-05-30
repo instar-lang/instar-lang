@@ -1,10 +1,5 @@
 val scala3Version = "3.8.0"
 
-ThisBuild / coverageFailOnMinimum := false
-ThisBuild / coverageHighlighting := true
-ThisBuild / coverageExcludedPackages :=
-  "instar\\.experiment\\..*;"
-
 lazy val root = project
   .in(file("."))
   .settings(
@@ -15,11 +10,5 @@ lazy val root = project
 
     libraryDependencies += "org.scalameta" %% "munit" % "1.0.0" % Test
   )
-
-addCommandAlias("coverageAll", ";clean;coverage;test;coverageReport;coverageOff")
-addCommandAlias(
-  "coverageMain",
-  ";clean;coverage;testOnly instar.parser.ParserTest instar.interp.* instar.codegen.CBackendTest;coverageReport;coverageOff"
-)
 
 Test / parallelExecution := false

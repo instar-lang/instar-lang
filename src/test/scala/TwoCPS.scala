@@ -1,8 +1,8 @@
-package instar.experiment.delimited
+package instar.twocps
 
-import instar.experiment.*
+import instar.*
 
-class DelimitedTest extends munit.FunSuite:
+class TwoCPSTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*

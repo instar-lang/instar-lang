@@ -1,8 +1,8 @@
-package instar.experiment.cekm
+package instar.delimited
 
-import instar.experiment.*
+import instar.*
 
-class CEKMTest extends munit.FunSuite:
+class DelimitedTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*

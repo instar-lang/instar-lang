@@ -13,11 +13,11 @@ All semantic artifacts are implemented in Scala 3 as executable code, serving as
 a reference implementation for the paper's exposition and claims. The artifact is
 organized as two complementary parts:
 
-1. **A family of definitional evaluators** (`src/main/scala/experiment/`) that
+1. **A family of definitional evaluators** (`src/main/scala/`) that
    explain the derivation of different style of evaluation, from a stateful
    evaluator to CPS interpreters, a direct-style interpreter using delimited
    control, and finally an abstract machine (§2–§4).
-2. **A single optimizing staged evaluator** (`src/main/scala/Interp.scala`) based
+2. **A single optimizing staged evaluator** (`src/main/scala/TwoCPSOpt.scala`) based
    one the 2-CPS interpreter that realizes each optimization from the paper (§5–§12)
    as modular combinators, toggled independently at run time.
 
@@ -30,16 +30,16 @@ the build tool.
 
 - The definitional evaluators in §2–§4 are functionally equivalent: each
   produces the same staged object code given the same input.
-  This is backed empirically by the test suit (see `src/test/scala/experiment/`)
+  This is backed empirically by the test suite (see `src/test/scala/`)
   and can be justified following the derivations in the paper.
 - Each optimization of §5–§11 (constant propagation, CSE, constant folding,
   dead-code elimination, partially-static data, inlining with renormalization,
   and λ-hoisting) is implemented as an independent, composable pass, and the
   examples shown in the paper reduce to the stated object code (see
-  `src/test/scala/Interp.scala`).
+  `src/test/scala/TwoCPSOpt.scala`).
 - Additional extensions (mutable references, by-name staging, etc.) can
   be added to the same framework with minimal changes to the core evaluator (see
-  `src/main/scala/Interp.scala` eval cases and `src/test/scala/Interp.scala`
+  `src/main/scala/TwoCPSOpt.scala` eval cases and `src/test/scala/TwoCPSOpt.scala`
   Section 12 tests).
 
 ## 2. Environment
@@ -53,41 +53,44 @@ the build tool.
 ```
 ├── build.sbt
 ├── src/main/scala/
-│   ├── Syntax.scala          # Core two-stage language AST (§2, Figure 2)
-│   ├── Interp.scala          # Optimizing staged evaluator (§5–§12)
-│   ├── Algebra.scala         # Partially-static data algebra (§9)
+│   ├── Syntax.scala          # Shared syntax for definitional evaluators (§2, Figure 2)
+│   ├── ExtSyntax.scala       # Full core two-stage language AST
+│   ├── WadlerFest.scala      # Stateful evaluator (§2, Figures 3–4)
+│   ├── OneCPS.scala          # 1-CPS evaluator (§3.1)
+│   ├── TwoCPS.scala          # 2-CPS definitional interpreter (§3.2)
+│   ├── Delimited.scala       # Direct-style via shift/reset (§3.3, Figure 5)
+│   ├── CEKM.scala            # CEKM abstract machine (§4, Figure 6)
+│   ├── TwoCPSOpt.scala       # Optimizing staged evaluator (§5–§12)
 │   ├── BiMap.scala           # Bidirectional map (code cache, §5.2)
-│   ├── Counter.scala         # Fresh variable name generator
-│   └── experiment/
-│       ├── Syntax.scala      # Shared syntax for experiment evaluators
-│       ├── WadlerFest.scala  # Stateful evaluator (§2, Figures 3–4)
-│       ├── OneCPS.scala      # 1-CPS evaluator (§3.1)
-│       ├── TwoCPS.scala      # 2-CPS definitional interpreter (§3.2)
-│       ├── Delimited.scala   # Direct-style via shift/reset (§3.3, Figure 5)
-│       └── CEKM.scala        # CEKM abstract machine (§4, Figure 6)
+│   ├── Algebra.scala         # Partially-static data algebra (§9)
+│   └── Counter.scala         # Fresh variable name generator
 └── src/test/scala/
-    ├── Interp.scala          # Tests for the optimizing evaluator
-    └── experiment/           # Tests for each experiment evaluator
+    ├── WadlerFest.scala      # Tests for the stateful evaluator (§2)
+    ├── OneCPS.scala          # Tests for the 1-CPS evaluator (§3.1)
+    ├── TwoCPS.scala          # Tests for the 2-CPS evaluator (§3.2)
+    ├── Delimited.scala       # Tests for the delimited control evaluator (§3.3)
+    ├── CEKM.scala            # Tests for the CEKM machine (§4)
+    └── TwoCPSOpt.scala       # Tests for the optimizing evaluator (§5–§12)
 ```
 
 ### Paper-to-code mapping
 
 | Section | Content | File |
 |---------|---------|------|
-| §2 | Core language syntax (Figure 2) | `Syntax.scala`, `experiment/Syntax.scala` |
-| §2 | Stateful WadlerFest evaluator (Figures 3–4) | `experiment/WadlerFest.scala` |
-| §3.1 | 1-CPS transformation | `experiment/OneCPS.scala` |
-| §3.2 | 2-CPS definitional interpreter | `experiment/TwoCPS.scala` |
-| §3.3 | Delimited control (Figure 5) | `experiment/Delimited.scala` |
-| §4 | CEKM abstract machine (Figure 6) | `experiment/CEKM.scala` |
-| §5 | Reflect combinators, code cache | `Interp.scala` (`reflectAtom`, `Cache`) |
-| §6 | Common sub-expression elimination | `Interp.scala` (`reflectCse`) |
-| §7 | Constant folding | `Interp.scala` (`reflectSimp`) |
-| §8 | Dead-code elimination | `Interp.scala` (`reflectDce`) |
-| §9 | Partially-static data | `Interp.scala` (`reflectPS`), `Algebra.scala` |
-| §10 | Inlining with renormalization | `Interp.scala` (`reflectInline`, `renormalize`) |
-| §11 | Code motion (λ-hoisting) | `Interp.scala` (`hoist`, `reflectLam`) |
-| §12 | Extensions (mutable refs, by-name, etc.) | `Interp.scala` (eval cases) |
+| §2 | Core language syntax (Figure 2) | `Syntax.scala`, `ExtSyntax.scala` |
+| §2 | Stateful WadlerFest evaluator (Figures 3–4) | `WadlerFest.scala` |
+| §3.1 | 1-CPS transformation | `OneCPS.scala` |
+| §3.2 | 2-CPS definitional interpreter | `TwoCPS.scala` |
+| §3.3 | Delimited control (Figure 5) | `Delimited.scala` |
+| §4 | CEKM abstract machine (Figure 6) | `CEKM.scala` |
+| §5 | Reflect combinators, code cache | `TwoCPSOpt.scala` (`reflectAtom`, `Cache`) |
+| §6 | Common sub-expression elimination | `TwoCPSOpt.scala` (`reflectCse`) |
+| §7 | Constant folding | `TwoCPSOpt.scala` (`reflectSimp`) |
+| §8 | Dead-code elimination | `TwoCPSOpt.scala` (`reflectDce`) |
+| §9 | Partially-static data | `TwoCPSOpt.scala` (`reflectPS`), `Algebra.scala` |
+| §10 | Inlining with renormalization | `TwoCPSOpt.scala` (`reflectInline`, `renormalize`) |
+| §11 | Code motion (λ-hoisting) | `TwoCPSOpt.scala` (`hoist`, `reflectLam`) |
+| §12 | Extensions (mutable refs, by-name, etc.) | `TwoCPSOpt.scala` (eval cases) |
 
 ## 4. Getting Started
 
@@ -120,10 +123,10 @@ sbt test
 
 ```bash
 # The optimizing staged evaluator (paper §5–§12)
-sbt 'testOnly instar.interp.*'
+sbt 'testOnly instar.twocpsopt.*'
 
 # The family of definitional evaluators (paper §2–§4)
-sbt 'testOnly instar.experiment.*'
+sbt 'testOnly instar.cekm.* instar.wadlerfest.* instar.onecps.* instar.twocps.* instar.delimited.*'
 ```
 
 ### Run the tests for a single section / evaluator
@@ -131,39 +134,32 @@ sbt 'testOnly instar.experiment.*'
 Each paper section maps to a test class:
 
 ```bash
-sbt 'testOnly instar.interp.Section6_CSE'        # §6  CSE
-sbt 'testOnly instar.interp.Section9_PSD'        # §9  partially-static data
-sbt 'testOnly instar.interp.Section10_Inlining'  # §10 inlining
-sbt 'testOnly instar.experiment.cekm.CEKMTest'   # §4  CEKM machine
+sbt 'testOnly instar.wadlerfest.WadlerFestTest'           # §2  stateful evaluator
+sbt 'testOnly instar.onecps.OneCPSTest'                   # §3.1  1-CPS
+sbt 'testOnly instar.twocps.TwoCPSTest'                   # §3.2  2-CPS
+sbt 'testOnly instar.delimited.DelimitedTest'             # §3.3  delimited control
+sbt 'testOnly instar.cekm.CEKMTest'                       # §4  CEKM machine
+sbt 'testOnly instar.twocpsopt.Section6_CSE'              # §6  CSE
+sbt 'testOnly instar.twocpsopt.Section7_Folding'          # §7  constant folding
+sbt 'testOnly instar.twocpsopt.Section8_DCE'              # §8  dead-code elimination
+sbt 'testOnly instar.twocpsopt.Section9_PSD'              # §9  partially-static data
+sbt 'testOnly instar.twocpsopt.Section10_Inlining'        # §10 inlining
+sbt 'testOnly instar.twocpsopt.Section11_Hoisting'        # §11 λ-hoisting
+sbt 'testOnly instar.twocpsopt.Section12_Extensions'      # §12 extensions
 ```
-
-| Paper part | Test class |
-|------------|------------|
-| §2–§4 1-CPS evaluator | `instar.experiment.onecps.OneCPSTest` |
-| §2–§4 2-CPS evaluator | `instar.experiment.twocps.TwoCPSTest` |
-| §3.3 delimited control | `instar.experiment.delimited.DelimitedTest` |
-| §2 WadlerFest evaluator | `instar.experiment.wadlerfest.WadlerFestTest` |
-| §4 CEKM machine | `instar.experiment.cekm.CEKMTest` |
-| §6 CSE | `instar.interp.Section6_CSE` |
-| §7 constant folding | `instar.interp.Section7_Folding` |
-| §8 dead-code elimination | `instar.interp.Section8_DCE` |
-| §9 partially-static data | `instar.interp.Section9_PSD` |
-| §10 inlining / renormalization | `instar.interp.Section10_Inlining` |
-| §11 λ-hoisting | `instar.interp.Section11_Hoisting` |
-| §12 extensions | `instar.interp.Section12_CBN`, `…_Analysis`, `…_Extensions` |
 
 ### Run a single test case
 
 MUnit accepts a name filter via `--tests=`:
 
 ```bash
-sbt 'testOnly instar.interp.Section6_CSE -- --tests=cse-1'
+sbt 'testOnly instar.twocpsopt.Section6_CSE -- --tests=cse-1'
 ```
 
 ## 6. Reading the Tests and Reproducing Paper Examples
 
 Each test builds an input term as an AST value and asserts the staged result.
-A test looks like this (`src/test/scala/Interp.scala`):
+A test looks like this (`src/test/scala/TwoCPSOpt.scala`):
 
 ```scala
 test("cse-1") {
@@ -199,7 +195,7 @@ matching the derivations in the paper.
 ### Optimization flags
 
 The optimizing evaluator is configured through string flags (`Opt(...)` in
-`src/main/scala/Interp.scala`):
+`src/main/scala/TwoCPSOpt.scala`):
 
 | Flag | Optimization | Paper |
 |------|--------------|-------|

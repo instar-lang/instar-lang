@@ -9,7 +9,7 @@
 //   Section 11 — Code motion / λ-hoisting (hoist / hoistable / reflectLam)
 //   Section 12 — Extensions: mutable refs, rec functions, by-name, intensional analysis
 
-package instar.interp
+package instar.twocpsopt
 
 import instar.syntax.*
 import instar.Counter.*

@@ -1,10 +1,10 @@
 // Section 3.3: Direct-style staging via delimited control operators (shift/reset).
 // Simulates shift/reset monadically; reify/reflect correspond to reset/shift.
 
-package instar.experiment.delimited
+package instar.delimited
 
 import instar.Counter.*
-import instar.experiment.*
+import instar.*
 
 trait Monad[F[_]]:
   def pure[A](a: A): F[A]

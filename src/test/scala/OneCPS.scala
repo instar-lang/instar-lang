@@ -1,8 +1,8 @@
-package instar.experiment.wadlerfest
+package instar.onecps
 
-import instar.experiment.*
+import instar.*
 
-class WadlerFestTest extends munit.FunSuite:
+class OneCPSTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*

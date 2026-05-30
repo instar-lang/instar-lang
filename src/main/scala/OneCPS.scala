@@ -1,10 +1,10 @@
 // Section 3.1: 1-CPS transformation — eliminating mutable state with a single continuation.
 // Reifies ANF let-insertion via explicit delimited continuations.
 
-package instar.experiment.onecps
+package instar.onecps
 
 import instar.Counter.*
-import instar.experiment.*
+import instar.*
 
 import Stage.*
 import Expr.*

@@ -1,8 +1,8 @@
-package instar.experiment.twocps
+package instar.cekm
 
-import instar.experiment.*
+import instar.*
 
-class TwoCPSTest extends munit.FunSuite:
+class CEKMTest extends munit.FunSuite:
   import Stage.*
   import Expr.*
   import Value.*

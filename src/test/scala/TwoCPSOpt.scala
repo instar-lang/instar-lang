@@ -1,4 +1,4 @@
-package instar.interp
+package instar.twocpsopt
 
 import instar.syntax.*
 import Stage.*
