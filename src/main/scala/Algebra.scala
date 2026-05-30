@@ -116,7 +116,7 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
 
       sum ⊕ monomial
     }
-  
+
 // Multinomial itself is a ring structure
 class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
   def zero: Multinomial[X, T] = Multinomial(Map())

@@ -42,7 +42,7 @@ class Section6_CSE extends Base {
   }
 
   test("cse-lam-1") {
-    val f = ELift(ELam("y", 
+    val f = ELift(ELam("y",
       ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
       ELet("z2", EBinOp2("*", ENum2(2), ENum2(3)),
       EBinOp2("+", EVar("y"), EVar("z2"))))))
@@ -62,7 +62,7 @@ class Section6_CSE extends Base {
   }
 
   test("cse-lam-2") {
-    val f = ELift(ELam("y", 
+    val f = ELift(ELam("y",
       ELet("z1", EBinOp2("*", ENum2(2), ENum2(3)),
       ELet("z2", EBinOp2("*", ENum2(2), ENum2(3)),
       EBinOp2("+", EVar("y"), EVar("z2"))))))
@@ -100,7 +100,7 @@ class Section6_CSE extends Base {
   }
 
   test("cse-cond-2") {
-    val e = 
+    val e =
       ELet("x0", EBinOp2("*", ENum2(2), ENum2(3)),
       ECond2(
         EBinOp2("==", ENum2(1), ENum2(2)),
@@ -392,26 +392,17 @@ class Section9_PSD extends Base {
 
 class Section10_Inlining extends Base {
 
-  test("no-let-lam") {
-    val f = ELift(ELam("y", EBinOp2("+", EVar("y"), ENum2(2))))
-    val arg = ENum2(3)
-    val e3 = EApp2(f, arg)
-    testEval(e3,
-      """⟨code:
-        |  let x2 = (λx0.
-        |  let x1 = (x0 + 2) in
-        |  x1 3) in
-        |  x2⟩""".stripMargin, Set("no-let-lam"))
-  }
-
   test("inline-1") {
     val f = ELift(ELam("y", EBinOp2("+", EVar("y"), ENum2(2))))
     val arg = ENum2(3)
     val e4 = EApp2(f, arg)
     testEval(e4,
       """⟨code:
-        |  let x2 = (3 + 2) in
-        |  x2⟩""".stripMargin, Set("fun-inline", "no-let-lam"))
+        |  let x2 = λx0.
+        |    let x1 = (x0 + 2) in
+        |    x1 in
+        |  let x3 = (3 + 2) in
+        |  x3⟩""".stripMargin, Set("fun-inline"))
   }
 
   test("inline-2") {

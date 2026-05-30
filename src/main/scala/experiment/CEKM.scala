@@ -132,4 +132,4 @@ def eval(e: Expr): Value =
   clear
   stepn(EState(e, Map(), KHalt, MHalt)) match
     case AState(v, MHalt) => v
-    case _ => ???
+    case _ => throw new RuntimeException("Expect a final answer")

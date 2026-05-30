@@ -32,35 +32,43 @@ class CEKMTest extends munit.FunSuite:
   test("lam-app"):
     testEval(e1,
       """⟨code:
-        |  let x2 = λx0.
-        |    let x1 = (x0 + 1) in
-        |    x1 in
-        |  let x3 = (x2 41) in
-        |  x3⟩""".stripMargin)
+        |  let x3 = λx0.
+        |    let x1 = 1 in
+        |    let x2 = (x0 + x1) in
+        |    x2 in
+        |  let x4 = 41 in
+        |  let x5 = (x3 x4) in
+        |  x5⟩""".stripMargin)
     testEval(e2,
       """⟨code:
-        |  let x2 = λx0.
-        |    let x1 = (x0 + 1) in
-        |    x1 in
-        |  x2⟩""".stripMargin)
+        |  let x3 = λx0.
+        |    let x1 = 1 in
+        |    let x2 = (x0 + x1) in
+        |    x2 in
+        |  x3⟩""".stripMargin)
 
   test("cond"):
     testEval(e4,
       """⟨code:
-        |  let x8 = if true
+        |  let x0 = true in
+        |  let x13 = if x0
         |  then
-        |    let x2 = λx0.
-        |      let x1 = (x0 + 1) in
-        |      x1 in
-        |    let x3 = (x2 10) in
-        |    x3
+        |    let x4 = λx1.
+        |      let x2 = 1 in
+        |      let x3 = (x1 + x2) in
+        |      x3 in
+        |    let x5 = 10 in
+        |    let x6 = (x4 x5) in
+        |    x6
         |  else
-        |    let x6 = λx4.
-        |      let x5 = (x4 * 42) in
-        |      x5 in
-        |    let x7 = (x6 20) in
-        |    x7 in
-        |  x8⟩""".stripMargin)
+        |    let x10 = λx7.
+        |      let x8 = 42 in
+        |      let x9 = (x7 * x8) in
+        |      x9 in
+        |    let x11 = 20 in
+        |    let x12 = (x10 x11) in
+        |    x12 in
+        |  x13⟩""".stripMargin)
 
   test("run"):
     testEval(ENum(1), "1")
@@ -68,21 +76,25 @@ class CEKMTest extends munit.FunSuite:
 
     testEval(e2,
       """⟨code:
-        |  let x2 = λx0.
-        |    let x1 = (x0 + 1) in
-        |    x1 in
-        |  x2⟩""".stripMargin)
+        |  let x3 = λx0.
+        |    let x1 = 1 in
+        |    let x2 = (x0 + x1) in
+        |    x2 in
+        |  x3⟩""".stripMargin)
     testEval(ERun(e2),
       """⟨closure: λx0.
-        |  let x1 = (x0 + 1) in
-        |  x1⟩""".stripMargin)
+        |  let x1 = 1 in
+        |  let x2 = (x0 + x1) in
+        |  x2⟩""".stripMargin)
 
     val e2App = ELet("y", e2, EApp2(EVar("y"), ENum2(1)))
     testEval(e2App,
       """⟨code:
-        |  let x2 = λx0.
-        |    let x1 = (x0 + 1) in
-        |    x1 in
-        |  let x3 = (x2 1) in
-        |  x3⟩""".stripMargin)
+        |  let x3 = λx0.
+        |    let x1 = 1 in
+        |    let x2 = (x0 + x1) in
+        |    x2 in
+        |  let x4 = 1 in
+        |  let x5 = (x3 x4) in
+        |  x5⟩""".stripMargin)
     testEval(ERun(e2App), "2")

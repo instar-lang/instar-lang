@@ -63,6 +63,7 @@ def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Val
       case (VCode(body), σ1) =>
         γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
+
 // Section 5: Pass through atomic expressions without let-insertion (constant propagation)
 def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EUnit => k(VCode(EUnit), σ, γ)
@@ -74,6 +75,7 @@ object CachedExpr:
   def unapply(e: Expr)(using c: Cache): Option[EVar] =
     if (e.isPure && c.contains(e)) Some(EVar(c(e)))
     else None
+
 def reflectCse(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case CachedExpr(x) if Opt("cse") =>
     k(VCode(x), σ, γ)
@@ -86,8 +88,9 @@ object StaticConst:
       case EBool(b) => Some(VBool(b))
       case EVar(x) if c.inv.contains(x) => StaticConst.unapply(c.inv(x))
       case _ => None
+
 def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case EBinOp(op, StaticConst(v1), StaticConst(v2), _) if Opt("rewriting") =>
+  case EBinOp(op, StaticConst(v1), StaticConst(v2), _) if Opt("rewriting") && !Opt("ps") =>
     evalPrim(op, v1, v2) match
       case VNum(i) => reflect(ENum(i), σ, k, γ)
       case VBool(b) => reflect(EBool(b), σ, k, γ)
@@ -110,6 +113,7 @@ object CachedRingExpr:
       case EBinOp(op, e1, e2, _) if AddMulRingOps(op) => Some((op, e1, e2))
       case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
       case _ => None
+
 // Section 9: structural equivalence modulo let-normalization for PSD comparison
 extension (e1: Expr)
   def equivalent(e2: Expr)(using c: Cache): Boolean =
@@ -121,6 +125,7 @@ extension (e1: Expr)
       case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
         op1 == op2 && e11.equivalent(e21) && e12.equivalent(e22)
       case _ => e1 == e2
+
 // Section 9: detect expressions whose PSD normalization differs from the original
 object UnnormalizedExpr:
   def unapply(e: Expr)(using c: Cache): Option[Expr] =
@@ -130,6 +135,7 @@ object UnnormalizedExpr:
           cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
         if e.equivalent(normalized) then None else Some(e)
       case _ => None
+
 // Section 9: reinterpret expression as algebraic operations over the coproduct
 type NormalForm = AddMulRingCoproductImpl.Coprod
 
@@ -146,6 +152,7 @@ def evalPS(expr: Expr)(using c: Cache): NormalForm =
 def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
   renormalize(code, σ, k, γ)
+
 // Section 9: residualize the normalized PSD representation back into code
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
@@ -157,6 +164,7 @@ object StaticLam:
       case e@ELam(_, _) => Some(e)
       case EVar(f) if c.inv.contains(f) => StaticLam.unapply(c.inv(f))
       case _ => None
+
 // Section 10: renormalization — replay let-bindings through reflect to restore ANF after inlining
 def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = e match
   case ELet(x, rhs, body) =>
@@ -164,23 +172,22 @@ def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value,
       renormalize(body.subst(x, t), σ1, k, γ1)
     }, γ)
   case _ => k(VCode(e), σ, γ)
+
 // Section 10: substitute argument into function body, then renormalize to restore ANF
 def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EApp(StaticLam(ELam(x, body)), arg, _) if Opt("fun-inline") =>
     renormalize(body.subst(x, arg), σ, k, γ)
+
 // Section 10: statically choose a branch when the condition is constant
 def reflectCondSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case ECond(StaticConst(VBool(b)), e2, e3, _) if Opt("simp-cond") =>
     if b then renormalize(e2, σ, k, γ)
     else renormalize(e3, σ, k, γ)
 
-// Section 11: avoid let-inserting lambdas so they can be matched by inlining
-def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case e@ELam(_, _) if Opt("no-let-lam") =>
-    k(VCode(e), σ, γ)
 // Section 11: check whether a binding is independent of previously scheduled code
 def hoistable(e: Expr)(using c: Cache): Boolean =
   e.isPure && e.freeVar.intersect(c.allVals).isEmpty
+
 // Section 11: partition let-bindings — hoistable ones go into the meta-continuation
 def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   e match
@@ -198,7 +205,6 @@ def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store
 def reflect(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val funs = List(
     reflectAtom,
-    reflectLam,
     reflectInline,
     reflectSimp,
     reflectPS,
@@ -287,15 +293,6 @@ def eval(e: Expr, ρ: Env, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Valu
       eval(rhs, ρ, σ, (v, σ1, γ1) =>
         val l = σ1.size
         eval(e, ρ + (x -> l), σ1 + (l -> v), k, γ1), γ)
-    // Section 12: recursive let — allocate a store location, then tie the knot
-    case ELetRec(f, rhs, e) =>
-      eval(rhs, ρ, σ, {
-        case (VClo(x, body, ρf), σ1, γ1) =>
-          val l = σ1.size
-          val ρf1 = ρf + (f -> l)
-          val v = VClo(x, body, ρf1)
-          eval(e, ρ + (f -> l), σ1 + (l -> v), k, γ1)
-      }, γ)
     case ECond(e1, e2, e3, Sta) =>
       eval(e1, ρ, σ, { case (VBool(b), σ1, γ1) =>
         if b then eval(e2, ρ, σ1, k, γ1)
@@ -359,7 +356,16 @@ def eval(e: Expr, ρ: Env, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Valu
           reflect(EAssign1(x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
-    // Section 12: fixed-point combinator for recursive functions
+    // Section 12: letrec — allocate a store location, then tie the knot
+    case ELetRec(f, rhs, e) =>
+      eval(rhs, ρ, σ, {
+        case (VClo(x, body, ρf), σ1, γ1) =>
+          val l = σ1.size
+          val ρf1 = ρf + (f -> l)
+          val v = VClo(x, body, ρf1)
+          eval(e, ρ + (f -> l), σ1 + (l -> v), k, γ1)
+      }, γ)
+    // Section 12: or alternatively, fixed-point combinator for recursive functions
     case EFix(f, e, Sta) =>
       eval(e, ρ, σ, {
         case (VClo(x, body, ρf), σ1, γ1) =>

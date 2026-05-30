@@ -14,13 +14,10 @@ type Cont = (Value, MCont) => Value
 type MCont = Value => Value
 
 def reflect(e: Expr, k: Cont, γ: MCont): Value =
-  e match
-    case EUnit | ENum(_) | EBool(_) => k(VCode(e), γ)
-    case _ =>
-      val x = fresh()
-      k(VCode(EVar(x)), { case VCode(t) =>
-        γ(VCode(ELet(x, e, t)))
-      })
+  val x = fresh()
+  k(VCode(EVar(x)), { case VCode(t) =>
+    γ(VCode(ELet(x, e, t)))
+  })
 
 def reify(e: Expr, ρ: Env, γ: MCont): Value =
   eval(e, ρ, (x, γ1) => γ1(x), γ)
