@@ -63,11 +63,11 @@ def continue(s: State): State =
     case VState(VCode(e2), KAppR(VCode(e1), Dyn, k), γ) =>
       reflect(EApp1(e1, e2), k, γ)
     case VState(VUnit, KLift(k), γ) =>
-      VState(VCode(EUnit), k, γ)
+      reflect(EUnit, k, γ)
     case VState(VNum(i), KLift(k), γ) =>
-      VState(VCode(ENum(i)), k, γ)
+      reflect(ENum(i), k, γ)
     case VState(VBool(b), KLift(k), γ) =>
-      VState(VCode(EBool(b)), k, γ)
+      reflect(EBool(b), k, γ)
     case VState(VClo(x, body, ρ), KLift(k), γ) =>
       val y = fresh()
       EState(body, ρ + (x -> VCode(EVar(y))), KHalt, MCons(KLamc(y, k), γ))
