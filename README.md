@@ -101,10 +101,10 @@ sbt test
 ```
 
 The first invocation downloads Scala 3.8.0 and MUnit, then compiles and runs all
-**68 tests**. A successful run ends with a line such as:
+**67 tests**. A successful run ends with a line such as:
 
 ```
-[info] Passed: Total 68, Failed 0, Errors 0, Passed 68
+[info] Passed: Total 67, Failed 0, Errors 0, Passed 67
 [success] Total time: ... s
 ```
 
@@ -122,11 +122,11 @@ sbt test
 ### Run one part of the artifact
 
 ```bash
-# The optimizing staged evaluator (paper §5–§12)
-sbt 'testOnly instar.twocpsopt.*'
-
 # The family of definitional evaluators (paper §2–§4)
 sbt 'testOnly instar.cekm.* instar.wadlerfest.* instar.onecps.* instar.twocps.* instar.delimited.*'
+
+# The optimizing staged evaluator (paper §5–§12)
+sbt 'testOnly instar.twocpsopt.*'
 ```
 
 ### Run the tests for a single section / evaluator
