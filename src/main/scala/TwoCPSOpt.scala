@@ -105,7 +105,7 @@ def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
     })(using c + (e -> x))
 
 // Section 9: recognize ring operations (+/*) for partially-static simplification
-object CachedRingExpr:
+object RingExpr:
   val AddMulRingOps = Set("+", "*")
 
   def unapply(e: Expr)(using c: Cache): Option[(String, Expr, Expr)] =
@@ -136,11 +136,11 @@ def dyn(e: Expr)(using c: Cache): RingNF = e match
   case EVar(x) => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
   case e => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(c(e))))
 
-def evalPS(expr: Expr)(using c: Cache): RingNF =
+def evalRingPS(expr: Expr)(using c: Cache): RingNF =
   expr match
-    case EBinOp("+", e1, e2, _) => evalPS(e1) ⊕ evalPS(e2)
-    case EBinOp("*", e1, e2, _) => evalPS(e1) ⊗ evalPS(e2)
-    case EVar(x) if c.inv.contains(x) && c.inv(x).isPure => evalPS(c.inv(x))
+    case EBinOp("+", e1, e2, _) => evalRingPS(e1) ⊕ evalRingPS(e2)
+    case EBinOp("*", e1, e2, _) => evalRingPS(e1) ⊗ evalRingPS(e2)
+    case EVar(x) if c.inv.contains(x) && c.inv(x).isPure => evalRingPS(c.inv(x))
     case ENum(i) => sta(i)
     case e => dyn(e)
 
@@ -151,9 +151,9 @@ def evalPS(expr: Expr)(using c: Cache): RingNF =
 object OptimizableRingExpr:
   def unapply(e: Expr)(using c: Cache): Option[(Expr, Expr)] =
     e match
-      case CachedRingExpr(_, _, _) =>
+      case RingExpr(_, _, _) =>
         val normalized =
-          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
+          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalRingPS(e))
         if e.equivalent(normalized) then None else Some(e, normalized)
       case _ => None
 
