@@ -173,7 +173,7 @@ def coproductFromFreeMonoid[A, B](using m: Monoid[A], f: Free[Monoid, B]): Copro
       fa(co.a) ⊗ fb(co.b)
 
 // We can create a Coproduct of Ring and FreeRing.
-def coproductFromFreeRing[A, B](using r: Ring[A])(using f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
+def coproductFromFreeRing[A, B](using r: Ring[A], f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
   new Coproduct[Ring, A, f.FreeA]:
     case class Coprod(m: Multinomial[B, A])
     given ac: Ring[Coprod] with
@@ -195,7 +195,7 @@ given freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
 object AddMulRingCoproductImpl extends Coproduct[Ring, Int, freeRingCode.FreeA]:
   val inst: Coproduct[Ring, Int, freeRingCode.FreeA] =
-    coproductFromFreeRing[Int, Code](using summon[Ring[Int]])(using freeRingCode)
+    coproductFromFreeRing[Int, Code](using summon[Ring[Int]], freeRingCode)
 
   type Coprod = inst.Coprod
   given ac: Ring[Coprod] = inst.ac

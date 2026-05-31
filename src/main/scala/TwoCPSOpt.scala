@@ -126,27 +126,17 @@ extension (e1: Expr)
         op1 == op2 && e11.equivalent(e21) && e12.equivalent(e22)
       case _ => e1 == e2
 
-// Section 9: detect expressions whose PSD normalization differs from the original
-object UnnormalizedExpr:
-  def unapply(e: Expr)(using c: Cache): Option[Expr] =
-    e match
-      case CachedRingExpr(_, _, _) if Opt("ps") =>
-        val normalized =
-          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
-        if e.equivalent(normalized) then None else Some(e)
-      case _ => None
-
 // Section 9: reinterpret expression as algebraic operations over the coproduct
-type NormalForm = AddMulRingCoproductImpl.Coprod
+type RingNF = AddMulRingCoproductImpl.Coprod
 
-def sta(i: Int): NormalForm =
+def sta(i: Int): RingNF =
   AddMulRingCoproductImpl.inl(i)
 
-def dyn(e: Expr)(using c: Cache): NormalForm = e match
+def dyn(e: Expr)(using c: Cache): RingNF = e match
   case EVar(x) => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
   case e => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(c(e))))
 
-def evalPS(expr: Expr)(using c: Cache): NormalForm =
+def evalPS(expr: Expr)(using c: Cache): RingNF =
   expr match
     case EBinOp("+", e1, e2, _) => evalPS(e1) ⊕ evalPS(e2)
     case EBinOp("*", e1, e2, _) => evalPS(e1) ⊗ evalPS(e2)
@@ -154,13 +144,22 @@ def evalPS(expr: Expr)(using c: Cache): NormalForm =
     case ENum(i) => sta(i)
     case e => dyn(e)
 
-def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
-  val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
-  renormalize(code, σ, k, γ)
+// Section 9: detect expressions subject to partially-static optimizations.
+// They should has not been optimized already (equivalent to the normalized form),
+// and OptimizableRintExpr(e, optExpr) returns the original expression along with
+// the optimized version (optExpr).
+object OptimizableRingExpr:
+  def unapply(e: Expr)(using c: Cache): Option[(Expr, Expr)] =
+    e match
+      case CachedRingExpr(_, _, _) =>
+        val normalized =
+          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalPS(e))
+        if e.equivalent(normalized) then None else Some(e, normalized)
+      case _ => None
 
 // Section 9: residualize the normalized PSD representation back into code
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case UnnormalizedExpr(e) if Opt("ps") => residualizePS(evalPS(e), σ, k, γ)
+  case OptimizableRingExpr(e, optExpr) if Opt("ps") => renormalize(optExpr, σ, k, γ)
 
 // Section 10: recognize static lambda terms for β-inlining, either syntactically or via the cache
 object StaticLam:
