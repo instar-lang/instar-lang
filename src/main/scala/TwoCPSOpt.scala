@@ -139,15 +139,20 @@ object UnnormalizedExpr:
 // Section 9: reinterpret expression as algebraic operations over the coproduct
 type NormalForm = AddMulRingCoproductImpl.Coprod
 
-def dyn(x: String): NormalForm =
-  AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
+def sta(i: Int): NormalForm =
+  AddMulRingCoproductImpl.inl(i)
+
+def dyn(e: Expr)(using c: Cache): NormalForm = e match
+  case EVar(x) => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
+  case e => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(c(e))))
 
 def evalPS(expr: Expr)(using c: Cache): NormalForm =
   expr match
-    case CachedRingExpr("+", e1, e2) => evalPS(e1) ⊕ evalPS(e2)
-    case CachedRingExpr("*", e1, e2) => evalPS(e1) ⊗ evalPS(e2)
-    case ENum(i) => sta[Ring, Int](i)
-    case EVar(x) => dyn(x)
+    case EBinOp("+", e1, e2, _) => evalPS(e1) ⊕ evalPS(e2)
+    case EBinOp("*", e1, e2, _) => evalPS(e1) ⊗ evalPS(e2)
+    case EVar(x) if c.inv.contains(x) && c.inv(x).isPure => evalPS(c.inv(x))
+    case ENum(i) => sta(i)
+    case e => dyn(e)
 
 def residualizePS(repr: NormalForm, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
   val code = cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(repr)
