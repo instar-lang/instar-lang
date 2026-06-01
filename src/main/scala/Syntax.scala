@@ -57,7 +57,7 @@ private def pprint(e: Expr, d: Int): String =
     case ENum(i) => i.toString
     case EBool(b) => b.toString
     case EVar(x) => x
-    case ELam(x, b) => s"λ$x.\n${line(b, d + 1)}"
+    case ELam(x, b) => s"λ $x.\n${line(b, d + 1)}"
     case EApp(e1, e2, Sta) => s"(${show(e1)} ${show(e2)})"
     case EApp(e1, e2, Dyn) => s"(${show(e1)} @² ${show(e2)})"
     case ELift(t) => s"lift(${show(t)})"
@@ -74,7 +74,7 @@ private def pprint(e: Expr, d: Int): String =
 
 def show(v: Value): String = v match
   case VCode(e) => s"⟨code:\n${line(e, 1)}⟩"
-  case VClo(x, b, _) => s"⟨closure: λ$x.\n${line(b, 1)}⟩"
+  case VClo(x, b, _) => s"⟨closure: λ $x.\n${line(b, 1)}⟩"
   case VNum(i) => i.toString
   case VBool(b) => b.toString
   case VUnit => "()"

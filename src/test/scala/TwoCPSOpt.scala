@@ -52,7 +52,7 @@ class Section6_CSE extends Base {
       EApp2(EVar("f"), ENum2(3))))
     testEval(e,
       """⟨code:
-        |  let x3 = λx0.
+        |  let x3 = λ x0.
         |    let x1 = (2 * 3) in
         |    let x2 = (x0 + x1) in
         |    x2 in
@@ -73,7 +73,7 @@ class Section6_CSE extends Base {
     testEval(e,
       """⟨code:
         |  let x0 = (2 * 3) in
-        |  let x3 = λx1.
+        |  let x3 = λ x1.
         |    let x2 = (x1 + x0) in
         |    x2 in
         |  let x4 = (x3 3) in
@@ -140,7 +140,7 @@ class Section7_Folding extends Base {
       EBinOp2("*", EVar("x"), EVar("y"))))))
     testEval(e1,
       """⟨code:
-        |  let x3 = λx0.
+        |  let x3 = λ x0.
         |    let x1 = (x0 + 2) in
         |    let x2 = (x1 * 3) in
         |    x2 in
@@ -158,7 +158,7 @@ class Section8_DCE extends Base {
       EVar("y"))))
     testEval(e2,
       """⟨code:
-        |  let x2 = λx0.
+        |  let x2 = λ x0.
         |    x0 in
         |  x2⟩""".stripMargin, Set("dce"))
   }
@@ -172,7 +172,7 @@ class Section9_PSD extends Base {
     val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
     testEval(e1,
       """⟨code:
-        |  let x6 = λx0.
+        |  let x6 = λ x0.
         |    let x2 = (1 + x0) in
         |    let x5 = (4 + x0) in
         |    x5 in
@@ -188,7 +188,7 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EVar("x"))))))))
     testEval(e2,
       """⟨code:
-        |  let x15 = λx0.
+        |  let x15 = λ x0.
         |    let x2 = (1 + x0) in
         |    let x5 = (2 + x0) in
         |    let x8 = (3 + x0) in
@@ -208,8 +208,8 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
     testEval(e3,
       """⟨code:
-        |  let x18 = λx0.
-        |    let x17 = λx1.
+        |  let x18 = λ x0.
+        |    let x17 = λ x1.
         |      let x2 = (x1 x0) in
         |      let x4 = (1 + x2) in
         |      let x7 = (2 + x2) in
@@ -225,7 +225,7 @@ class Section9_PSD extends Base {
     val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
     testEval(e1,
       """⟨code:
-        |  let x6 = λx0.
+        |  let x6 = λ x0.
         |    let x5 = (4 + x0) in
         |    x5 in
         |  x6⟩""".stripMargin, Set("ps", "dce"))
@@ -241,8 +241,8 @@ class Section9_PSD extends Base {
         EApp2(EVar("f"), EVar("z")))))))))
     testEval(e1_5,
       """⟨code:
-        |  let x11 = λx0.
-        |    let x10 = λx1.
+        |  let x11 = λ x0.
+        |    let x10 = λ x1.
         |      let x3 = (1 + x0) in
         |      let x6 = (x1 x3) in
         |      let x7 = (x1 x3) in
@@ -261,7 +261,7 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EVar("x"))))))))
     testEval(e2,
       """⟨code:
-        |  let x15 = λx0.
+        |  let x15 = λ x0.
         |    let x14 = (5 + x0) in
         |    x14 in
         |  x15⟩""".stripMargin, Set("ps", "dce"))
@@ -277,8 +277,8 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
     testEval(e3,
       """⟨code:
-        |  let x18 = λx0.
-        |    let x17 = λx1.
+        |  let x18 = λ x0.
+        |    let x17 = λ x1.
         |      let x2 = (x1 x0) in
         |      let x16 = (5 + x2) in
         |      x16 in
@@ -294,8 +294,8 @@ class Section9_PSD extends Base {
         EBinOp2("+", ENum2(1), EVar("y")))))))
     testEval(e4,
       """⟨code:
-        |  let x14 = λx0.
-        |    let x13 = λx1.
+        |  let x14 = λ x0.
+        |    let x13 = λ x1.
         |      let x9 = (2 + x0) in
         |      let x12 = (x9 + x1) in
         |      x12 in
@@ -312,9 +312,9 @@ class Section9_PSD extends Base {
         EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y")))))))))))
     testEval(e5,
       """⟨code:
-        |  let x21 = λx0.
-        |    let x20 = λx1.
-        |      let x19 = λx2.
+        |  let x21 = λ x0.
+        |    let x20 = λ x1.
+        |      let x19 = λ x2.
         |        let x3 = (x0 x1) in
         |        let x6 = (x0 x2) in
         |        let x15 = (3 + x3) in
@@ -337,8 +337,8 @@ class Section9_PSD extends Base {
         EBinOp2("+", EVar("y"), ENum2(1))))))))
     testEval(e6,
       """⟨code:
-        |  let x30 = λx0.
-        |    let x29 = λx7.
+        |  let x30 = λ x0.
+        |    let x29 = λ x7.
         |      let x25 = (6 * x0) in
         |      let x28 = (3 + x25) in
         |      x28 in
@@ -358,10 +358,10 @@ class Section9_PSD extends Base {
       EApp2(EVar("f"), EVar("y"))))))
     testEval(e7,
       """⟨code:
-        |  let x30 = λx0.
+        |  let x30 = λ x0.
         |    let x3 = (2 * x0) in
-        |    let x28 = λx4.
-        |      let x27 = λx5.
+        |    let x28 = λ x4.
+        |      let x27 = λ x5.
         |        let x23 = (4 * x0) in
         |        let x26 = (2 + x23) in
         |        x26 in
@@ -378,7 +378,7 @@ class Section9_PSD extends Base {
         EBinOp2("+", EVar("x"), ENum2(1)))))
     testEval(e8,
       """⟨code:
-        |  let x23 = λx0.
+        |  let x23 = λ x0.
         |    let x12 = (2 * x0) in
         |    let x15 = (1 + x12) in
         |    let x17 = (x0 * x0) in
@@ -398,7 +398,7 @@ class Section10_Inlining extends Base {
     val e4 = EApp2(f, arg)
     testEval(e4,
       """⟨code:
-        |  let x2 = λx0.
+        |  let x2 = λ x0.
         |    let x1 = (x0 + 2) in
         |    x1 in
         |  let x3 = (3 + 2) in
@@ -419,7 +419,7 @@ class Section10_Inlining extends Base {
     val e = ELift(ELam("z", EApp2(EVar("z"), ENum2(3))))
     testEval(e,
       """⟨code:
-        |  let x2 = λx0.
+        |  let x2 = λ x0.
         |    let x1 = (x0 3) in
         |    x1 in
         |  x2⟩""".stripMargin, Set("fun-inline"))
@@ -438,8 +438,8 @@ class Section10_Inlining extends Base {
     testEval(e,
       """⟨code:
         |  let x0 = (42 + 42) in
-        |  let x10 = λx1.
-        |    let x6 = λx2.
+        |  let x10 = λ x1.
+        |    let x6 = λ x2.
         |      let x3 = (x2 + x0) in
         |      let x4 = (1 + 2) in
         |      let x5 = (x3 * x4) in
@@ -473,7 +473,7 @@ class Section10_Inlining extends Base {
       EBinOp2("/", EVar("r"), EVar("a")))))
     testEval(e,
       """⟨code:
-        |  let x4 = λx0.
+        |  let x4 = λ x0.
         |    let x1 = (42 * 100) in
         |    let x2 = (x0 + 2) in
         |    let x3 = (x1 + x2) in
@@ -495,7 +495,7 @@ class Section10_Inlining extends Base {
       EBinOp2("/", EVar("r"), EVar("a")))))
     testEval(e,
       """⟨code:
-        |  let x4 = λx0.
+        |  let x4 = λ x0.
         |    let x1 = (42 * 100) in
         |    let x2 = (x0 + 2) in
         |    let x3 = (x1 + x2) in
@@ -519,7 +519,7 @@ class Section10_Inlining extends Base {
       EBinOp2("/", EVar("r"), EVar("a")))))
     testEval(e,
       """⟨code:
-        |  let x4 = λx0.
+        |  let x4 = λ x0.
         |    let x1 = (42 * 100) in
         |    let x2 = (x0 + 2) in
         |    let x3 = (x1 + x2) in
@@ -560,7 +560,7 @@ class Section10_Inlining extends Base {
       EBinOp2("/", EVar("r"), EVar("a")))))
     testEval(e,
       """⟨code:
-        |  let x3 = λx0.
+        |  let x3 = λ x0.
         |    let x1 = (x0 + 2) in
         |    let x2 = (4200 + x1) in
         |    x2 in
@@ -609,7 +609,7 @@ class Section10_Inlining extends Base {
         EBinOp2("*", EVar("y"), EBinOp2("+", EVar("y"), ENum2(4)))))))
     testEval(e1,
       """⟨code:
-        |  let x5 = λx0.
+        |  let x5 = λ x0.
         |    let x4 = (x0 * 4) in
         |    x4 in
         |  x5⟩""".stripMargin, Set("rewriting", "simp-cond"))
@@ -621,7 +621,7 @@ class Section10_Inlining extends Base {
         EBinOp2("*", EVar("y"), EBinOp2("+", EVar("y"), ENum2(4)))))))
     testEval(e2,
       """⟨code:
-        |  let x6 = λx0.
+        |  let x6 = λ x0.
         |    let x4 = (x0 + 4) in
         |    let x5 = (x0 * x4) in
         |    x5 in
@@ -641,7 +641,7 @@ class Section11_Hoisting extends Base {
     testEval(e,
       """⟨code:
         |  let x5 = (1 + 2) in
-        |  let x6 = λx0.
+        |  let x6 = λ x0.
         |    let x1 = (x0 + 2) in
         |    let x3 = (x1 * x5) in
         |    x3 in
@@ -659,7 +659,7 @@ class Section11_Hoisting extends Base {
       """⟨code:
         |  let x0 = (42 + 42) in
         |  let x6 = (1 + 2) in
-        |  let x7 = λx1.
+        |  let x7 = λ x1.
         |    let x2 = (x1 + 2) in
         |    let x4 = (x2 * x6) in
         |    x4 in
@@ -677,7 +677,7 @@ class Section11_Hoisting extends Base {
       """⟨code:
         |  let x0 = (42 + 42) in
         |  let x6 = (x0 + 2) in
-        |  let x7 = λx1.
+        |  let x7 = λ x1.
         |    let x2 = (x1 + 2) in
         |    let x4 = (x2 * x6) in
         |    x4 in
@@ -698,8 +698,8 @@ class Section11_Hoisting extends Base {
       """⟨code:
         |  let x0 = (42 + 42) in
         |  let x11 = (1 + 2) in
-        |  let x12 = λx1.
-        |    let x8 = λx2.
+        |  let x12 = λ x1.
+        |    let x8 = λ x2.
         |      let x3 = (x2 + x0) in
         |      let x5 = (x3 * x11) in
         |      x5 in
@@ -762,7 +762,7 @@ class Section12_Analysis extends Base {
       ECond1(EIsApp(EVar("app")), EBool2(true), EBool2(false)))
     testEval(e,
       """⟨code:
-        |  let x1 = λx0.
+        |  let x1 = λ x0.
         |    x0 in
         |  let x2 = (x1 42) in
         |  true⟩""".stripMargin)
@@ -777,7 +777,7 @@ class Section12_Analysis extends Base {
     val e = ELift(EIsApp(EApp2(ELift(ELam("x", EVar("x"))), ENum2(42))))
     testEval(e,
       """⟨code:
-        |  let x1 = λx0.
+        |  let x1 = λ x0.
         |    x0 in
         |  let x2 = (x1 42) in
         |  true⟩""".stripMargin, Set("dce"))
@@ -845,14 +845,14 @@ class Section12_Extensions extends Base {
   test("lam-app") {
     testEval(e1,
       """⟨code:
-        |  let x2 = λx0.
+        |  let x2 = λ x0.
         |    let x1 = (x0 + 1) in
         |    x1 in
         |  let x3 = (x2 41) in
         |  x3⟩""".stripMargin)
     testEval(e2,
       """⟨code:
-        |  let x2 = λx0.
+        |  let x2 = λ x0.
         |    let x1 = (x0 + 1) in
         |    x1 in
         |  x2⟩""".stripMargin)
@@ -863,13 +863,13 @@ class Section12_Extensions extends Base {
       """⟨code:
         |  let x8 = if true
         |  then
-        |    let x2 = λx0.
+        |    let x2 = λ x0.
         |      let x1 = (x0 + 1) in
         |      x1 in
         |    let x3 = (x2 10) in
         |    x3
         |  else
-        |    let x6 = λx4.
+        |    let x6 = λ x4.
         |      let x5 = (x4 * 42) in
         |      x5 in
         |    let x7 = (x6 20) in
@@ -908,18 +908,19 @@ class Section12_Extensions extends Base {
   test("fix-second-stage") {
     testEval(e11,
       """⟨code:
-        |  let x8 = fix f0. let x7 = λx1.
-        |  let x2 = (x1 <= 1) in
-        |  let x6 = if x2
-        |  then
-        |    1
-        |  else
-        |    let x3 = (x1 - 1) in
-        |    let x4 = (f0 x3) in
-        |    let x5 = (x1 * x4) in
-        |    x5 in
-        |  x6 in
-        |x7 in
+        |  let x8 = fix f0.
+        |    let x7 = λ x1.
+        |      let x2 = (x1 <= 1) in
+        |      let x6 = if x2
+        |      then
+        |        1
+        |      else
+        |        let x3 = (x1 - 1) in
+        |        let x4 = (f0 x3) in
+        |        let x5 = (x1 * x4) in
+        |        x5 in
+        |      x6 in
+        |    x7 in
         |  let x9 = (x8 5) in
         |  x9⟩""".stripMargin)
     val (VCode(e), _) = eval(e11)
@@ -938,8 +939,8 @@ class Section12_Extensions extends Base {
     val e = ELift(ELam("x", ELift(ELam("y", EBinOp2("+", EVar("x"), EVar("y"))))))
     testEval(e,
       """⟨code:
-        |  let x4 = λx0.
-        |    let x3 = λx1.
+        |  let x4 = λ x0.
+        |    let x3 = λ x1.
         |      let x2 = (x0 + x1) in
         |      x2 in
         |    x3 in
@@ -953,12 +954,12 @@ class Section12_Extensions extends Base {
       ELift(ELam("x", EBinOp2("+", EVar("x"), ENum2(1))))
     testEval(e1,
       """⟨code:
-        |  let x2 = λx0.
+        |  let x2 = λ x0.
         |    let x1 = (x0 + 1) in
         |    x1 in
         |  x2⟩""".stripMargin)
     testEval(ERun(e1),
-      """⟨closure: λx0.
+      """⟨closure: λ x0.
         |  let x1 = (x0 + 1) in
         |  x1⟩""".stripMargin)
     val e2 = ELet(
@@ -967,7 +968,7 @@ class Section12_Extensions extends Base {
       EApp2(EVar("y"), ENum2(1)))
     testEval(e2,
       """⟨code:
-        |  let x2 = λx0.
+        |  let x2 = λ x0.
         |    let x1 = (x0 + 1) in
         |    x1 in
         |  let x3 = (x2 1) in

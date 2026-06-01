@@ -32,7 +32,7 @@ class OneCPSTest extends munit.FunSuite:
   test("lam-app"):
     testEval(e1,
       """⟨code:
-        |  let x3 = λx0.
+        |  let x3 = λ x0.
         |    let x1 = 1 in
         |    let x2 = (x0 + x1) in
         |    x2 in
@@ -41,7 +41,7 @@ class OneCPSTest extends munit.FunSuite:
         |  x5⟩""".stripMargin)
     testEval(e2,
       """⟨code:
-        |  let x3 = λx0.
+        |  let x3 = λ x0.
         |    let x1 = 1 in
         |    let x2 = (x0 + x1) in
         |    x2 in
@@ -53,7 +53,7 @@ class OneCPSTest extends munit.FunSuite:
         |  let x0 = true in
         |  let x13 = if x0
         |  then
-        |    let x4 = λx1.
+        |    let x4 = λ x1.
         |      let x2 = 1 in
         |      let x3 = (x1 + x2) in
         |      x3 in
@@ -61,7 +61,7 @@ class OneCPSTest extends munit.FunSuite:
         |    let x6 = (x4 x5) in
         |    x6
         |  else
-        |    let x10 = λx7.
+        |    let x10 = λ x7.
         |      let x8 = 42 in
         |      let x9 = (x7 * x8) in
         |      x9 in
@@ -76,13 +76,13 @@ class OneCPSTest extends munit.FunSuite:
 
     testEval(e2,
       """⟨code:
-        |  let x3 = λx0.
+        |  let x3 = λ x0.
         |    let x1 = 1 in
         |    let x2 = (x0 + x1) in
         |    x2 in
         |  x3⟩""".stripMargin)
     testEval(ERun(e2),
-      """⟨closure: λx0.
+      """⟨closure: λ x0.
         |  let x1 = 1 in
         |  let x2 = (x0 + x1) in
         |  x2⟩""".stripMargin)
@@ -90,7 +90,7 @@ class OneCPSTest extends munit.FunSuite:
     val e2App = ELet("y", e2, EApp2(EVar("y"), ENum2(1)))
     testEval(e2App,
       """⟨code:
-        |  let x3 = λx0.
+        |  let x3 = λ x0.
         |    let x1 = 1 in
         |    let x2 = (x0 + x1) in
         |    x2 in

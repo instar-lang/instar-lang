@@ -134,8 +134,8 @@ def pprint(e: Expr, d: Int): String =
     case ENum(i) => i.toString
     case EBool(b) => b.toString
     case EVar(x) => x
-    case ELam(x, b) => s"λ$x.\n${line(b, d + 1)}"
-    case EBNLam(x, b) => s"λb$x.\n${line(b, d + 1)}"
+    case ELam(x, b) => s"λ $x.\n${line(b, d + 1)}"
+    case EBNLam(x, b) => s"λb $x.\n${line(b, d + 1)}"
     case EApp(e1, e2, Sta) => s"(${show(e1)} ${show(e2)})"
     case EApp(e1, e2, Dyn) => s"(${show(e1)} @² ${show(e2)})"
     case ELift(t) => s"lift(${show(t)})"
@@ -156,16 +156,16 @@ def pprint(e: Expr, d: Int): String =
     case EDeref(e, Dyn) => s"!²${pprint(e, 0)}"
     case EAssign(e1, e2, Sta) => s"(${pprint(e1, 0)} := ${pprint(e2, 0)})"
     case EAssign(e1, e2, Dyn) => s"(${pprint(e1, 0)} :=² ${pprint(e2, 0)})"
-    case EFix(f, e, Sta) => s"fix $f. ${pprint(e, 0)}"
-    case EFix(f, e, Dyn) => s"fix² $f. ${pprint(e, 0)}"
+    case EFix(f, e, Sta) => s"fix $f.\n${line(e, d + 1)}"
+    case EFix(f, e, Dyn) => s"fix² $f.\n${line(e, d + 1)}"
     case ELoc(l) => s"<loc: $l>"
     case EIsApp(e) => s"isApp(${pprint(e, 0)})"
     case ECBNApp(e1, e2) => s"(${pprint(e1, 0)} @@ ${pprint(e2, 0)})"
 
 def show(v: Value): String = v match
   case VCode(e) => s"⟨code:\n${line(e, 1)}⟩"
-  case VClo(x, b, _) => s"⟨closure: λ$x.\n${line(b, 1)}⟩"
-  case VBNClo(x, b, _) => s"⟨by-name closure: λ$x.\n${line(b, 1)}⟩"
+  case VClo(x, b, _) => s"⟨closure: λ $x.\n${line(b, 1)}⟩"
+  case VBNClo(x, b, _) => s"⟨by-name closure: λ $x.\n${line(b, 1)}⟩"
   case VNum(i) => i.toString
   case VBool(b) => b.toString
   case VUnit => "()"
