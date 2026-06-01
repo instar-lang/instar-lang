@@ -104,16 +104,6 @@ def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
       else γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
 
-// Section 9: recognize ring operations (+/*) for partially-static simplification
-object RingExpr:
-  val AddMulRingOps = Set("+", "*")
-
-  def unapply(e: Expr)(using c: Cache): Option[(String, Expr, Expr)] =
-    e match
-      case EBinOp(op, e1, e2, _) if AddMulRingOps(op) => Some((op, e1, e2))
-      case EVar(x) if c.inv.contains(x) => unapply(c.inv(x))
-      case _ => None
-
 // Section 9: structural equivalence modulo let-normalization for PSD comparison
 extension (e1: Expr)
   def equivalent(e2: Expr)(using c: Cache): Boolean =
@@ -151,13 +141,13 @@ def evalRingPS(expr: Expr)(using c: Cache): RingNF =
 object OptimizableRingExpr:
   def unapply(e: Expr)(using c: Cache): Option[(Expr, Expr)] =
     e match
-      case RingExpr(_, _, _) =>
+      case EBinOp("+", _, _, _) | EBinOp("*", _, _, _) if Opt("ps") =>
         val normalized =
           cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalRingPS(e))
         if e.equivalent(normalized) then None else Some(e, normalized)
       case _ => None
 
-// Section 9: residualize the normalized PSD representation back into code
+// Section 9: optimize ring expressions that are not already in normal form
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case OptimizableRingExpr(e, optExpr) if Opt("ps") => renormalize(optExpr, σ, k, γ)
 
