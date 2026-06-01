@@ -139,24 +139,11 @@ class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
 
 // Multinomial can be served as free extension of ring for any type
 class FreeRing [T] extends Free[Ring, T]:
-  case class FreeA(terms: Multinomial[T, Int])
-
-  given af: Ring[FreeA] with
-    def zero: FreeA = FreeA(Multinomial(Map()))
-    def one: FreeA = FreeA(Multinomial(Map(Map() -> 1)))
-
-    extension (x: FreeA)
-      def ⊕(rhs: FreeA): FreeA =
-        FreeA(x.terms ⊕ rhs.terms)
-
-      def ⊗(rhs: FreeA): FreeA =
-        FreeA(x.terms ⊗ rhs.terms)
-
-  def pvar(x: T): FreeA = FreeA(Multinomial(Map(Map(x -> 1) -> 1)))
-
+  type FreeA = Multinomial[T, Int]
+  given af: Ring[FreeA] = new MultinomialRing[T, Int]
+  def pvar(x: T): FreeA = Multinomial(Map(Map(x -> 1) -> 1))
   def pbind[C: Ring](freeA: FreeA, f: T => C): C =
-    val ring = summon[Ring[C]]
-    evalMN(initMN)(f)(freeA.terms)
+    evalMN(initMN)(f)(freeA)
 
 given productMonoid[A: Monoid, B: Monoid]: Monoid[(A, B)] with
   def empty: (A, B) = (summon[Monoid[A]].empty, summon[Monoid[B]].empty)
@@ -182,7 +169,7 @@ given [A, B](using r: Ring[A], f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
     type Coprod = Multinomial[B, A]
     given ac: Ring[Coprod] = new MultinomialRing[B, A]
     def inl(a: A): Coprod = Multinomial(Map(Map.empty[B, Int] -> a))
-    def inr(b: f.FreeA): Coprod = Multinomial(b.terms.terms.map( { case (vars, coeff) =>
+    def inr(b: f.FreeA): Coprod = Multinomial(b.terms.map( { case (vars, coeff) =>
       vars -> initMN(coeff)(using r)
     }))
     def eva[C: Ring](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
