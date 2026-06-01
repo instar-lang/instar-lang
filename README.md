@@ -96,10 +96,13 @@ the build tool.
 
 ## 4. Getting Started
 
-From the repository root, run the entire test suite:
+The artifact is already unpacked in the VM image at
+`/home/artifact/let-it-be-optimized-artifact` (see the QEMU instructions below
+for how to log in). From the artifact's root directory, run the entire test suite:
 
-```bash
-sbt test
+```
+$ cd /home/artifact/let-it-be-optimized-artifact
+$ sbt test
 ```
 
 The first invocation downloads Scala 3.8.0 and MUnit, then compiles and runs all
