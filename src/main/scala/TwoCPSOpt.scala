@@ -107,14 +107,21 @@ def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
 // Section 9: structural equivalence modulo let-normalization for PSD comparison
 extension (e1: Expr)
   def equivalent(e2: Expr)(using c: Cache): Boolean =
+    def equiv(e1: Expr, e2: Expr, c1: Cache, c2: Cache): Boolean =
     (e1, e2) match
-      case (ELet(x1, e11, e12), _) => e12.equivalent(e2)(using c + (e11 -> x1))
-      case (_, ELet(x2, e21, e22)) => e1.equivalent(e22)(using c + (e21 -> x2))
-      case (EVar(x1), _) if c.inv.contains(x1) => c.inv(x1).equivalent(e2)
-      case (_, EVar(x2)) if c.inv.contains(x2) => e1.equivalent(c.inv(x2))
+        case (ELet(x1, e11, e12), _) =>
+          equiv(e12, e2, c1 + (e11 -> x1), c2)
+        case (_, ELet(x2, e21, e22)) =>
+          equiv(e1, e22, c1, c2 + (e21 -> x2))
+        case (EVar(x1), _) if c1.inv.contains(x1) =>
+          equiv(c1.inv(x1), e2, c1, c2)
+        case (_, EVar(x2)) if c2.inv.contains(x2) =>
+          equiv(e1, c2.inv(x2), c1, c2)
       case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
-        op1 == op2 && e11.equivalent(e21) && e12.equivalent(e22)
+          op1 == op2 && equiv(e11, e21, c1, c2) && equiv(e12, e22, c1, c2)
       case _ => e1 == e2
+
+    equiv(e1, e2, c, c)
 
 // Section 9: reinterpret expression as algebraic operations over the coproduct
 type RingNF = AddMulRingCoproductImpl.Coprod
