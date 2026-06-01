@@ -23,6 +23,7 @@ package:
 	# Drop anything that is not source: build output and OS/editor cruft.
 	find $(STAGE) -type d -name target -prune -exec rm -rf {} +
 	find $(STAGE) -type f -name '.DS_Store' -delete
+	find $(STAGE) -type f -name 'README.md' -delete
 	cd $(DIST) && zip -r $(ARTIFACT).zip $(ARTIFACT) >/dev/null
 	@echo "Created $(ZIP):"
 	@unzip -l $(ZIP)
