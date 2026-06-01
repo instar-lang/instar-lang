@@ -139,17 +139,17 @@ def evalRingPS(expr: Expr)(using c: Cache): RingNF =
 // and OptimizableRintExpr(e, optExpr) returns the original expression along with
 // the optimized version (optExpr).
 object OptimizableRingExpr:
-  def unapply(e: Expr)(using c: Cache): Option[(Expr, Expr)] =
+  def unapply(e: Expr)(using c: Cache): Option[Expr] =
     e match
       case EBinOp("+", _, _, _) | EBinOp("*", _, _, _) if Opt("ps") =>
         val normalized =
           cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalRingPS(e))
-        if e.equivalent(normalized) then None else Some(e, normalized)
+        if e.equivalent(normalized) then None else Some(normalized)
       case _ => None
 
 // Section 9: optimize ring expressions that are not already in normal form
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case OptimizableRingExpr(e, optExpr) if Opt("ps") => renormalize(optExpr, σ, k, γ)
+  case OptimizableRingExpr(optExpr) if Opt("ps") => renormalize(optExpr, σ, k, γ)
 
 // Section 10: recognize static lambda terms for β-inlining, either syntactically or via the cache
 object StaticLam:
