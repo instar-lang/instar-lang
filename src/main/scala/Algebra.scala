@@ -5,12 +5,6 @@ import instar.counter.freshPS
 import Expr.*
 import Stage.*
 
-extension [T](m1: Map[T, Int])
-  def ⊔(m2: Map[T, Int]): Map[T, Int] =
-    m1.foldLeft(m2) { case (acc, (k, v)) =>
-      acc + (k -> (v + acc.getOrElse(k, 0)))
-    }
-
 trait Monoid[T]:
   def empty: T
   extension (x: T)
@@ -37,6 +31,8 @@ trait Free[Algebra[_], T]:
   def pvar(x: T): FreeA
   def pbind[C: Algebra](freeA: FreeA, f: T => C): C
 
+type Code = Expr.EVar
+
 def sta[Algebra[_], A: Algebra](a: A)(using f: Free[Algebra, Code], c: Coproduct[Algebra, A, f.FreeA]): c.Coprod =
   c.inl(a)
 
@@ -51,21 +47,26 @@ def cd[Algebra[_], A: Algebra](using f: Free[Algebra, Code], a: Algebra[Expr], c
                               (co: c.Coprod) =
   c.eva(lift, (frc) => f.pbind(frc, (x => x: Expr)), co)
 
-case class MonomialRepr[T](vars: Map[T, Int])
+type Monomial[T] = Map[T, Int]
 
-// We can create free cmonoid for **any** type.
+extension [T](m1: Map[T, Int])
+  def ⊔(m2: Map[T, Int]): Map[T, Int] =
+    m1.foldLeft(m2) { case (acc, (k, v)) =>
+      acc + (k -> (v + acc.getOrElse(k, 0)))
+    }
+
+given monomialMonoid[T]: Monoid[Monomial[T]] with
+  def empty: Monomial[T] = Map()
+  extension (x: Monomial[T])
+    def ⊗(rhs: Monomial[T]): Monomial[T] = x ⊔ rhs
+
+// We can create free comm monoid for **any** type.
 class FreeCMonoid[T] extends Free[Monoid, T]:
-  type FreeA = MonomialRepr[T]
-
-  given af: Monoid[FreeA] with
-    def empty = MonomialRepr(Map())
-    extension (x: FreeA)
-      def ⊗(rhs: FreeA): FreeA = MonomialRepr(x.vars ⊔ rhs.vars)
-
-  def pvar(x: T): FreeA = MonomialRepr(Map(x -> 1))
-
+  type FreeA = Monomial[T]
+  given af: Monoid[FreeA] = monomialMonoid[T]
+  def pvar(x: T): FreeA = Map(x -> 1)
   def pbind[C: Monoid](freeA: FreeA, f: T => C): C =
-    freeA.vars.foldLeft(summon[Monoid[C]].empty) { case (acc, (v, count)) =>
+    freeA.foldLeft(summon[Monoid[C]].empty) { case (acc, (v, count)) =>
       val term = List.fill(count)(f(v)).reduce(_ ⊗ _)
       acc ⊗ term
     }
@@ -77,12 +78,11 @@ def initMN[R](n: Int)(using r: Ring[R]): R = n match
     val half = initMN(n / 2)
     if n % 2 == 0 then half ⊕ half else half ⊕ half ⊕ r.one
 
-case class Multinomial[X, A](terms: Map[Map[X, Int], A])
-
-type Code = Expr.EVar
+type MultiSet[X] = Map[X, Int]
+type Multinomial[X, A] = Map[MultiSet[X], A]
 
 // For any Ring[T], we can automatically get a Ring[Multinomial[X, T]]
-given [X, T](using r: Ring[T]): Ring[Multinomial[X, T]] = new MultinomialRing[X, T]
+given [X, T: Ring]: Ring[Multinomial[X, T]] = new MultinomialRing[X, T]
 
 given Ring[Int] with
   def zero: Int = 0
@@ -103,7 +103,7 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
       val x = power(a, n / 2)
       x ⊗ x
 
-  m.terms.toSeq
+  m.toSeq
     .sortBy { case (xs, _) =>
       xs.toSeq.sortBy { case (x, n) => (x.toString, n) }.mkString("|")
     }
@@ -113,27 +113,24 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
         .foldLeft(f1(a)) { case (prod, (x, n)) =>
           prod ⊗ power(f2(x), n)
         }
-
       sum ⊕ monomial
     }
 
 // Multinomial itself is a ring structure
 class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
-  def zero: Multinomial[X, T] = Multinomial(Map())
-  def one: Multinomial[X, T] = Multinomial(Map(Map() -> r.one))
+  def zero: Multinomial[X, T] = Map()
+  def one: Multinomial[X, T] = Map(Map() -> r.one)
 
   extension (x: Multinomial[X, T])
     def ⊕(rhs: Multinomial[X, T]): Multinomial[X, T] =
-      Multinomial(
-        (x.terms.keySet ++ rhs.terms.keySet).map { k =>
-          k -> (x.terms.getOrElse(k, r.zero) ⊕ rhs.terms.getOrElse(k, r.zero))
-        }.toMap
-      )
+      (x.keySet ++ rhs.keySet).map { k =>
+        k -> (x.getOrElse(k, r.zero) ⊕ rhs.getOrElse(k, r.zero))
+      }.toMap
 
     def ⊗(rhs: Multinomial[X, T]): Multinomial[X, T] =
-      x.terms.foldLeft(zero) { case (acc, (xs, c)) =>
-        acc ⊕ rhs.terms.foldLeft(zero) { case (Multinomial(acc), (rxs, coeff)) =>
-          Multinomial(acc + (rxs ⊔ xs -> c ⊗ coeff))
+      x.foldLeft(zero) { case (acc, (xs, c)) =>
+        acc ⊕ rhs.foldLeft(zero) { case (acc, (rxs, coeff)) =>
+          acc + (rxs ⊔ xs -> c ⊗ coeff)
         }
       }
 
@@ -141,7 +138,7 @@ class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
 class FreeRing [T] extends Free[Ring, T]:
   type FreeA = Multinomial[T, Int]
   given af: Ring[FreeA] = new MultinomialRing[T, Int]
-  def pvar(x: T): FreeA = Multinomial(Map(Map(x -> 1) -> 1))
+  def pvar(x: T): FreeA = Map(Map(x -> 1) -> 1)
   def pbind[C: Ring](freeA: FreeA, f: T => C): C =
     evalMN(initMN)(f)(freeA)
 
@@ -168,10 +165,10 @@ given [A, B](using r: Ring[A], f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
   new Coproduct[Ring, A, f.FreeA]:
     type Coprod = Multinomial[B, A]
     given ac: Ring[Coprod] = new MultinomialRing[B, A]
-    def inl(a: A): Coprod = Multinomial(Map(Map.empty[B, Int] -> a))
-    def inr(b: f.FreeA): Coprod = Multinomial(b.terms.map( { case (vars, coeff) =>
+    def inl(a: A): Coprod = Map(Map.empty[B, Int] -> a)
+    def inr(b: f.FreeA): Coprod = b.map { case (vars, coeff) =>
       vars -> initMN(coeff)(using r)
-    }))
+    }
     def eva[C: Ring](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
       evalMN(fa)((b: B) => fb(f.pvar(b)))(co)
 
