@@ -158,38 +158,35 @@ class FreeRing [T] extends Free[Ring, T]:
     val ring = summon[Ring[C]]
     evalMN(initMN)(f)(freeA.terms)
 
-// We can create a Coproduct of Monoid and FreeCMonoid.
-def coproductFromFreeMonoid[A, B](using m: Monoid[A], f: Free[Monoid, B]): Coproduct[Monoid, A, f.FreeA] =
-  new Coproduct[Monoid, A, f.FreeA]:
-    case class Coprod(a: A, b: f.FreeA)
-    given ac: Monoid[Coprod] with
-      def empty: Coprod = Coprod(m.empty, summon[Monoid[f.FreeA]].empty)
-      extension (x: Coprod)
-        def ⊗(rhs: Coprod): Coprod = Coprod(x.a ⊗ rhs.a, x.b ⊗ rhs.b)
+given productMonoid[A: Monoid, B: Monoid]: Monoid[(A, B)] with
+  def empty: (A, B) = (summon[Monoid[A]].empty, summon[Monoid[B]].empty)
+  extension (x: (A, B))
+    def ⊗(rhs: (A, B)): (A, B) =
+      val (a1, b1) = x
+      val (a2, b2) = rhs
+      (a1 ⊗ a2, b1 ⊗ b2)
 
-    def inl(a: A): Coprod = Coprod(a, summon[Monoid[f.FreeA]].empty)
-    def inr(b: f.FreeA): Coprod = Coprod(m.empty, b)
+// We can create a Coproduct of Monoid and FreeCMonoid.
+given [A, B](using m: Monoid[A], f: Free[Monoid, B]): Coproduct[Monoid, A, f.FreeA] =
+  new Coproduct[Monoid, A, f.FreeA]:
+    type Coprod = (A, f.FreeA)
+    given ac: Monoid[Coprod] = productMonoid[A, f.FreeA]
+    def inl(a: A): Coprod = (a, summon[Monoid[f.FreeA]].empty)
+    def inr(b: f.FreeA): Coprod = (m.empty, b)
     def eva[C: Monoid](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
-      fa(co.a) ⊗ fb(co.b)
+      fa(co._1) ⊗ fb(co._2)
 
 // We can create a Coproduct of Ring and FreeRing.
 given [A, B](using r: Ring[A], f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
   new Coproduct[Ring, A, f.FreeA]:
-    case class Coprod(m: Multinomial[B, A])
-    given ac: Ring[Coprod] with
-      def zero: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].zero)
-      def one: Coprod = Coprod(summon[Ring[Multinomial[B, A]]].one)
-      extension (x: Coprod)
-        def ⊕(rhs: Coprod): Coprod = Coprod(x.m ⊕ rhs.m)
-        def ⊗(rhs: Coprod): Coprod = Coprod(x.m ⊗ rhs.m)
-
-    def inl(a: A): Coprod = Coprod(Multinomial(Map(Map.empty[B, Int] -> a)))
-    def inr(b: f.FreeA): Coprod = Coprod(Multinomial(b.terms.terms.map( { case (vars, coeff) =>
+    type Coprod = Multinomial[B, A]
+    given ac: Ring[Coprod] = new MultinomialRing[B, A]
+    def inl(a: A): Coprod = Multinomial(Map(Map.empty[B, Int] -> a))
+    def inr(b: f.FreeA): Coprod = Multinomial(b.terms.terms.map( { case (vars, coeff) =>
       vars -> initMN(coeff)(using r)
-    })))
-
+    }))
     def eva[C: Ring](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
-      evalMN(fa)((b: B) => fb(f.pvar(b)))(co.m)
+      evalMN(fa)((b: B) => fb(f.pvar(b)))(co)
 
 given freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
