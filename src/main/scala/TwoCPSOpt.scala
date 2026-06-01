@@ -108,7 +108,7 @@ def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
 extension (e1: Expr)
   def equivalent(e2: Expr)(using c: Cache): Boolean =
     def equiv(e1: Expr, e2: Expr, c1: Cache, c2: Cache): Boolean =
-    (e1, e2) match
+      (e1, e2) match
         case (ELet(x1, e11, e12), _) =>
           equiv(e12, e2, c1 + (e11 -> x1), c2)
         case (_, ELet(x2, e21, e22)) =>
@@ -117,9 +117,9 @@ extension (e1: Expr)
           equiv(c1.inv(x1), e2, c1, c2)
         case (_, EVar(x2)) if c2.inv.contains(x2) =>
           equiv(e1, c2.inv(x2), c1, c2)
-      case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
+        case (EBinOp(op1, e11, e12, _), EBinOp(op2, e21, e22, _)) =>
           op1 == op2 && equiv(e11, e21, c1, c2) && equiv(e12, e22, c1, c2)
-      case _ => e1 == e2
+        case _ => e1 == e2
 
     equiv(e1, e2, c, c)
 
@@ -148,7 +148,7 @@ def evalRingPS(expr: Expr)(using c: Cache): RingNF =
 object OptimizableRingExpr:
   def unapply(e: Expr)(using c: Cache): Option[Expr] =
     e match
-      case EBinOp("+", _, _, _) | EBinOp("*", _, _, _) if Opt("ps") =>
+      case EBinOp("+", _, _, _) | EBinOp("*", _, _, _) =>
         val normalized =
           cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalRingPS(e))
         if e.equivalent(normalized) then None else Some(normalized)

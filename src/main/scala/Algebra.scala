@@ -1,7 +1,7 @@
 package instar.algebra
 
 import instar.syntax.*
-import instar.counter.fresh
+import instar.counter.freshPS
 import Expr.*
 import Stage.*
 
@@ -189,13 +189,13 @@ object AddMulRingExprImpl extends Ring[Expr]:
       case EUnit | ENum(_) | EBool(_) | EVar(_) => k(e)
       case ELet(x, rhs, body) => ELet(x, rhs, bindExpr(body)(k))
       case _ =>
-        val x = fresh()
+        val x = freshPS()
         ELet(x, e, k(EVar(x)))
 
   def anfBinOp(op: String, lhs: Expr, rhs: Expr): Expr =
     bindExpr(lhs) { lhsAtom =>
       bindExpr(rhs) { rhsAtom =>
-        val x = fresh()
+        val x = freshPS()
         ELet(x, EBinOp(op, lhsAtom, rhsAtom, Sta), EVar(x))
       }
     }

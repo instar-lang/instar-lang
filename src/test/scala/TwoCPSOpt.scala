@@ -172,11 +172,11 @@ class Section9_PSD extends Base {
     val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
     testEval(e1,
       """⟨code:
-        |  let x6 = λ x0.
-        |    let x2 = (1 + x0) in
-        |    let x5 = (4 + x0) in
-        |    x5 in
-        |  x6⟩""".stripMargin, Set("ps"))
+        |  let x3 = λ x0.
+        |    let x1 = (1 + x0) in
+        |    let x2 = (4 + x0) in
+        |    x2 in
+        |  x3⟩""".stripMargin, Set("ps"))
   }
 
   test("psd-2") {
@@ -188,14 +188,14 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EVar("x"))))))))
     testEval(e2,
       """⟨code:
-        |  let x15 = λ x0.
-        |    let x2 = (1 + x0) in
-        |    let x5 = (2 + x0) in
-        |    let x8 = (3 + x0) in
-        |    let x11 = (4 + x0) in
-        |    let x14 = (5 + x0) in
-        |    x14 in
-        |  x15⟩""".stripMargin, Set("ps"))
+        |  let x6 = λ x0.
+        |    let x1 = (1 + x0) in
+        |    let x2 = (2 + x0) in
+        |    let x3 = (3 + x0) in
+        |    let x4 = (4 + x0) in
+        |    let x5 = (5 + x0) in
+        |    x5 in
+        |  x6⟩""".stripMargin, Set("ps"))
   }
 
   test("psd-3") {
@@ -208,27 +208,27 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
     testEval(e3,
       """⟨code:
-        |  let x18 = λ x0.
-        |    let x17 = λ x1.
+        |  let x9 = λ x0.
+        |    let x8 = λ x1.
         |      let x2 = (x1 x0) in
-        |      let x4 = (1 + x2) in
-        |      let x7 = (2 + x2) in
-        |      let x10 = (3 + x2) in
-        |      let x13 = (4 + x2) in
-        |      let x16 = (5 + x2) in
-        |      x16 in
-        |    x17 in
-        |  x18⟩""".stripMargin, Set("ps"))
+        |      let x3 = (1 + x2) in
+        |      let x4 = (2 + x2) in
+        |      let x5 = (3 + x2) in
+        |      let x6 = (4 + x2) in
+        |      let x7 = (5 + x2) in
+        |      x7 in
+        |    x8 in
+        |  x9⟩""".stripMargin, Set("ps"))
   }
 
   test("psd-dce-1") {
     val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
     testEval(e1,
       """⟨code:
-        |  let x6 = λ x0.
-        |    let x5 = (4 + x0) in
-        |    x5 in
-        |  x6⟩""".stripMargin, Set("ps", "dce"))
+        |  let x3 = λ x0.
+        |    let x2 = (4 + x0) in
+        |    x2 in
+        |  x3⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-2") {
@@ -241,15 +241,15 @@ class Section9_PSD extends Base {
         EApp2(EVar("f"), EVar("z")))))))))
     testEval(e1_5,
       """⟨code:
-        |  let x11 = λ x0.
-        |    let x10 = λ x1.
-        |      let x3 = (1 + x0) in
-        |      let x6 = (x1 x3) in
-        |      let x7 = (x1 x3) in
-        |      let x9 = (x6 + x7) in
-        |      x9 in
-        |    x10 in
-        |  x11⟩""".stripMargin, Set("ps", "dce", "cse"))
+        |  let x7 = λ x0.
+        |    let x6 = λ x1.
+        |      let x2 = (1 + x0) in
+        |      let x3 = (x1 x2) in
+        |      let x4 = (x1 x2) in
+        |      let x5 = (x3 + x4) in
+        |      x5 in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps", "dce", "cse"))
   }
 
   test("psd-dce-3") {
@@ -261,10 +261,10 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EVar("x"))))))))
     testEval(e2,
       """⟨code:
-        |  let x15 = λ x0.
-        |    let x14 = (5 + x0) in
-        |    x14 in
-        |  x15⟩""".stripMargin, Set("ps", "dce"))
+        |  let x6 = λ x0.
+        |    let x5 = (5 + x0) in
+        |    x5 in
+        |  x6⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-4") {
@@ -277,13 +277,13 @@ class Section9_PSD extends Base {
       EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
     testEval(e3,
       """⟨code:
-        |  let x18 = λ x0.
-        |    let x17 = λ x1.
+        |  let x9 = λ x0.
+        |    let x8 = λ x1.
         |      let x2 = (x1 x0) in
-        |      let x16 = (5 + x2) in
-        |      x16 in
-        |    x17 in
-        |  x18⟩""".stripMargin, Set("ps", "dce"))
+        |      let x7 = (5 + x2) in
+        |      x7 in
+        |    x8 in
+        |  x9⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-5") {
@@ -294,13 +294,13 @@ class Section9_PSD extends Base {
         EBinOp2("+", ENum2(1), EVar("y")))))))
     testEval(e4,
       """⟨code:
-        |  let x14 = λ x0.
-        |    let x13 = λ x1.
-        |      let x9 = (2 + x0) in
-        |      let x12 = (x9 + x1) in
-        |      x12 in
-        |    x13 in
-        |  x14⟩""".stripMargin, Set("ps", "dce"))
+        |  let x7 = λ x0.
+        |    let x6 = λ x1.
+        |      let x4 = (2 + x0) in
+        |      let x5 = (x4 + x1) in
+        |      x5 in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-6") {
@@ -312,17 +312,17 @@ class Section9_PSD extends Base {
         EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y")))))))))))
     testEval(e5,
       """⟨code:
-        |  let x21 = λ x0.
-        |    let x20 = λ x1.
-        |      let x19 = λ x2.
+        |  let x12 = λ x0.
+        |    let x11 = λ x1.
+        |      let x10 = λ x2.
         |        let x3 = (x0 x1) in
-        |        let x6 = (x0 x2) in
-        |        let x15 = (3 + x3) in
-        |        let x18 = (x15 + x6) in
-        |        x18 in
-        |      x19 in
-        |    x20 in
-        |  x21⟩""".stripMargin, Set("ps", "dce"))
+        |        let x5 = (x0 x2) in
+        |        let x8 = (3 + x3) in
+        |        let x9 = (x8 + x5) in
+        |        x9 in
+        |      x10 in
+        |    x11 in
+        |  x12⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-7") {
@@ -337,13 +337,13 @@ class Section9_PSD extends Base {
         EBinOp2("+", EVar("y"), ENum2(1))))))))
     testEval(e6,
       """⟨code:
-        |  let x30 = λ x0.
-        |    let x29 = λ x7.
-        |      let x25 = (6 * x0) in
-        |      let x28 = (3 + x25) in
-        |      x28 in
-        |    x29 in
-        |  x30⟩""".stripMargin, Set("ps", "dce"))
+        |  let x11 = λ x0.
+        |    let x10 = λ x3.
+        |      let x8 = (6 * x0) in
+        |      let x9 = (3 + x8) in
+        |      x9 in
+        |    x10 in
+        |  x11⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-8") {
@@ -358,17 +358,17 @@ class Section9_PSD extends Base {
       EApp2(EVar("f"), EVar("y"))))))
     testEval(e7,
       """⟨code:
-        |  let x30 = λ x0.
-        |    let x3 = (2 * x0) in
-        |    let x28 = λ x4.
-        |      let x27 = λ x5.
-        |        let x23 = (4 * x0) in
-        |        let x26 = (2 + x23) in
-        |        x26 in
-        |      x27 in
-        |    let x29 = (x28 x3) in
-        |    x29 in
-        |  x30⟩""".stripMargin, Set("ps", "dce"))
+        |  let x13 = λ x0.
+        |    let x1 = (2 * x0) in
+        |    let x11 = λ x2.
+        |      let x10 = λ x3.
+        |        let x8 = (4 * x0) in
+        |        let x9 = (2 + x8) in
+        |        x9 in
+        |      x10 in
+        |    let x12 = (x11 x1) in
+        |    x12 in
+        |  x13⟩""".stripMargin, Set("ps", "dce"))
   }
 
   test("psd-dce-9") {
@@ -378,13 +378,13 @@ class Section9_PSD extends Base {
         EBinOp2("+", EVar("x"), ENum2(1)))))
     testEval(e8,
       """⟨code:
-        |  let x23 = λ x0.
-        |    let x12 = (2 * x0) in
-        |    let x15 = (1 + x12) in
-        |    let x17 = (x0 * x0) in
-        |    let x22 = (x15 + x17) in
-        |    x22 in
-        |  x23⟩""".stripMargin, Set("ps", "dce"))
+        |  let x7 = λ x0.
+        |    let x3 = (2 * x0) in
+        |    let x4 = (1 + x3) in
+        |    let x5 = (x0 * x0) in
+        |    let x6 = (x4 + x5) in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps", "dce"))
   }
 }
 
