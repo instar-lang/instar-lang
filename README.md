@@ -1,6 +1,6 @@
 # ICFP 2026 Artifact
 
-Name:    **Let It Be Optimized: Building Multi-Stage Evaluators with Let-Insertion and Optimizations in Small Pieces**
+Name:    **Let It Be Optimized: Building Multi-Stage Evaluators with Let-Insertion and Optimizations in Small Pieces (Functional Pearl)**
 
 ## 1. Paper Summary
 
