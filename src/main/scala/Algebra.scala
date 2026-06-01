@@ -81,9 +81,6 @@ def initMN[R](n: Int)(using r: Ring[R]): R = n match
 type MultiSet[X] = Map[X, Int]
 type Multinomial[X, A] = Map[MultiSet[X], A]
 
-// For any Ring[T], we can automatically get a Ring[Multinomial[X, T]]
-given [X, T: Ring]: Ring[Multinomial[X, T]] = new MultinomialRing[X, T]
-
 given Ring[Int] with
   def zero: Int = 0
   def one: Int = 1
@@ -116,8 +113,9 @@ def evalMN[X, A, B](f1: A => B)(f2: X => B)(m: Multinomial[X, A])(using r1: Ring
       sum ⊕ monomial
     }
 
-// Multinomial itself is a ring structure
-class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
+// For any Ring[T], Multinomial[X, T] is also a Ring
+given multinomialRing[X, T: Ring]: Ring[Multinomial[X, T]] with
+  val r = summon[Ring[T]]
   def zero: Multinomial[X, T] = Map()
   def one: Multinomial[X, T] = Map(Map() -> r.one)
 
@@ -137,10 +135,12 @@ class MultinomialRing[X, T](using r: Ring[T]) extends Ring[Multinomial[X, T]]:
 // Multinomial can be served as free extension of ring for any type
 class FreeRing [T] extends Free[Ring, T]:
   type FreeA = Multinomial[T, Int]
-  given af: Ring[FreeA] = new MultinomialRing[T, Int]
+  given af: Ring[FreeA] = multinomialRing[T, Int]
   def pvar(x: T): FreeA = Map(Map(x -> 1) -> 1)
   def pbind[C: Ring](freeA: FreeA, f: T => C): C =
     evalMN(initMN)(f)(freeA)
+
+given freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
 given productMonoid[A: Monoid, B: Monoid]: Monoid[(A, B)] with
   def empty: (A, B) = (summon[Monoid[A]].empty, summon[Monoid[B]].empty)
@@ -164,15 +164,13 @@ given [A, B](using m: Monoid[A], f: Free[Monoid, B]): Coproduct[Monoid, A, f.Fre
 given [A, B](using r: Ring[A], f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
   new Coproduct[Ring, A, f.FreeA]:
     type Coprod = Multinomial[B, A]
-    given ac: Ring[Coprod] = new MultinomialRing[B, A]
+    given ac: Ring[Coprod] = multinomialRing[B, A]
     def inl(a: A): Coprod = Map(Map.empty[B, Int] -> a)
     def inr(b: f.FreeA): Coprod = b.map { case (vars, coeff) =>
       vars -> initMN(coeff)(using r)
     }
     def eva[C: Ring](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
       evalMN(fa)((b: B) => fb(f.pvar(b)))(co)
-
-given freeRingCode: FreeRing[Code] = new FreeRing[Code]
 
 val AddMulRingCoproductImpl: Coproduct[Ring, Int, freeRingCode.FreeA] =
   summon[Coproduct[Ring, Int, freeRingCode.FreeA]]
