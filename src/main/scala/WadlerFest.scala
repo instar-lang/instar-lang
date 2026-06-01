@@ -3,7 +3,7 @@
 
 package instar.wadlerfest
 
-import instar.Counter.*
+import instar.counter.*
 import instar.*
 
 import Stage.*

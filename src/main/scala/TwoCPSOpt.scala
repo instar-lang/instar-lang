@@ -12,7 +12,7 @@
 package instar.twocpsopt
 
 import instar.syntax.*
-import instar.Counter.*
+import instar.counter.{fresh, clear}
 import instar.BiMap
 import instar.algebra.*
 import instar.algebra.{freeRingCode, given}

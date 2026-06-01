@@ -3,7 +3,7 @@
 
 package instar.cekm
 
-import instar.Counter.*
+import instar.counter.*
 import instar.*
 
 import Stage.*

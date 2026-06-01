@@ -3,7 +3,7 @@
 
 package instar.delimited
 
-import instar.Counter.*
+import instar.counter.*
 import instar.*
 
 trait Monad[F[_]]:

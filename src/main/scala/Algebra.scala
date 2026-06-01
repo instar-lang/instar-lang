@@ -1,7 +1,7 @@
 package instar.algebra
 
 import instar.syntax.*
-import instar.Counter.fresh
+import instar.counter.fresh
 import Expr.*
 import Stage.*
 
