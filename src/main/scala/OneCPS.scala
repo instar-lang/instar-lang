@@ -21,7 +21,6 @@ def reflect(e: Expr, k: Value => Value): Value =
 
 def lift(v: Value, k: Value => Value): Value =
   v match
-    case VUnit => reflect(EUnit, k)
     case VNum(i) => reflect(ENum(i), k)
     case VBool(b) => reflect(EBool(b), k)
     case VClo(x, body, ρf) =>
@@ -41,14 +40,10 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
     case (">", VNum(i1), VNum(i2)) => VBool(i1 > i2)
     case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
     case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
-
-def evalPrimUnary(op: String, v: Value): Value =
-  (op, v) match
-    case ("-", VNum(i)) => VNum(-i)
+    case _ => throw new RuntimeException("Unexpected operation")
 
 def eval(e: Expr, ρ: Env, k: Value => Value): Value =
   e match
-    case EUnit => k(VUnit)
     case ENum(i) => k(VNum(i))
     case EBool(b) => k(VBool(b))
     case EVar(x) => k(ρ(x))
@@ -87,12 +82,6 @@ def eval(e: Expr, ρ: Env, k: Value => Value): Value =
         eval(e2, ρ, { case VCode(x2) =>
           reflect(EBinOp1(op, x1, x2), k)
         })
-      })
-    case EUnaryOp(op, e, Sta) =>
-      eval(e, ρ, v => k(evalPrimUnary(op, v)))
-    case EUnaryOp(op, e, Dyn) =>
-      eval(e, ρ, { case VCode(x) =>
-        reflect(EUnaryOp1(op, x), k)
       })
 
 def eval(e: Expr): Value =

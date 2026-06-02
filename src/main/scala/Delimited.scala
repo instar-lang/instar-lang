@@ -54,6 +54,7 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
     case (">", VNum(i1), VNum(i2)) => VBool(i1 > i2)
     case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
     case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
+    case _ => throw new RuntimeException("Unexpected operation")
 
 def reflect(e: Expr): Cont[Value, Value] =
   val x = fresh()
@@ -66,7 +67,6 @@ def reify(e: Expr, ρ: Env): Cont[Value, Value] =
 
 def lift(v: Value): Cont[Value, Value] =
   v match
-    case VUnit => reflect(EUnit)
     case VNum(i) => reflect(ENum(i))
     case VBool(b) => reflect(EBool(b))
     case VClo(x, body, ρf) =>
@@ -78,7 +78,6 @@ def lift(v: Value): Cont[Value, Value] =
 
 def eval(e: Expr, ρ: Env): Cont[Value, Value] =
   e match
-    case EUnit => pure(VUnit)
     case ENum(i) => pure(VNum(i))
     case EBool(b) => pure(VBool(b))
     case EVar(x) => pure(ρ(x))

@@ -7,7 +7,6 @@ enum Stage:
   case Sta, Dyn
 
 enum Expr:
-  case EUnit
   case ENum(i: Int)
   case EBool(b: Boolean)
   case EVar(name: String)
@@ -18,10 +17,8 @@ enum Expr:
   case ELet(x: String, rhs: Expr, body: Expr)
   case ECond(e1: Expr, e2: Expr, e3: Expr, st: Stage)
   case EBinOp(op: String, e1: Expr, e2: Expr, st: Stage)
-  case EUnaryOp(op: String, e: Expr, st: Stage)
 
 enum Value:
-  case VUnit
   case VNum(i: Int)
   case VBool(b: Boolean)
   case VClo(x: String, body: Expr, ρ: Env)
@@ -43,8 +40,6 @@ def ECond1(e1: Expr, e2: Expr, e3: Expr): Expr = ECond(e1, e2, e3, Sta)
 def ECond2(e1: Expr, e2: Expr, e3: Expr): Expr = ECond(e1, e2, e3, Dyn)
 def EBinOp1(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Sta)
 def EBinOp2(op: String, e1: Expr, e2: Expr): Expr = EBinOp(op, e1, e2, Dyn)
-def EUnaryOp1(op: String, e: Expr): Expr = EUnaryOp(op, e, Sta)
-def EUnaryOp2(op: String, e: Expr): Expr = EUnaryOp(op, e, Dyn)
 
 def show(e: Expr): String = pprint(e, 0)
 
@@ -53,7 +48,6 @@ private def line(e: Expr, d: Int): String = s"${"  " * d}${pprint(e, d)}"
 private def pprint(e: Expr, d: Int): String =
   val I = "  " * d
   e match
-    case EUnit => "()"
     case ENum(i) => i.toString
     case EBool(b) => b.toString
     case EVar(x) => x
@@ -69,12 +63,9 @@ private def pprint(e: Expr, d: Int): String =
       s"if² ${show(e1)}\n${I}then\n${line(e2, d + 1)}\n${I}else\n${line(e3, d + 1)}"
     case EBinOp(op, e1, e2, Sta) => s"(${pprint(e1, 0)} $op ${pprint(e2, 0)})"
     case EBinOp(op, e1, e2, Dyn) => s"(${pprint(e1, 0)} $op² ${pprint(e2, 0)})"
-    case EUnaryOp(op, e, Sta) => s"($op ${pprint(e, 0)})"
-    case EUnaryOp(op, e, Dyn) => s"($op² ${pprint(e, 0)})"
 
 def show(v: Value): String = v match
   case VCode(e) => s"⟨code:\n${line(e, 1)}⟩"
   case VClo(x, b, _) => s"⟨closure: λ $x.\n${line(b, 1)}⟩"
   case VNum(i) => i.toString
   case VBool(b) => b.toString
-  case VUnit => "()"

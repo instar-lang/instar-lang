@@ -49,6 +49,7 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
     case (">", VNum(i1), VNum(i2)) => VBool(i1 > i2)
     case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
     case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
+    case _ => throw new RuntimeException("Unexpected operation")
 
 def reflect(e: Expr, k: Cont, γ: MCont): VState =
   val x = fresh()
@@ -62,8 +63,6 @@ def continue(s: State): State =
       EState(body, ρ + (x -> v), k, γ)
     case VState(VCode(e2), KAppR(VCode(e1), Dyn, k), γ) =>
       reflect(EApp1(e1, e2), k, γ)
-    case VState(VUnit, KLift(k), γ) =>
-      reflect(EUnit, k, γ)
     case VState(VNum(i), KLift(k), γ) =>
       reflect(ENum(i), k, γ)
     case VState(VBool(b), KLift(k), γ) =>
@@ -100,7 +99,6 @@ def mcontinue(s: State): State =
 
 def step(s: State): State =
   s match
-    case EState(EUnit, _, k, γ) => VState(VUnit, k, γ)
     case EState(ENum(i), _, k, γ) => VState(VNum(i), k, γ)
     case EState(EBool(b), _, k, γ) => VState(VBool(b), k, γ)
     case EState(ELam(x, body), ρ, k, γ) => VState(VClo(x, body, ρ), k, γ)

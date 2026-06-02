@@ -50,10 +50,12 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
     case (">", VNum(i1), VNum(i2)) => VBool(i1 > i2)
     case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
     case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
+    case _ => throw new RuntimeException("Unexpected operation")
 
 def evalPrimUnary(op: String, v: Value): Value =
   (op, v) match
     case ("-", VNum(i)) => VNum(-i)
+    case _ => throw new RuntimeException("Unexpected operation")
 
 // Section 5: default fallback — let-insert a fresh variable and record it in the cache
 def reflectDefault(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =

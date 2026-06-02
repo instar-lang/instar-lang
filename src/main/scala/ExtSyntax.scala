@@ -58,7 +58,7 @@ extension (e: Expr)
 
   def freeVar: Set[String] =
     e match
-      case EUnit | ENum(_) | EBool(_) => Set()
+      case EUnit | ENum(_) | EBool(_) | ELoc(_) => Set()
       case EVar(x) => Set(x)
       case ELam(x, body) => body.freeVar - x
       case EBNLam(x, body) => body.freeVar - x
@@ -75,10 +75,11 @@ extension (e: Expr)
       case EDeref(e, _) => e.freeVar
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EFix(f, e, _) => e.freeVar - f
+      case EIsApp(e) => e.freeVar
 
   def subst(from: String, to: Expr): Expr =
     e match
-      case EUnit | ENum(_) | EBool(_) => e
+      case EUnit | ENum(_) | EBool(_) | ELoc(_) => e
       case EVar(x) => if x == from then to else e
       case ELam(x, body) => ELam(x, body.subst(from, to))
       case EBNLam(x, body) => EBNLam(x, body.subst(from, to))
