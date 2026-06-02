@@ -124,14 +124,13 @@ extension (e1: Expr)
     equiv(e1, e2, c, c)
 
 // Section 9: reinterpret expression as algebraic operations over the coproduct
-type RingNF = AddMulRingCoproductImpl.Coprod
+type RingNF = AddMulRingCoproduct.Coprod
 
-def sta(i: Int): RingNF =
-  AddMulRingCoproductImpl.inl(i)
+def sta(i: Int): RingNF = AddMulRingCoproduct.inl(i)
 
 def dyn(e: Expr)(using c: Cache): RingNF = e match
-  case EVar(x) => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(x)))
-  case e => AddMulRingCoproductImpl.inr(freeRingCode.pvar(EVar(c(e))))
+  case EVar(x) => AddMulRingCoproduct.inr(freeRingCode.pvar(EVar(x)))
+  case e => AddMulRingCoproduct.inr(freeRingCode.pvar(EVar(c(e))))
 
 def evalRingPS(expr: Expr)(using c: Cache): RingNF =
   expr match
@@ -143,14 +142,13 @@ def evalRingPS(expr: Expr)(using c: Cache): RingNF =
 
 // Section 9: detect expressions subject to partially-static optimizations.
 // They should has not been optimized already (equivalent to the normalized form),
-// and OptimizableRintExpr(e, optExpr) returns the original expression along with
-// the optimized version (optExpr).
+// and OptimizableRingExpr(optExpr) returns the original expression.
 object OptimizableRingExpr:
   def unapply(e: Expr)(using c: Cache): Option[Expr] =
     e match
       case EBinOp("+", _, _, _) | EBinOp("*", _, _, _) =>
         val normalized =
-          cd(using freeRingCode, AddMulRingExprImpl, AddMulRingCoproductImpl)(evalRingPS(e))
+          cd(using freeRingCode, AddMulRingExpr, AddMulRingCoproduct)(evalRingPS(e))
         if e.equivalent(normalized) then None else Some(normalized)
       case _ => None
 

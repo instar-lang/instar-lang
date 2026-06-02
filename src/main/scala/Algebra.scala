@@ -172,10 +172,10 @@ given [A, B](using r: Ring[A], f: FreeRing[B]): Coproduct[Ring, A, f.FreeA] =
     def eva[C: Ring](fa: A => C, fb: f.FreeA => C, co: Coprod): C =
       evalMN(fa)((b: B) => fb(f.pvar(b)))(co)
 
-val AddMulRingCoproductImpl: Coproduct[Ring, Int, freeRingCode.FreeA] =
+val AddMulRingCoproduct: Coproduct[Ring, Int, freeRingCode.FreeA] =
   summon[Coproduct[Ring, Int, freeRingCode.FreeA]]
 
-object AddMulRingExprImpl extends Ring[Expr]:
+object AddMulRingExpr extends Ring[Expr]:
   def zero: Expr = ENum(0)
   def one: Expr = ENum(1)
 
