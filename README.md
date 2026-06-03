@@ -223,7 +223,7 @@ same code and the same tests:
 - **From source.** It is a small, ordinary Scala 3 / sbt project. With the
   environment set up correctly (JDK 17, sbt 1.11+, Scala 3.8.0 and MUnit
   are fetched automatically on first build), you can unpack the sources and run
-  `sbt test` directly — no VM required.
+  `sbt test` directly.
 - **From the VM image.** We also ship a pre-provisioned QEMU image in which
   the toolchain and the artifact are already installed. It exists purely as a
   convenience for reviewers who would rather not set up a Scala 3 toolchain
