@@ -745,9 +745,9 @@ class Section11_Hoisting extends Base {
 
 // -- Section 12: Extensions -----------------------------------------------
 
-// --- Call-by-name ---
+// --- Recursive functions, mutable references, run, call-by-name ---
 
-class Section12_CBN extends Base {
+class Section12_Extensions extends Base {
 
   test("cbn") {
     val e1 = ECBNApp(ELam("x", EBinOp("+", EVar("x"), EVar("x"), Dyn)),
@@ -784,12 +784,6 @@ class Section12_CBN extends Base {
         |  let x1 = (x0 + x0) in
         |  x1⟩""".stripMargin)
   }
-}
-
-
-// --- Recursive functions, mutable references, run ---
-
-class Section12_Extensions extends Base {
 
   val e1 = EApp2(
     ELift(ELam("x", EBinOp2("+", EVar("x"), ENum2(1)))),
