@@ -61,7 +61,7 @@ the build tool.
 │   ├── OneCPS.scala          # 1-CPS evaluator (§3.1)
 │   ├── TwoCPS.scala          # 2-CPS definitional interpreter (§3.2)
 │   ├── Delimited.scala       # Direct-style via shift/reset (§3.3, Figure 5)
-│   ├── CEKM.scala            # CEKM abstract machine (§4, Figure 6)
+│   ├── CEKM.scala            # CEKM abstract machine (§4, Figure 6/7)
 │   ├── TwoCPSOpt.scala       # Optimizing staged evaluator (§5–§12)
 │   ├── BiMap.scala           # Bidirectional map (code cache, §5.2)
 │   ├── Algebra.scala         # Partially-static data algebra (§9)
