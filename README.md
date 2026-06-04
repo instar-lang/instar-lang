@@ -56,7 +56,7 @@ the build tool.
 ├── build.sbt
 ├── src/main/scala/
 │   ├── Syntax.scala          # Shared syntax for definitional evaluators (§2, Figure 2)
-│   ├── ExtSyntax.scala       # Full core two-stage language AST
+│   ├── ExtSyntax.scala       # Full core two-stage language AST (§12 and EIsApp in §9)
 │   ├── WadlerFest.scala      # Stateful evaluator (§2, Figures 3–4)
 │   ├── OneCPS.scala          # 1-CPS evaluator (§3.1)
 │   ├── TwoCPS.scala          # 2-CPS definitional interpreter (§3.2)
