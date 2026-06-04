@@ -64,7 +64,7 @@ the build tool.
 │   ├── CEKM.scala            # CEKM abstract machine (§4, Figure 6/7)
 │   ├── TwoCPSOpt.scala       # Optimizing staged evaluator (§5–§12)
 │   ├── BiMap.scala           # Bidirectional map (code cache, §5.2)
-│   ├── Algebra.scala         # Partially-static data algebra (§9)
+│   ├── Algebra.scala         # Partially-static data algebra (§10)
 │   └── Counter.scala         # Fresh variable name generator
 └── src/test/scala/
     ├── WadlerFest.scala      # Tests for the stateful evaluator (§2)
@@ -84,7 +84,7 @@ the build tool.
 | §3.1 | 1-CPS transformation | `OneCPS.scala` |
 | §3.2 | 2-CPS definitional interpreter | `TwoCPS.scala` |
 | §3.3 | Delimited control (Figure 5) | `Delimited.scala` |
-| §4 | CEKM abstract machine (Figure 6) | `CEKM.scala` |
+| §4 | CEKM abstract machine (Figure 6/7) | `CEKM.scala` |
 | §5 | Reflect combinators, code cache | `TwoCPSOpt.scala` (`reflectAtom`, `Cache`) |
 | §6 | Common sub-expression elimination | `TwoCPSOpt.scala` (`reflectCse`) |
 | §7 | Constant folding | `TwoCPSOpt.scala` (`reflectSimp`) |
