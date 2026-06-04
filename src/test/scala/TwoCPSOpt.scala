@@ -164,233 +164,9 @@ class Section8_DCE extends Base {
   }
 }
 
-// -- Section 9: Partially-static data -------------------------------------
+// -- Section 9: Inlining with renormalization ----------------------------
 
-class Section9_PSD extends Base {
-
-  test("psd-1") {
-    val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
-    testEval(e1,
-      """⟨code:
-        |  let x3 = λ x0.
-        |    let x1 = (1 + x0) in
-        |    let x2 = (4 + x0) in
-        |    x2 in
-        |  x3⟩""".stripMargin, Set("ps"))
-  }
-
-  test("psd-2") {
-    val e2 = ELift(ELam("x",
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1), EVar("x"))))))))
-    testEval(e2,
-      """⟨code:
-        |  let x6 = λ x0.
-        |    let x1 = (1 + x0) in
-        |    let x2 = (2 + x0) in
-        |    let x3 = (3 + x0) in
-        |    let x4 = (4 + x0) in
-        |    let x5 = (5 + x0) in
-        |    x5 in
-        |  x6⟩""".stripMargin, Set("ps"))
-  }
-
-  test("psd-3") {
-    val e3 = ELift(ELam("x",
-      ELift(ELam("f",
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
-    testEval(e3,
-      """⟨code:
-        |  let x9 = λ x0.
-        |    let x8 = λ x1.
-        |      let x2 = (x1 x0) in
-        |      let x3 = (1 + x2) in
-        |      let x4 = (2 + x2) in
-        |      let x5 = (3 + x2) in
-        |      let x6 = (4 + x2) in
-        |      let x7 = (5 + x2) in
-        |      x7 in
-        |    x8 in
-        |  x9⟩""".stripMargin, Set("ps"))
-  }
-
-  test("psd-dce-1") {
-    val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
-    testEval(e1,
-      """⟨code:
-        |  let x3 = λ x0.
-        |    let x2 = (4 + x0) in
-        |    x2 in
-        |  x3⟩""".stripMargin, Set("ps", "dce"))
-  }
-
-  test("psd-dce-2") {
-    val e1_5 = ELift(ELam("x",
-      ELift(ELam("f",
-      ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
-      ELet("z", EBinOp2("+", EVar("x"), ENum2(1)),
-      EBinOp2("+",
-        EApp2(EVar("f"), EVar("y")),
-        EApp2(EVar("f"), EVar("z")))))))))
-    testEval(e1_5,
-      """⟨code:
-        |  let x7 = λ x0.
-        |    let x6 = λ x1.
-        |      let x2 = (1 + x0) in
-        |      let x3 = (x1 x2) in
-        |      let x4 = (x1 x2) in
-        |      let x5 = (x3 + x4) in
-        |      x5 in
-        |    x6 in
-        |  x7⟩""".stripMargin, Set("ps", "dce", "cse"))
-  }
-
-  test("psd-dce-3") {
-    val e2 = ELift(ELam("x",
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1), EVar("x"))))))))
-    testEval(e2,
-      """⟨code:
-        |  let x6 = λ x0.
-        |    let x5 = (5 + x0) in
-        |    x5 in
-        |  x6⟩""".stripMargin, Set("ps", "dce"))
-  }
-
-  test("psd-dce-4") {
-    val e3 = ELift(ELam("x",
-      ELift(ELam("f",
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1),
-      EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
-    testEval(e3,
-      """⟨code:
-        |  let x9 = λ x0.
-        |    let x8 = λ x1.
-        |      let x2 = (x1 x0) in
-        |      let x7 = (5 + x2) in
-        |      x7 in
-        |    x8 in
-        |  x9⟩""".stripMargin, Set("ps", "dce"))
-  }
-
-  test("psd-dce-5") {
-    val e4 = ELift(ELam("x",
-      ELift(ELam("y",
-      EBinOp2("+",
-        EBinOp2("+", ENum2(1), EVar("x")),
-        EBinOp2("+", ENum2(1), EVar("y")))))))
-    testEval(e4,
-      """⟨code:
-        |  let x7 = λ x0.
-        |    let x6 = λ x1.
-        |      let x4 = (2 + x0) in
-        |      let x5 = (x4 + x1) in
-        |      x5 in
-        |    x6 in
-        |  x7⟩""".stripMargin, Set("ps", "dce"))
-  }
-
-  test("psd-dce-6") {
-    val e5 = ELift(ELam("f",
-      ELift(ELam("x",
-      ELift(ELam("y",
-      EBinOp2("+",
-        EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x"))),
-        EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y")))))))))))
-    testEval(e5,
-      """⟨code:
-        |  let x12 = λ x0.
-        |    let x11 = λ x1.
-        |      let x10 = λ x2.
-        |        let x3 = (x0 x1) in
-        |        let x5 = (x0 x2) in
-        |        let x8 = (3 + x3) in
-        |        let x9 = (x8 + x5) in
-        |        x9 in
-        |      x10 in
-        |    x11 in
-        |  x12⟩""".stripMargin, Set("ps", "dce"))
-  }
-
-  test("psd-dce-7") {
-    val e6 = ELift(ELam("x",
-      ELet("y",
-        EBinOp2("+",
-          EBinOp2("+", EVar("x"), EVar("x")),
-          EVar("x")),
-      ELift(ELam("z",
-      EBinOp2("+",
-        EBinOp2("+", EVar("y"), ENum2(2)),
-        EBinOp2("+", EVar("y"), ENum2(1))))))))
-    testEval(e6,
-      """⟨code:
-        |  let x11 = λ x0.
-        |    let x10 = λ x3.
-        |      let x8 = (6 * x0) in
-        |      let x9 = (3 + x8) in
-        |      x9 in
-        |    x10 in
-        |  x11⟩""".stripMargin, Set("ps", "dce"))
-  }
-
-  test("psd-dce-8") {
-    val e7 = ELift(ELam("x",
-      ELet("y", EBinOp2("+", EVar("x"), EVar("x")),
-      ELet("f",
-        ELift(ELam("z",
-        ELift(ELam("w",
-        EBinOp2("+",
-          EBinOp2("+", EVar("y"), ENum2(1)),
-          EBinOp2("+", EVar("y"), ENum2(1))))))),
-      EApp2(EVar("f"), EVar("y"))))))
-    testEval(e7,
-      """⟨code:
-        |  let x13 = λ x0.
-        |    let x1 = (2 * x0) in
-        |    let x11 = λ x2.
-        |      let x10 = λ x3.
-        |        let x8 = (4 * x0) in
-        |        let x9 = (2 + x8) in
-        |        x9 in
-        |      x10 in
-        |    let x12 = (x11 x1) in
-        |    x12 in
-        |  x13⟩""".stripMargin, Set("ps", "dce"))
-  }
-
-  test("psd-dce-9") {
-    val e8 = ELift(ELam("x",
-      EBinOp2("*",
-        EBinOp2("+", EVar("x"), ENum2(1)),
-        EBinOp2("+", EVar("x"), ENum2(1)))))
-    testEval(e8,
-      """⟨code:
-        |  let x7 = λ x0.
-        |    let x3 = (2 * x0) in
-        |    let x4 = (1 + x3) in
-        |    let x5 = (x0 * x0) in
-        |    let x6 = (x4 + x5) in
-        |    x6 in
-        |  x7⟩""".stripMargin, Set("ps", "dce"))
-  }
-}
-
-// -- Section 10: Inlining with renormalization ----------------------------
-
-class Section10_Inlining extends Base {
+class Section9_Inlining extends Base {
 
   test("inline-1") {
     val f = ELift(ELam("y", EBinOp2("+", EVar("y"), ENum2(2))))
@@ -626,6 +402,230 @@ class Section10_Inlining extends Base {
         |    let x5 = (x0 * x4) in
         |    x5 in
         |  x6⟩""".stripMargin, Set("rewriting", "simp-cond"))
+  }
+}
+
+// -- Section 10: Partially-static data -------------------------------------
+
+class Section10_PSD extends Base {
+
+  test("psd-1") {
+    val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
+    testEval(e1,
+      """⟨code:
+        |  let x3 = λ x0.
+        |    let x1 = (1 + x0) in
+        |    let x2 = (4 + x0) in
+        |    x2 in
+        |  x3⟩""".stripMargin, Set("ps"))
+  }
+
+  test("psd-2") {
+    val e2 = ELift(ELam("x",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EVar("x"))))))))
+    testEval(e2,
+      """⟨code:
+        |  let x6 = λ x0.
+        |    let x1 = (1 + x0) in
+        |    let x2 = (2 + x0) in
+        |    let x3 = (3 + x0) in
+        |    let x4 = (4 + x0) in
+        |    let x5 = (5 + x0) in
+        |    x5 in
+        |  x6⟩""".stripMargin, Set("ps"))
+  }
+
+  test("psd-3") {
+    val e3 = ELift(ELam("x",
+      ELift(ELam("f",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
+    testEval(e3,
+      """⟨code:
+        |  let x9 = λ x0.
+        |    let x8 = λ x1.
+        |      let x2 = (x1 x0) in
+        |      let x3 = (1 + x2) in
+        |      let x4 = (2 + x2) in
+        |      let x5 = (3 + x2) in
+        |      let x6 = (4 + x2) in
+        |      let x7 = (5 + x2) in
+        |      x7 in
+        |    x8 in
+        |  x9⟩""".stripMargin, Set("ps"))
+  }
+
+  test("psd-dce-1") {
+    val e1 = ELift(ELam("x", EBinOp2("+", ENum2(3), EBinOp2("+", ENum2(1), EVar("x")))))
+    testEval(e1,
+      """⟨code:
+        |  let x3 = λ x0.
+        |    let x2 = (4 + x0) in
+        |    x2 in
+        |  x3⟩""".stripMargin, Set("ps", "dce"))
+  }
+
+  test("psd-dce-2") {
+    val e1_5 = ELift(ELam("x",
+      ELift(ELam("f",
+      ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
+      ELet("z", EBinOp2("+", EVar("x"), ENum2(1)),
+      EBinOp2("+",
+        EApp2(EVar("f"), EVar("y")),
+        EApp2(EVar("f"), EVar("z")))))))))
+    testEval(e1_5,
+      """⟨code:
+        |  let x7 = λ x0.
+        |    let x6 = λ x1.
+        |      let x2 = (1 + x0) in
+        |      let x3 = (x1 x2) in
+        |      let x4 = (x1 x2) in
+        |      let x5 = (x3 + x4) in
+        |      x5 in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps", "dce", "cse"))
+  }
+
+  test("psd-dce-3") {
+    val e2 = ELift(ELam("x",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EVar("x"))))))))
+    testEval(e2,
+      """⟨code:
+        |  let x6 = λ x0.
+        |    let x5 = (5 + x0) in
+        |    x5 in
+        |  x6⟩""".stripMargin, Set("ps", "dce"))
+  }
+
+  test("psd-dce-4") {
+    val e3 = ELift(ELam("x",
+      ELift(ELam("f",
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1),
+      EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x")))))))))))
+    testEval(e3,
+      """⟨code:
+        |  let x9 = λ x0.
+        |    let x8 = λ x1.
+        |      let x2 = (x1 x0) in
+        |      let x7 = (5 + x2) in
+        |      x7 in
+        |    x8 in
+        |  x9⟩""".stripMargin, Set("ps", "dce"))
+  }
+
+  test("psd-dce-5") {
+    val e4 = ELift(ELam("x",
+      ELift(ELam("y",
+      EBinOp2("+",
+        EBinOp2("+", ENum2(1), EVar("x")),
+        EBinOp2("+", ENum2(1), EVar("y")))))))
+    testEval(e4,
+      """⟨code:
+        |  let x7 = λ x0.
+        |    let x6 = λ x1.
+        |      let x4 = (2 + x0) in
+        |      let x5 = (x4 + x1) in
+        |      x5 in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps", "dce"))
+  }
+
+  test("psd-dce-6") {
+    val e5 = ELift(ELam("f",
+      ELift(ELam("x",
+      ELift(ELam("y",
+      EBinOp2("+",
+        EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("x"))),
+        EBinOp2("+", ENum2(1), EBinOp2("+", ENum2(1), EApp2(EVar("f"), EVar("y")))))))))))
+    testEval(e5,
+      """⟨code:
+        |  let x12 = λ x0.
+        |    let x11 = λ x1.
+        |      let x10 = λ x2.
+        |        let x3 = (x0 x1) in
+        |        let x5 = (x0 x2) in
+        |        let x8 = (3 + x3) in
+        |        let x9 = (x8 + x5) in
+        |        x9 in
+        |      x10 in
+        |    x11 in
+        |  x12⟩""".stripMargin, Set("ps", "dce"))
+  }
+
+  test("psd-dce-7") {
+    val e6 = ELift(ELam("x",
+      ELet("y",
+        EBinOp2("+",
+          EBinOp2("+", EVar("x"), EVar("x")),
+          EVar("x")),
+      ELift(ELam("z",
+      EBinOp2("+",
+        EBinOp2("+", EVar("y"), ENum2(2)),
+        EBinOp2("+", EVar("y"), ENum2(1))))))))
+    testEval(e6,
+      """⟨code:
+        |  let x11 = λ x0.
+        |    let x10 = λ x3.
+        |      let x8 = (6 * x0) in
+        |      let x9 = (3 + x8) in
+        |      x9 in
+        |    x10 in
+        |  x11⟩""".stripMargin, Set("ps", "dce"))
+  }
+
+  test("psd-dce-8") {
+    val e7 = ELift(ELam("x",
+      ELet("y", EBinOp2("+", EVar("x"), EVar("x")),
+      ELet("f",
+        ELift(ELam("z",
+        ELift(ELam("w",
+        EBinOp2("+",
+          EBinOp2("+", EVar("y"), ENum2(1)),
+          EBinOp2("+", EVar("y"), ENum2(1))))))),
+      EApp2(EVar("f"), EVar("y"))))))
+    testEval(e7,
+      """⟨code:
+        |  let x13 = λ x0.
+        |    let x1 = (2 * x0) in
+        |    let x11 = λ x2.
+        |      let x10 = λ x3.
+        |        let x8 = (4 * x0) in
+        |        let x9 = (2 + x8) in
+        |        x9 in
+        |      x10 in
+        |    let x12 = (x11 x1) in
+        |    x12 in
+        |  x13⟩""".stripMargin, Set("ps", "dce"))
+  }
+
+  test("psd-dce-9") {
+    val e8 = ELift(ELam("x",
+      EBinOp2("*",
+        EBinOp2("+", EVar("x"), ENum2(1)),
+        EBinOp2("+", EVar("x"), ENum2(1)))))
+    testEval(e8,
+      """⟨code:
+        |  let x7 = λ x0.
+        |    let x3 = (2 * x0) in
+        |    let x4 = (1 + x3) in
+        |    let x5 = (x0 * x0) in
+        |    let x6 = (x4 + x5) in
+        |    x6 in
+        |  x7⟩""".stripMargin, Set("ps", "dce"))
   }
 }
 

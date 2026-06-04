@@ -84,13 +84,13 @@ the build tool.
 | §3.1 | 1-CPS transformation | `OneCPS.scala` |
 | §3.2 | 2-CPS definitional interpreter | `TwoCPS.scala` |
 | §3.3 | Delimited control (Figure 5) | `Delimited.scala` |
-| §4 | CEKM abstract machine (Figure 6/7) | `CEKM.scala` |
+| §4 | CEKM abstract machine (Figures 6-7) | `CEKM.scala` |
 | §5 | Reflect combinators, code cache | `TwoCPSOpt.scala` (`reflectAtom`, `Cache`) |
 | §6 | Common sub-expression elimination | `TwoCPSOpt.scala` (`reflectCse`) |
 | §7 | Constant folding | `TwoCPSOpt.scala` (`reflectSimp`) |
 | §8 | Dead-code elimination | `TwoCPSOpt.scala` (`reflectDce`) |
-| §9 | Partially-static data | `TwoCPSOpt.scala` (`reflectPS`), `Algebra.scala` |
-| §10 | Inlining with renormalization | `TwoCPSOpt.scala` (`reflectInline`, `renormalize`) |
+| §9 | Inlining with renormalization | `TwoCPSOpt.scala` (`reflectInline`, `renormalize`) |
+| §10 | Partially-static data | `TwoCPSOpt.scala` (`reflectPS`), `Algebra.scala` |
 | §11 | Code motion (λ-hoisting) | `TwoCPSOpt.scala` (`hoist`, `reflectLam`) |
 | §12 | Extensions (mutable refs, by-name, etc.) | `TwoCPSOpt.scala` (eval cases) |
 
@@ -147,8 +147,8 @@ sbt 'testOnly instar.cekm.CEKMTest'                       # §4  CEKM machine
 sbt 'testOnly instar.twocpsopt.Section6_CSE'              # §6  CSE
 sbt 'testOnly instar.twocpsopt.Section7_Folding'          # §7  constant folding
 sbt 'testOnly instar.twocpsopt.Section8_DCE'              # §8  dead-code elimination
-sbt 'testOnly instar.twocpsopt.Section9_PSD'              # §9  partially-static data
-sbt 'testOnly instar.twocpsopt.Section10_Inlining'        # §10 inlining
+sbt 'testOnly instar.twocpsopt.Section9_Inlining'         # §9  inlining
+sbt 'testOnly instar.twocpsopt.Section10_PSD'             # §10 partially-static data
 sbt 'testOnly instar.twocpsopt.Section11_Hoisting'        # §11 λ-hoisting
 sbt 'testOnly instar.twocpsopt.Section12_Extensions'      # §12 extensions
 ```
@@ -207,9 +207,9 @@ The optimizing evaluator is configured through string flags (`Opt(...)` in
 | `cse` | common sub-expression elimination | §6 |
 | `rewriting` | constant folding / static rewriting | §7 |
 | `dce` | dead-code elimination | §8 |
-| `ps` | partially-static data | §9 |
-| `fun-inline` | function inlining | §10 |
-| `simp-cond` | conditional simplification | §10 |
+| `fun-inline` | function inlining | §9 |
+| `simp-cond` | conditional simplification | §9 |
+| `ps` | partially-static data | §10 |
 | `lam-hoist` | code motion / λ-hoisting | §11 |
 
 With no flags enabled, the evaluator performs only the baseline staging of §5

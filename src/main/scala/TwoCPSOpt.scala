@@ -4,8 +4,8 @@
 //   Section 6  — Common sub-expression elimination (reflectCse / CachedExpr)
 //   Section 7  — Constant folding (reflectSimp / StaticConst)
 //   Section 8  — Dead-code elimination (reflectDce)
-//   Section 9  — Partially-static data (reflectPS / evalPS / Algebra.scala)
-//   Section 10 — Inlining with renormalization (reflectInline / StaticLam / renormalize)
+//   Section 9  — Inlining with renormalization (reflectInline / StaticLam / renormalize)
+//   Section 10 — Partially-static data (reflectPS / evalPS / Algebra.scala)
 //   Section 11 — Code motion / λ-hoisting (hoist / hoistable / reflectLam)
 //   Section 12 — Extensions: mutable refs, rec functions, by-name, intensional analysis
 
@@ -106,7 +106,34 @@ def reflectDce(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, 
       else γ(VCode(ELet(x, e, body)), σ1)
     })(using c + (e -> x))
 
-// Section 9: structural equivalence modulo let-normalization for PSD comparison
+// Section 9: recognize static lambda terms for β-inlining, either syntactically or via the cache
+object StaticLam:
+  def unapply(e: Expr)(using c: Cache): Option[ELam] =
+    e match
+      case e@ELam(_, _) => Some(e)
+      case EVar(f) if c.inv.contains(f) => StaticLam.unapply(c.inv(f))
+      case _ => None
+
+// Section 9: renormalization — replay let-bindings through reflect to restore ANF after inlining
+def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = e match
+  case ELet(x, rhs, body) =>
+    reflect(rhs, σ, { case (VCode(t), σ1, γ1) =>
+      renormalize(body.subst(x, t), σ1, k, γ1)
+    }, γ)
+  case _ => k(VCode(e), σ, γ)
+
+// Section 9: substitute argument into function body, then renormalize to restore ANF
+def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+  case EApp(StaticLam(ELam(x, body)), arg, _) if Opt("fun-inline") =>
+    renormalize(body.subst(x, arg), σ, k, γ)
+
+// Section 9: statically choose a branch when the condition is constant
+def reflectCondSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
+  case ECond(StaticConst(VBool(b)), e2, e3, _) if Opt("simp-cond") =>
+    if b then renormalize(e2, σ, k, γ)
+    else renormalize(e3, σ, k, γ)
+
+// Section 10: structural equivalence modulo let-normalization for PSD comparison
 extension (e1: Expr)
   def equivalent(e2: Expr)(using c: Cache): Boolean =
     def equiv(e1: Expr, e2: Expr, c1: Cache, c2: Cache): Boolean =
@@ -125,7 +152,7 @@ extension (e1: Expr)
 
     equiv(e1, e2, c, c)
 
-// Section 9: reinterpret expression as algebraic operations over the coproduct
+// Section 10: reinterpret expression as algebraic operations over the coproduct
 type RingNF = AddMulRingCoproduct.Coprod
 
 def sta(i: Int): RingNF = AddMulRingCoproduct.inl(i)
@@ -142,7 +169,7 @@ def evalRingPS(expr: Expr)(using c: Cache): RingNF =
     case ENum(i) => sta(i)
     case e => dyn(e)
 
-// Section 9: detect expressions subject to partially-static optimizations.
+// Section 10: detect expressions subject to partially-static optimizations.
 // They should has not been optimized already (equivalent to the normalized form),
 // and OptimizableRingExpr(optExpr) returns the original expression.
 object OptimizableRingExpr:
@@ -154,36 +181,9 @@ object OptimizableRingExpr:
         if e.equivalent(normalized) then None else Some(normalized)
       case _ => None
 
-// Section 9: optimize ring expressions that are not already in normal form
+// Section 10: optimize ring expressions that are not already in normal form
 def reflectPS(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case OptimizableRingExpr(optExpr) if Opt("ps") => renormalize(optExpr, σ, k, γ)
-
-// Section 10: recognize static lambda terms for β-inlining, either syntactically or via the cache
-object StaticLam:
-  def unapply(e: Expr)(using c: Cache): Option[ELam] =
-    e match
-      case e@ELam(_, _) => Some(e)
-      case EVar(f) if c.inv.contains(f) => StaticLam.unapply(c.inv(f))
-      case _ => None
-
-// Section 10: renormalization — replay let-bindings through reflect to restore ANF after inlining
-def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) = e match
-  case ELet(x, rhs, body) =>
-    reflect(rhs, σ, { case (VCode(t), σ1, γ1) =>
-      renormalize(body.subst(x, t), σ1, k, γ1)
-    }, γ)
-  case _ => k(VCode(e), σ, γ)
-
-// Section 10: substitute argument into function body, then renormalize to restore ANF
-def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case EApp(StaticLam(ELam(x, body)), arg, _) if Opt("fun-inline") =>
-    renormalize(body.subst(x, arg), σ, k, γ)
-
-// Section 10: statically choose a branch when the condition is constant
-def reflectCondSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
-  case ECond(StaticConst(VBool(b)), e2, e3, _) if Opt("simp-cond") =>
-    if b then renormalize(e2, σ, k, γ)
-    else renormalize(e3, σ, k, γ)
 
 // Section 11: check whether a binding is independent of previously scheduled code
 def hoistable(e: Expr)(using c: Cache): Boolean =
