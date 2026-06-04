@@ -5,9 +5,10 @@
 //   Section 7  — Constant folding (reflectSimp / StaticConst)
 //   Section 8  — Dead-code elimination (reflectDce)
 //   Section 9  — Inlining with renormalization (reflectInline / StaticLam / renormalize)
+//              — intensional analysis (EIsApp)
 //   Section 10 — Partially-static data (reflectPS / evalPS / Algebra.scala)
 //   Section 11 — Code motion / λ-hoisting (hoist / hoistable / reflectLam)
-//   Section 12 — Extensions: mutable refs, rec functions, by-name, intensional analysis
+//   Section 12 — Extensions: mutable refs, rec functions, by-name
 
 package instar.twocpsopt
 
@@ -382,7 +383,7 @@ def eval(e: Expr, ρ: Env, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Valu
       reify(e, ρ1, σ1, { case (VCode(x), σ2) =>
         reflect(EFix(g, x, Sta), σ2, k, γ)
       })
-    // Section 12: intensional code inspection — test if code is an application
+    // Section 9: intensional code inspection — test if code is an application
     case EIsApp(e) => eval(e, ρ, σ, isApp(k), γ)
     // Section 12: call-by-name application
     case ECBNApp(e1, e2) =>

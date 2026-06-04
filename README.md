@@ -89,7 +89,7 @@ the build tool.
 | §6 | Common sub-expression elimination | `TwoCPSOpt.scala` (`reflectCse`) |
 | §7 | Constant folding | `TwoCPSOpt.scala` (`reflectSimp`) |
 | §8 | Dead-code elimination | `TwoCPSOpt.scala` (`reflectDce`) |
-| §9 | Inlining with renormalization | `TwoCPSOpt.scala` (`reflectInline`, `renormalize`) |
+| §9 | Inlining with renormalization + intensional analysis | `TwoCPSOpt.scala` (`reflectInline`, `renormalize`, `EIsApp`) |
 | §10 | Partially-static data | `TwoCPSOpt.scala` (`reflectPS`), `Algebra.scala` |
 | §11 | Code motion (λ-hoisting) | `TwoCPSOpt.scala` (`hoist`, `reflectLam`) |
 | §12 | Extensions (mutable refs, by-name, etc.) | `TwoCPSOpt.scala` (eval cases) |
@@ -148,6 +148,7 @@ sbt 'testOnly instar.twocpsopt.Section6_CSE'              # §6  CSE
 sbt 'testOnly instar.twocpsopt.Section7_Folding'          # §7  constant folding
 sbt 'testOnly instar.twocpsopt.Section8_DCE'              # §8  dead-code elimination
 sbt 'testOnly instar.twocpsopt.Section9_Inlining'         # §9  inlining
+sbt 'testOnly instar.twocpsopt.Section9_Analysis'         # §9  intensional analysis
 sbt 'testOnly instar.twocpsopt.Section10_PSD'             # §10 partially-static data
 sbt 'testOnly instar.twocpsopt.Section11_Hoisting'        # §11 λ-hoisting
 sbt 'testOnly instar.twocpsopt.Section12_Extensions'      # §12 extensions

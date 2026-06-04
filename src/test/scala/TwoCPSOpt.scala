@@ -405,6 +405,40 @@ class Section9_Inlining extends Base {
   }
 }
 
+// --- Section 9: Intensional analysis ---
+
+class Section9_Analysis extends Base {
+
+  test("is-app-1") {
+    val e =
+      ELet("app", EApp2(ELift(ELam("x", EVar("x"))), ENum2(42)),
+      ECond1(EIsApp(EVar("app")), EBool2(true), EBool2(false)))
+    testEval(e,
+      """⟨code:
+        |  let x1 = λ x0.
+        |    x0 in
+        |  let x2 = (x1 42) in
+        |  true⟩""".stripMargin)
+  }
+
+  test("is-app-2") {
+    val e = EIsApp(ENum2(42))
+    testEval(e, "false")
+  }
+
+  test("is-app-conflict") {
+    val e = ELift(EIsApp(EApp2(ELift(ELam("x", EVar("x"))), ENum2(42))))
+    testEval(e,
+      """⟨code:
+        |  let x1 = λ x0.
+        |    x0 in
+        |  let x2 = (x1 42) in
+        |  true⟩""".stripMargin, Set("dce"))
+    testEval(e,
+      """⟨code:
+        |  false⟩""".stripMargin, Set("fun-inline", "dce"))
+  }
+}
 // -- Section 10: Partially-static data -------------------------------------
 
 class Section10_PSD extends Base {
@@ -752,40 +786,6 @@ class Section12_CBN extends Base {
   }
 }
 
-// --- Intensional analysis ---
-
-class Section12_Analysis extends Base {
-
-  test("is-app-1") {
-    val e =
-      ELet("app", EApp2(ELift(ELam("x", EVar("x"))), ENum2(42)),
-      ECond1(EIsApp(EVar("app")), EBool2(true), EBool2(false)))
-    testEval(e,
-      """⟨code:
-        |  let x1 = λ x0.
-        |    x0 in
-        |  let x2 = (x1 42) in
-        |  true⟩""".stripMargin)
-  }
-
-  test("is-app-2") {
-    val e = EIsApp(ENum2(42))
-    testEval(e, "false")
-  }
-
-  test("is-app-conflict") {
-    val e = ELift(EIsApp(EApp2(ELift(ELam("x", EVar("x"))), ENum2(42))))
-    testEval(e,
-      """⟨code:
-        |  let x1 = λ x0.
-        |    x0 in
-        |  let x2 = (x1 42) in
-        |  true⟩""".stripMargin, Set("dce"))
-    testEval(e,
-      """⟨code:
-        |  false⟩""".stripMargin, Set("fun-inline", "dce"))
-  }
-}
 
 // --- Recursive functions, mutable references, run ---
 
