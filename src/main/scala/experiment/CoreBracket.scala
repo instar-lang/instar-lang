@@ -63,6 +63,10 @@ enum PreExpr:
 
 def translate(pe: PreExpr): Expr = presTranslate(pe)
 
+
+// def stageSub(pe: PreExpr, varName: String, st: Stage.SNum): PreExpr =
+//   pe match PSApp(e, SVar(name)) with varName == name 
+
 // translation of the contents of non-bracketed code: id except for brackets & escapes
 def presTranslate(pe: PreExpr): Expr =
   pe match
@@ -93,18 +97,19 @@ def futTranslate(pe: PreExpr): Expr =
     // no brackets in generated code, so current-stage = 0 <= var-stage guaranteed here
     case PVar(name) => EVar(name)
     // you can write s-poly lambdas in brackets
-    case PSLam(x, body) => ESLam(x, futTranslate(body))
+    case PSLam(x, body) => ESLam(x, futTranslate(body)) // TODO: this seems wrong
+    // TODO: fill in stage-polymorphic variables?
     // s-poly functions can be called in brackets but only in the present tense
     case PSApp(e, st) => if st == Sta
                          then ESApp(futTranslate(e), st)
                          else throw new Exception("Stage polymorphic function application must be with stage=0 in brackets")
     case PLam(x, argTy, body, retTy) => ELift(ELam(x, argTy, futTranslate(body), retTy), Dyn)
     case PApp(e1, e2, st) => if st == Sta
-                              then EApp(futTranslate(e1), futTranslate(e2), st)
+                              then EApp(futTranslate(e1), futTranslate(e2), Dyn)
                               else throw new Exception("Application to future stage is ")
-    // "lift" only in present tense
+    // "lift" can only appear in brackets when it is to Sta
     case PLift(t, to) => if to == Sta
-                         then ELift1(futTranslate(t))
+                         then ELift1(futTranslate(t)) // TODO?
                          else throw new Exception("Lift to future stage is not allowed in brackets")
     case PRun(t) => throw new Exception("Run is not allowed in brackets")
     //TODO
@@ -119,7 +124,7 @@ def futTranslate(pe: PreExpr): Expr =
     case PUnaryOp(op, e, st) => if st == Sta
                                  then EUnaryOp2(op, futTranslate(e))
                                  else throw new Exception("Unary operation to future stage is not allowed in brackets")
-    case PAscribe(e, asTy) => Lift2(EAscribe(futTranslate(e), asTy))
+    case PAscribe(e, asTy) => ELift2(EAscribe(futTranslate(e), asTy)) // TODO?
     case PBracket(e) => throw new Exception("No nested brackets allowed")
     case PEscape(e) => if isCodeType(e.ty) // TODO: this guard should not be here?
                        then futTranslate(e)

@@ -16,6 +16,11 @@ class CoreTest extends munit.FunSuite {
   def PBinOp2(op: String, e1: PreExpr, e2: PreExpr): PreExpr = PBinOp(op, e1, e2, Dyn)
   def PUnaryOp1(op: String, e: PreExpr): PreExpr = PUnaryOp(op, e, Sta)
   def PUnaryOp2(op: String, e: PreExpr): PreExpr = PUnaryOp(op, e, Dyn)
+
+  val pStage1IncFn = PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)        ), None)
+  val eStage1IncFn = ELam("x", None, EBinOp1("+", EVar("x"), ENum(1)        ), None)
+  val pStageSIncFn = PSLam("s", PLam("x", None, PBinOp("+", PVar("x"), PLift(PNum(1), SVar("s")), SVar("s")), None))
+  val eStageSIncFn = ESLam("s", ELam("x", None, EBinOp("+", EVar("x"), ELift(ENum(1), SVar("s")), SVar("s")), None))
   
   // val e1 = PApp2(
   //   PLift2(
@@ -72,10 +77,12 @@ class CoreTest extends munit.FunSuite {
   test("prestranslation") {
     testTrans(PNum(1), ENum(1))
     testTrans(PBool(true), EBool(true))
-    testTrans(PBinOp1("+", PNum(1), PNum(2)), EBinOp1("+", ENum(1), ENum(2)))
+    testTrans(PBinOp1("+", PNum(1), PNum(2)), 
+              EBinOp1("+", ENum(1), ENum(2)))
     testTrans(PUnaryOp1("-", PNum(1)), EUnaryOp1("-", ENum(1)))
     testTrans(PVar("x"), EVar("x"))
-    testTrans(PSLam("x", PBinOp1("+", PVar("x"), PNum(1))), ESLam("x", EBinOp1("+", EVar("x"), ENum(1))))
+    testTrans(PSLam("x", PBinOp1("+", PVar("x"), PNum(1))), 
+              ESLam("x", EBinOp1("+", EVar("x"), ENum(1))))
     try { testTrans(PEscape(PUnit), EUnit); assert(false); }
     catch case e: Exception => ();
 
@@ -99,8 +106,39 @@ class CoreTest extends munit.FunSuite {
   test("futTranslation") {
     testTrans(PBracket(PNum(1)), ELift2(ENum(1)))
     testTrans(PBracket(PVar("x")), EVar("x"))
+
+    // lamb
     testTrans(PBracket(PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)        ), None)),
               ELift2(  ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None)) )
+    // app
+    testTrans(PBracket(PApp(pStage1IncFn, PNum(1), Sta)),
+              EApp2(ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None)), ELift2(ENum(1)) ))
+
+    // slam
+    // testTrans(PBracket(pStageSIncFn), eStageSIncFn) // TODO this seems wrong
+    // sapp
+    // testTrans(PBracket(PSApp(pStageSIncFn, Sta)),
+              //  ESApp(eStageSIncFn, Dyn))
+
+    try { // translate should fail on a bracketed SApp @Dyn
+      testTrans(PBracket(PSApp(pStageSIncFn, Dyn)), ESApp(eStageSIncFn, Dyn));
+               assert(false)
+    }
+    catch case e: Exception => ();
+
+    // case PSLam(x: String, body: PreExpr)
+    // case PSApp(e: PreExpr, st: Stage)
+    // case PLam(x: String, argTy: Option[Type], body: PreExpr, retTy: Option[Type])
+    // case PApp(e1: PreExpr, e2: PreExpr, st: Stage)
+    // case PLift(t: PreExpr, to: Stage)
+    // case PRun(t: PreExpr)
+    // case PLet(x: String, rhs: PreExpr, body: PreExpr)
+    // case PCond(e1: PreExpr, e2: PreExpr, e3: PreExpr, st: Stage)
+    // case PBinOp(op: String, e1: PreExpr, e2: PreExpr, st: Stage)
+    // case PUnaryOp(op: String, e: PreExpr, st: Stage)
+    // case PAscribe(e: PreExpr, asTy: Type)
+    // case PBracket(e: PreExpr)
+    // case PEscape(e: PreExpr)
   }
 
   // test("lam-app") {
