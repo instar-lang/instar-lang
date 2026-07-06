@@ -6,19 +6,18 @@ import Type.*
 import Value.*
 import PreExpr.*
 
-class CoreTest extends munit.FunSuite {
+class TransTest extends munit.FunSuite {
 
-  def PApp1(e1: PreExpr, e2: PreExpr): PreExpr = PApp(e1, e2, Sta)
-  def PApp2(e1: PreExpr, e2: PreExpr): PreExpr = PApp(e1, e2, Dyn)
-  def PCond1(e1: PreExpr, e2: PreExpr, e3: PreExpr): PreExpr = PCond(e1, e2, e3, Sta)
-  def PCond2(e1: PreExpr, e2: PreExpr, e3: PreExpr): PreExpr = PCond(e1, e2, e3, Dyn)
-  def PBinOp1(op: String, e1: PreExpr, e2: PreExpr): PreExpr = PBinOp(op, e1, e2, Sta)
-  def PBinOp2(op: String, e1: PreExpr, e2: PreExpr): PreExpr = PBinOp(op, e1, e2, Dyn)
-  def PUnaryOp1(op: String, e: PreExpr): PreExpr = PUnaryOp(op, e, Sta)
-  def PUnaryOp2(op: String, e: PreExpr): PreExpr = PUnaryOp(op, e, Dyn)
+  def testTrans(pe: PreExpr, e: Expr): Unit =
+    val pt = translate(pe)
+    assertEquals(pt, e)
+  def testTransFails(pe: PreExpr): Unit = 
+    try { translate(pe); assert(false); }
+    catch case e: TranslationException => ();
 
-  val pStage1IncFn = PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)        ), None)
-  val eStage1IncFn = ELam("x", None, EBinOp1("+", EVar("x"), ENum(1)        ), None)
+  val pStage1IncFn = PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)), None)
+  val eStage1IncFn = ELam("x", None, EBinOp1("+", EVar("x"), ENum(1)), None)
+  val eStage2IncFn = ELam("x", None, EBinOp2("+", EVar("x"), ENum(1)), None)
   val pStageSIncFn = PSLam("s", PLam("x", None, PBinOp("+", PVar("x"), PLift(PNum(1), SVar("s")), SVar("s")), None))
   val eStageSIncFn = ESLam("s", ELam("x", None, EBinOp("+", EVar("x"), ELift(ENum(1), SVar("s")), SVar("s")), None))
   
@@ -66,46 +65,27 @@ class CoreTest extends munit.FunSuite {
   //   ESApp(f, arg)
   // }
 
-  def testEval(pe: PreExpr, str: String): Unit =
-    val v = eval(pe)
-    assertEquals(v.toString, str)
 
-  def testTrans(pe: PreExpr, e: Expr): Unit =
-    val pt = translate(pe)
-    assertEquals(pt, e)
 
-  test("prestranslation") {
+  test("trans-unbracketed-boring") {
     testTrans(PNum(1), ENum(1))
     testTrans(PBool(true), EBool(true))
     testTrans(PBinOp1("+", PNum(1), PNum(2)), 
               EBinOp1("+", ENum(1), ENum(2)))
     testTrans(PUnaryOp1("-", PNum(1)), EUnaryOp1("-", ENum(1)))
-    testTrans(PVar("x"), EVar("x"))
-    testTrans(PSLam("x", PBinOp1("+", PVar("x"), PNum(1))), 
-              ESLam("x", EBinOp1("+", EVar("x"), ENum(1))))
-    try { testTrans(PEscape(PUnit), EUnit); assert(false); }
-    catch case e: Exception => ();
-
-    // case PVar(name: String)
-    // case PSLam(x: String, body: PreExpr)
-    // case PSApp(e: PreExpr, st: Stage)
-    // case PLam(x: String, argTy: Option[Type], body: PreExpr, retTy: Option[Type])
-    // case PApp(e1: PreExpr, e2: PreExpr, st: Stage)
-    // case PLift(t: PreExpr, to: Stage)
-    // case PRun(t: PreExpr)
-    // case PLet(x: String, rhs: PreExpr, body: PreExpr)
-    // case PCond(e1: PreExpr, e2: PreExpr, e3: PreExpr, st: Stage)
-    // case PBinOp(op: String, e1: PreExpr, e2: PreExpr, st: Stage)
-    // case PUnaryOp(op: String, e: PreExpr, st: Stage)
-    // case PAscribe(e: PreExpr, asTy: Type)
-    // case PBracket(e: PreExpr)
-    // case PEscape(e: PreExpr)
+    testTrans(PLet("x", PUnit, PVar("x")), ELet("x", EUnit, EVar("x")))
+    testTrans(PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)), None), 
+              ELam("x", None, EBinOp1("+", EVar("x"), ENum(1)), None) )
+    testTrans(PSLam("s", pStageSIncFn),
+              ESLam("s", eStageSIncFn))
+  }
+  
+  test("trans-invalid-toplevel") {
+    testTransFails(PEscape(PUnit))
   }
 
-
-  test("futTranslation") {
+  test("trans-bracketed-boring") {
     testTrans(PBracket(PNum(1)), ELift2(ENum(1)))
-    testTrans(PBracket(PVar("x")), EVar("x"))
 
     // lamb
     testTrans(PBracket(PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)        ), None)),
@@ -114,96 +94,97 @@ class CoreTest extends munit.FunSuite {
     testTrans(PBracket(PApp(pStage1IncFn, PNum(1), Sta)),
               EApp2(ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None)), ELift2(ENum(1)) ))
 
-    // slam
-    // testTrans(PBracket(pStageSIncFn), eStageSIncFn) // TODO this seems wrong
-    // sapp
-    // testTrans(PBracket(PSApp(pStageSIncFn, Sta)),
-              //  ESApp(eStageSIncFn, Dyn))
-
-    try { // translate should fail on a bracketed SApp @Dyn
-      testTrans(PBracket(PSApp(pStageSIncFn, Dyn)), ESApp(eStageSIncFn, Dyn));
-               assert(false)
-    }
-    catch case e: Exception => ();
-
-    // case PSLam(x: String, body: PreExpr)
-    // case PSApp(e: PreExpr, st: Stage)
-    // case PLam(x: String, argTy: Option[Type], body: PreExpr, retTy: Option[Type])
-    // case PApp(e1: PreExpr, e2: PreExpr, st: Stage)
-    // case PLift(t: PreExpr, to: Stage)
-    // case PRun(t: PreExpr)
-    // case PLet(x: String, rhs: PreExpr, body: PreExpr)
-    // case PCond(e1: PreExpr, e2: PreExpr, e3: PreExpr, st: Stage)
-    // case PBinOp(op: String, e1: PreExpr, e2: PreExpr, st: Stage)
-    // case PUnaryOp(op: String, e: PreExpr, st: Stage)
-    // case PAscribe(e: PreExpr, asTy: Type)
-    // case PBracket(e: PreExpr)
-    // case PEscape(e: PreExpr)
   }
 
-  // test("lam-app") {
-  //   testEval(
-  //     e1,
-  //     "VCode(ELet(x2,PLam(x0,None,ELet(x1,PBinOp(+,PNum(x0),PNum(1),SNum(0)),PNum(x1)),None),ELet(x3,PApp(PNum(x2),PNum(41),SNum(0)),PNum(x3))))"
-  //   )
+  test("trans-bracketed-let") {
+    testTrans(PBracket(PLet("x", PUnit, PVar("x"))), ELet("x", ELift2(EUnit), EVar("x")))
+  }
 
-  //   testEval(
-  //     e2,
-  //     "VCode(ELet(x2,PLam(x0,None,ELet(x1,PBinOp(+,PNum(x0),PNum(1),SNum(0)),PNum(x1)),None),PNum(x2)))"
-  //   )
-  // }
+  test("trans-bracketed-lambda") {
+    testTrans(PBracket(pStage1IncFn), ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None)))
+  }
 
-  // test("cond") {
-  //   testEval(
-  //     e4,
-  //     "VCode(ELet(x8,ECond(EBool(true),ELet(x2,PLam(x0,None,ELet(x1,PBinOp(+,PNum(x0),PNum(1),SNum(0)),PNum(x1)),None),ELet(x3,PApp(PNum(x2),PNum(10),SNum(0)),PNum(x3))),ELet(x6,PLam(x4,None,ELet(x5,PBinOp(*,PNum(x4),PNum(42),SNum(0)),PNum(x5)),None),ELet(x7,PApp(PNum(x6),PNum(20),SNum(0)),PNum(x7))),SNum(0)),PNum(x8)))"
-  //   )
-  // }
+  test("trans-stat-vars-in-brackets") {
+    testTrans(PLet("x", PUnit, PBracket(PVar("x"))), ELet("x", EUnit, ELift2(EVar("x"))))
+  }
 
-  // test("stage-poly") {
-  //   testEval(e5(0), "VNum(6)")
+  test("trans-dyn-vars-in-escape") {
+    testTransFails( PBracket(PLet("x", PUnit, PEscape(PVar("x")))))
+    testTransFails( PBracket(PLam("x", None, PEscape(PVar("x")), None)) )
+  }
 
-  //   testEval(
-  //     e5(1),
-  //     "VCode(ELet(x2,PLam(x0,None,ELet(x1,PBinOp(+,PNum(x0),PNum(1),SNum(0)),PNum(x1)),None),ELet(x3,PApp(PNum(x2),PNum(5),SNum(0)),PNum(x3))))"
-  //   )
+  test("trans-no-spoly-in-brackets") {
+      testTransFails( PBracket(PSApp(pStageSIncFn, Dyn)) )
+      testTransFails( PBracket(PSLam("s", PLam("x", None, PVar("x"), None))) )
+  }
 
-  //   val VCode(e) = eval(e5(1))
-  //   testEval(e, "VNum(6)")
-  // }
+  test("escapes") {
+    // TODO slam splice...
+  }
 
-  // test("run") {
-  //   testEval(PNum(1), "VNum(1)")
 
-  //   testEval(ERun(PLift2(PNum(1))), "VNum(1)")
+}
 
-  //   val e1 =
-  //     PLift2(PLam("x", None, PBinOp2("+", PNum("x"), PLift2(PNum(1))), None))
+class EvalTest extends munit.FunSuite {
 
-  //   testEval(
-  //     e1,
-  //     "VCode(ELet(x2,PLam(x0,None,ELet(x1,PBinOp(+,PNum(x0),PNum(1),SNum(0)),PNum(x1)),None),PNum(x2)))"
-  //   )
+  def testEval(pe: PreExpr, str: String): Unit =
+    val v = eval(pe)
+    assertEquals(v.toString, str)
+  def testEvalFails(pe: PreExpr): Unit = 
+    try { eval(pe); assert(false); }
+    catch case e: Exception => ();
 
-  //   testEval(
-  //     ERun(e1),
-  //     "VClo(x0,None,ELet(x1,PBinOp(+,PNum(x0),PNum(1),SNum(0)),PNum(x1)),None,Map(),Map())"
-  //   )
 
-  //   val e2 = ELet(
-  //     "y",
-  //     PLift2(PLam("x", None, PBinOp2("+", PNum("x"), PLift2(PNum(1))), None)),
-  //     PApp2(PNum("y"), PLift2(PNum(1)))
-  //   )
+  val pStage1IncFn = PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)), None)
+  val eStage1IncFn = ELam("x", None, EBinOp1("+", EVar("x"), ENum(1)), None)
+  val pStage2IncFn = PLift2(PLam("x", None, PBinOp2("+", PVar("x"), PNum(1)), None))
+  val eStage2IncFn = ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ENum(1)), None))
+  val pStageSIncFn = PSLam("s", PLam("x", None, PBinOp("+", PVar("x"), PLift(PNum(1), SVar("s")), SVar("s")), None))
+  val eStageSIncFn = ESLam("s", ELam("x", None, EBinOp("+", EVar("x"), ELift(ENum(1), SVar("s")), SVar("s")), None))
 
-  //   testEval(
-  //     e2,
-  //     "VCode(ELet(x2,PLam(x0,None,ELet(x1,PBinOp(+,PNum(x0),PNum(1),SNum(0)),PNum(x1)),None),ELet(x3,PApp(PNum(x2),PNum(1),SNum(0)),PNum(x3))))"
-  //   )
+  test("eval-unbracketed-boring") {
+    testEval(PNum(1), "VNum(1)")
+    testEval(PBool(true), "VBool(true)")
+    testEval(PBinOp1("+", PNum(1), PNum(2)), "VNum(3)")
+    testEval(PUnaryOp1("-", PNum(1)), "VNum(-1)")
+    testEval(PLet("x", PUnit, PVar("x")), "VUnit")
+    testEval(pStage1IncFn, eval(eStage1IncFn).toString)
+    testEval(PSLam("s", pStageSIncFn), eval(ESLam("s", eStageSIncFn)).toString)
+  }
 
-  //   testEval(
-  //     ERun(e2),
-  //     "VNum(2)"
-  //   )
-  // }
+  test("eval-bracketed-boring") {
+    testEval(PBracket(PNum(1)), "VCode(ENum(1))")
+    testEval(
+      PBracket(PBinOp1("+", PNum(1), PNum(2))),
+      "VCode(ELet(x0,EBinOp(+,ENum(1),ENum(2),SNum(0)),EVar(x0)))"
+    )
+    testEval(PBracket(pStage1IncFn), 
+      "VCode(" +
+        "ELet(" +
+          "x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None)," +
+          "EVar(x2)" +
+        ")" +
+      ")"
+    )
+    testEval(
+      PBracket(pStage1IncFn), 
+      eval(ELift2(ELam("x", None, EBinOp2("+", EVar("x"), ELift2(ENum(1))), None))).toString
+    )
+    testEval(PBracket(PApp(pStage1IncFn, PNum(1), Sta)), 
+      "VCode(" +
+        "ELet(" +
+          "x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None)," +
+          "ELet(" +
+            "x3,EApp(EVar(x2),ENum(1),SNum(0))," +
+            "EVar(x3)" +
+          ")" +
+        ")" +
+      ")"
+    )
+    // testEval(
+    //   PBracket(PApp(pStage1IncFn, PNum(1), Sta)),
+    //   eval(EApp(eStage2IncFn, ENum(1), Dyn)).toString()
+    // )
+  }
+
 }
