@@ -5,6 +5,7 @@ import Expr.*
 import Type.*
 import Value.*
 import PreExpr.*
+import instar.bracketparser.parse
 
 class TransTest extends munit.FunSuite {
 
@@ -187,4 +188,19 @@ class EvalTest extends munit.FunSuite {
     // )
   }
 
+}
+
+class ParseTest extends munit.FunSuite {
+  def testParse(str: String, pe: PreExpr): Unit =
+    val v = parse(str)
+    assertEquals(v.toString, str)
+
+  test("basics") {
+    testParse(
+      "if (1 == 1) then 1 else 1",
+      PCond1(PBinOp1("=", PNum(1), PNum(1)), 
+            PNum(1), 
+            PNum(1))
+    )
+  }
 }
