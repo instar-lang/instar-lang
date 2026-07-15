@@ -10,23 +10,7 @@ package instar.experiment.corebracket
 import instar.Counter.*
 import PreExpr.*
 
-// I guess
-// https://stackoverflow.com/questions/38243530/custom-exception-in-scala/43942163#43942163
-class TranslationException(message: String) extends Exception(message) {
-
-  def this(message: String, cause: Throwable) = {
-    this(message)
-    initCause(cause)
-  }
-
-  def this(cause: Throwable) = {
-    this(Option(cause).map(_.toString).orNull, cause)
-  }
-
-  def this() = {
-    this(null: String)
-  }
-}
+final class TranslationException(message: String) extends RuntimeException(message)
 
 enum Stage:
   case SNum(n: Int)
