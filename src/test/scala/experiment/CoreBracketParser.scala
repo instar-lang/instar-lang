@@ -1,4 +1,10 @@
-package instar.codegen.experiment
+package instar.experiment.corebracket
+
+import Stage.*
+import Expr.*
+import Type.*
+import Value.*
+import PreExpr.*
 
 class ParseTest extends munit.FunSuite {
   def testParse(source_str: String, target_pexpr: PreExpr): Unit =

@@ -5,9 +5,6 @@ import Expr.*
 import Type.*
 import Value.*
 import PreExpr.*
-import instar.bracketparser.parse
-import instar.bracketparser.parseType
-import instar.bracketparser.ParserException
 
 class TransTest extends munit.FunSuite {
 

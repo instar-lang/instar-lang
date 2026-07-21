@@ -1,17 +1,12 @@
-package instar.bracketparser
+package instar.experiment.corebracket
 
 import scala.collection.mutable.ArrayBuffer
 
 // import instar.syntax.*
-import instar.experiment.corebracket.PreExpr
 import instar.experiment.corebracket.PreExpr.*
 
-import instar.experiment.corebracket.Stage
 import instar.experiment.corebracket.Stage.*
-import instar.experiment.corebracket.Sta
-import instar.experiment.corebracket.Dyn
 
-import instar.experiment.corebracket.Type
 import instar.experiment.corebracket.Type.*
 
 object Lexer:
