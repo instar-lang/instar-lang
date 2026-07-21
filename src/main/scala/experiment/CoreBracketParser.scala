@@ -79,7 +79,7 @@ object Lexer:
     "then" -> Kind.Then,
     "else" -> Kind.Else,
     // "ref" -> Kind.Ref,
-    // "isApp" -> Kind.IsApp,
+    "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
     "run" -> Kind.Run,
   )
@@ -270,21 +270,18 @@ private case class Parser(tokens: Vector[Token]):
       case Kind.SFun => parseSFun()
       // case Kind.Fix => parseFix()
       case Kind.If => parseIf()
-      // case Kind.EqEq | Kind.BangEq | Kind.Plus | Kind.Star => parseComparison()
-      case _ => parsePrimary()
-      // case Kind
-      // case _ => parseAssignment()
-      // case Kind.
+      case Kind.EqEq | Kind.BangEq | Kind.Plus | Kind.Star => parseComparison()
+      case _ => parseAssignment()
 
-  // private def parseAssignment(): PreExpr =
-  //   val lhs = parseComparison()
-  //   if at(Kind.Assign) then
-  //     advance()
-  //     val stage = parseOptionalStageValue()
-  //     val rhs = parseAssignment()
-  //     EAssign(lhs, rhs, stage)
-  //   else
-  //     lhs
+  private def parseAssignment(): PreExpr =
+    val lhs = parseComparison()
+    // if at(Kind.Assign) then
+    //   advance()
+    //   val stage = parseOptionalStageValue()
+    //   val rhs = parseAssignment()
+    //   EAssign(lhs, rhs, stage)
+    // else
+      lhs
 
   private def parseLet(): PreExpr =
     expect(Kind.Let, "`let`")
@@ -437,16 +434,6 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Escape, "`$`")
     PEscape(parsePreExpr())
     
-  // private def parseIf(): PreExpr =
-  //   expect(Kind.If, "`if`")
-  //   val stage = parseOptionalStageValue()
-  //   val cond = parsePreExpr()
-  //   expect(Kind.Then, "`then`")
-  //   val thn = parsePreExpr()
-  //   expect(Kind.Else, "`else`")
-  //   val els = parsePreExpr()
-  //   PCond(cond, thn, els, stage)
-
   private def parseApplication(): PreExpr =
     var expr = parseAtomicPostfix()
     var keepGoing = true
