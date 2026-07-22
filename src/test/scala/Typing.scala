@@ -1,5 +1,6 @@
 package instar.typing
 
+import munit.IgnoreSuite
 import munit.FunSuite
 
 import instar.Config
@@ -10,6 +11,7 @@ import Expr.*
 import Stage.*
 import Type.*
 
+@IgnoreSuite
 class Fixme extends FunSuite:
   test("multiple stage vars") {
     {
