@@ -63,5 +63,7 @@ The HTML and XML reports are written under:
 
 - Let It Be Optimized: Building Multi-Stage Evaluators with Let-Insertion and Optimizations in Small Pieces (Functional Pearl)
 
+  Guannan Wei, Jun Tan, and Dinghong Zhong. ICFP 26
+
   The [icfp26](https://github.com/instar-lang/instar-lang/tree/icfp26) branch contains the corresponding artifact.
 
