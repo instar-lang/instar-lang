@@ -77,14 +77,14 @@ def PBinOp2(op: String, e1: PreExpr, e2: PreExpr): PreExpr = PBinOp(op, e1, e2, 
 def PUnaryOp1(op: String, e: PreExpr): PreExpr = PUnaryOp(op, e, Sta)
 def PUnaryOp2(op: String, e: PreExpr): PreExpr = PUnaryOp(op, e, Dyn)
 
-def translate(pe: PreExpr): Expr = transUnb(pe, Map(), true)
+def translate(pe: PreExpr): Expr = transUnb(pe, Map())
 
 
 // regular vars to the stages they're from
 type StAnnotEnv = Map[String, Stage.SNum]
 
 // translation of the contents of non-bracketed code: id except for brackets & escapes
-def transUnb(pe: PreExpr, annenv: StAnnotEnv, toplvl: Boolean): Expr =
+def transUnb(pe: PreExpr, annenv: StAnnotEnv): Expr =
   pe match
     case PUnit => EUnit
     case PNum(i) => ENum(i)
@@ -93,21 +93,19 @@ def transUnb(pe: PreExpr, annenv: StAnnotEnv, toplvl: Boolean): Expr =
                         case Some(Sta) => EVar(name)
                         case Some(Dyn) => throw new TranslationException("A variable that was bound within brackets is used outside brackets")
                         case _         => throw new TranslationException("Variable not found in environment") }
-    case PSLam(x, body) => ESLam(x, transUnb(body, annenv, toplvl))
-    case PSApp(e, st) => ESApp(transUnb(e, annenv, toplvl), st)
-    case PLam(x, argTy, body, retTy) => ELam(x, argTy, transUnb(body, annenv + (x -> Sta), toplvl), retTy)
-    case PApp(e1, e2, st) => EApp(transUnb(e1, annenv, toplvl), transUnb(e2, annenv, toplvl), st)
-    case PLift(t, to) => ELift(transUnb(t, annenv, toplvl), to)
-    case PRun(t) => ERun(transUnb(t, annenv, toplvl))
-    case PLet(x, rhs, body) => ELet(x, transUnb(rhs, annenv, toplvl), transUnb(body, annenv + (x -> Sta), toplvl)) // TODO?
-    case PCond(e1, e2, e3, st) => ECond(transUnb(e1, annenv, toplvl), transUnb(e2, annenv, toplvl), transUnb(e3, annenv, toplvl), st)
-    case PBinOp(op, e1, e2, st) => EBinOp(op, transUnb(e1, annenv, toplvl), transUnb(e2, annenv, toplvl), st)
-    case PUnaryOp(op, e, st) => EUnaryOp(op, transUnb(e, annenv, toplvl), st)
-    case PAscribe(e, asTy) => EAscribe(transUnb(e, annenv, toplvl), asTy)
+    case PSLam(x, body) => ESLam(x, transUnb(body, annenv))
+    case PSApp(e, st) => ESApp(transUnb(e, annenv), st)
+    case PLam(x, argTy, body, retTy) => ELam(x, argTy, transUnb(body, annenv + (x -> Sta)), retTy)
+    case PApp(e1, e2, st) => EApp(transUnb(e1, annenv), transUnb(e2, annenv), st)
+    case PLift(t, to) => ELift(transUnb(t, annenv), to)
+    case PRun(t) => ERun(transUnb(t, annenv))
+    case PLet(x, rhs, body) => ELet(x, transUnb(rhs, annenv), transUnb(body, annenv + (x -> Sta))) // TODO?
+    case PCond(e1, e2, e3, st) => ECond(transUnb(e1, annenv), transUnb(e2, annenv), transUnb(e3, annenv), st)
+    case PBinOp(op, e1, e2, st) => EBinOp(op, transUnb(e1, annenv), transUnb(e2, annenv), st)
+    case PUnaryOp(op, e, st) => EUnaryOp(op, transUnb(e, annenv), st)
+    case PAscribe(e, asTy) => EAscribe(transUnb(e, annenv), asTy)
     case PBracket(e) => transBra(e, annenv) // TODO?
-    case PEscape(e) => if toplvl
-                       then throw new TranslationException("Escape is not allowed in unquoted code")
-                       else transUnb(e, annenv, toplvl)
+    case PEscape(e) => throw TranslationException("Escape is not allowed in unquoted/escaped code")
 
 
 def mka(f: Expr, x: Expr): Expr = EApp(f, x, Dyn)
@@ -119,43 +117,41 @@ def isCodeType(t: Option[Type]): Boolean =
 
 
 // translation of the contents of brackets
-def transBra(pe: PreExpr, aenv: StAnnotEnv): Expr =
+def transBra(pe: PreExpr, var_st_env: StAnnotEnv): Expr =
   pe match
     case PUnit      => ELift2(EUnit)
     case PNum(i)    => ELift2(ENum(i))
     case PBool(b)   => ELift2(EBool(b))
-    case PVar(name) => { aenv.get(name) match // no initial env, so no use of mkid combinator
+    case PVar(name) => { var_st_env.get(name) match // no initial env, so no use of mkid combinator
                          case Some(Sta) => ELift2(EVar(name))
                          case Some(Dyn) => EVar(name)
                          case _         => throw new TranslationException("Variable not found in environment") }
     case PSLam(x, body)   => throw new TranslationException("Stage-polymorphic lambdas are not allowed to be formed in brackets")
     case PSApp(e, st)     => throw new TranslationException("Stage-polymorphic function application cannot be formed in brackets, use escape instead")
-    case PLam(x, argTy, body, retTy) => mkl(x, argTy, transBra(body, aenv + (x -> Dyn)), retTy)
+    case PLam(x, argTy, body, retTy) => mkl(x, argTy, transBra(body, var_st_env + (x -> Dyn)), retTy)
     case PApp(e1, e2, st) => if st == Sta
-                              then mka(transBra(e1, aenv), transBra(e2, aenv))
-                              else throw new TranslationException("Application to future stage is ")
+                              then mka(transBra(e1, var_st_env), transBra(e2, var_st_env))
+                              else throw new TranslationException("Application to future stage is disallowed in brackets")
     case PLift(t, to)     => if to == Sta // "lift" can only appear in brackets when it is to Sta
-                             then ELift1(transBra(t, aenv))
+                             then ELift1(transBra(t, var_st_env))
                              else throw new TranslationException("Lift to future stage is not allowed in brackets")
     case PRun(t)          => throw new TranslationException("Run is not allowed in brackets")
     //TODO: is this right?
-    case PLet(x, rhs, body)     => ELet(x, transBra(rhs, aenv), transBra(body, aenv + (x -> Dyn)))
+    case PLet(x, rhs, body)     => ELet(x, transBra(rhs, var_st_env), transBra(body, var_st_env + (x -> Dyn)))
     // Stage polymorphism in brackets degenerates to be monomorphically Dyn
     // thus PSApp translates successfully in brackets only when stage == Sta
     case PCond(e1, e2, e3, st)  => if st == Sta
-                                   then ECond2(transBra(e1, aenv), transBra(e2, aenv), transBra(e3, aenv))
+                                   then ECond2(transBra(e1, var_st_env), transBra(e2, var_st_env), transBra(e3, var_st_env))
                                    else throw new TranslationException("Conditional to future stage is not allowed in brackets")
     case PBinOp(op, e1, e2, st) => if st == Sta
-                                   then EBinOp2(op, transBra(e1, aenv), transBra(e2, aenv))
+                                   then EBinOp2(op, transBra(e1, var_st_env), transBra(e2, var_st_env))
                                    else throw new TranslationException("Binary operation to future stage is not allowed in brackets")
     case PUnaryOp(op, e, st)    => if st == Sta
-                                   then EUnaryOp2(op, transBra(e, aenv))
+                                   then EUnaryOp2(op, transBra(e, var_st_env))
                                    else throw new TranslationException("Unary operation to future stage is not allowed in brackets")
-    case PAscribe(e, asTy) => ELift2(EAscribe(transBra(e, aenv), asTy)) // TODO?
+    case PAscribe(e, asTy) => ELift2(EAscribe(transBra(e, var_st_env), asTy)) // TODO?
     case PBracket(e)       => throw new TranslationException("No nested brackets allowed")
-    case PEscape(e)        => if isCodeType(e.ty) // TODO: this guard should be elsewhere
-                              then transUnb(e, aenv, false)
-                              else throw new TranslationException("Cannot escape term of non-code type")
+    case PEscape(e)        => transUnb(e, var_st_env) // should be a code type
 
 
 
