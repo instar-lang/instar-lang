@@ -15,6 +15,7 @@ class TransTest extends munit.FunSuite {
     try { translate(pe); assert(false); }
     catch case e: TranslationException => ();
 
+  def ELift2(e: Expr) = ELift(e, Dyn)
   val pStage1IncFn = PLam("x", None, PBinOp1("+", PVar("x"), PNum(1)), None)
   val eStage1IncFn = ELam("x", None, EBinOp1("+", EVar("x"), ENum(1)), None)
   val eStage2IncFn = ELam("x", None, EBinOp2("+", EVar("x"), ENum(1)), None)
@@ -36,50 +37,6 @@ class TransTest extends munit.FunSuite {
       None
     )
   )
-
-  // val e1 = PApp2(
-  //   PLift2(
-  //     PLam("x", None, PBinOp2("+", PNum("x"), PLift2(PNum(1))), None)
-  //   ),
-  //   PLift2(PNum(41))
-  // )
-
-  // val e2 = PLift2(
-  //   PLam("x", None, PBinOp2("+", PNum("x"), PLift2(PNum(1))), None)
-  // )
-
-  // val e3 = PLift2(
-  //   PLam("y", None, PBinOp2("*", PNum("y"), PLift2(PNum(42))), None)
-  // )
-
-  // val e4 = ECond(
-  //   PLift2(EBool(true)),
-  //   PApp2(e2, PLift2(PNum(10))),
-  //   PApp2(e3, PLift2(PNum(20))),
-  //   Dyn
-  // )
-
-  // def e5(stage: Int) = {
-  //   // (Λs. (λx. x +ˢ 1ˢ)ˢ 5ˢ)[stage]
-  //   val f = ESLam(
-  //     "s",
-  //     PApp(
-  //       PLift(
-  //         PLam(
-  //           "x",
-  //           None,
-  //           PBinOp("+", PNum("x"), PLift(PNum(1), SVar("s")), SVar("s")),
-  //           None
-  //         ),
-  //         SVar("s")
-  //       ),
-  //       PLift(PNum(5), SVar("s")),
-  //       SVar("s")
-  //     )
-  //   )
-  //   val arg = SNum(stage)
-  //   ESApp(f, arg)
-  // }
 
   test("trans-unbracketed-boring") {
     testTrans(PNum(1), ENum(1))
@@ -148,8 +105,97 @@ class TransTest extends munit.FunSuite {
     testTransFails(PBracket(PSLam("s", PLam("x", None, PVar("x"), None))))
   }
 
-  test("escapes") {
-    // TODO slam splice...
+  test("nested brackets fail") {
+    // '('( () ))
+    testTransFails(
+      PBracket(PBracket(PUnit))
+    )
+  }
+
+    // '($($( () ))
+  test("too many escapes fail") {
+    testTransFails(
+      PBracket(PEscape(PEscape(PUnit)))
+    )
+  }
+
+  test("bracket escape weaving") {
+    // '($('($('( () ))))) = lift( () )
+    // this is actually right
+    testTrans(
+      PBracket(PEscape(PBracket(PEscape(PBracket(PUnit))))),
+      ELift2(EUnit)
+    )
+  }
+
+  test("mixed brackets and lifts") {
+    // '( let f = $(lift(fun x => x) in f x ) = let f = lift(fun x => x) in lift(f 1)
+    testTrans(
+      PBracket(PLet("f", 
+        PEscape(PLift2(PLam("x", None, PVar("x"), None))),
+         PApp1(PVar("f"), PNum(1)))),
+      ELet("f", 
+        ELift2(ELam("x", None, EVar("x"), None)), 
+        EApp2(EVar("f"), ELift2(ENum(1))))
+    )
+  }
+
+  test("mixed spoly and lifts") {
+    // let f[s] (x) = x +@s 1 in '( $(f[2] 1) * 2 ) 
+    // = let f[s] (x) = x +@s 1 in (f[2] 1) *@2 lift 2 -- and that fn call is st 1
+    testTrans(
+      PLet("f", 
+        PSLam("s", 
+          PLam("x", None, PBinOp("+", PVar("x"), PNum(1), SVar("s")), None)),
+        PBracket(
+          PBinOp1("*", 
+            PEscape(
+              PApp1(
+                PSApp(PVar("f"), Dyn),
+                PNum(1)
+              )
+            ),
+            PNum(2)
+          )
+        )
+      ),
+      ELet("f", 
+        ESLam("s", 
+          ELam("x", None, EBinOp("+", EVar("x"), ENum(1), SVar("s")), None)),
+        EBinOp2("*", 
+          EApp1(
+            ESApp(EVar("f"), Dyn),
+            ENum(1)
+          ),
+          ELift2(ENum(2))
+        )
+      )
+    )
+
+    // let f[s] (x) = x +@s 1 in '(let g = $(lift f[2]) in g 1) 
+    // = let f[s] (x) = x +@s 1 in let g = lift(f[2]) in g 1 -- but stage 2 app
+    testTrans(
+      PLet("f", 
+        PSLam("s", 
+          PLam("x", None, PBinOp("+", PVar("x"), PNum(1), SVar("s")), None),
+        ),
+        PBracket(
+          PLet("g", 
+          PEscape(PLift2(PSApp(PVar("f"), Dyn))),
+          PApp1(PVar("g"), PNum(1))
+          )
+        )
+      ),
+      ELet("f", 
+        ESLam("s", 
+          ELam("x", None, EBinOp("+", EVar("x"), ENum(1), SVar("s")), None)
+        ),
+        ELet("g", 
+          ELift2(ESApp(EVar("f"), Dyn)),
+          EApp2(EVar("g"), ELift2(ENum(1)))
+        )
+      )
+    )
   }
 
 }
@@ -209,11 +255,12 @@ class EvalTest extends munit.FunSuite {
     testEval(
       PBracket(pStage1IncFn),
       "VCode(" +
-        "ELet(" +
-        "x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None)," +
-        "EVar(x2)" +
-        ")" +
-        ")"
+        "ELet(x2," +
+          "ELam(x0," +
+            "None," +
+            "ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1))," +
+            "None)," +
+          "EVar(x2)))"
     )
     testEval(
       PBracket(pStage1IncFn),
@@ -224,19 +271,72 @@ class EvalTest extends munit.FunSuite {
     testEval(
       PBracket(PApp(pStage1IncFn, PNum(1), Sta)),
       "VCode(" +
-        "ELet(" +
-        "x2,ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None)," +
-        "ELet(" +
-        "x3,EApp(EVar(x2),ENum(1),SNum(0))," +
-        "EVar(x3)" +
-        ")" +
-        ")" +
-        ")"
+          "ELet(x2," +
+            "ELam(x0,None,ELet(x1,EBinOp(+,EVar(x0),ENum(1),SNum(0)),EVar(x1)),None)," +
+            "ELet(x3," +
+              "EApp(EVar(x2),ENum(1),SNum(0))," +
+              "EVar(x3))))"
     )
-    // testEval(
-    //   PBracket(PApp(pStage1IncFn, PNum(1), Sta)),
-    //   eval(EApp(eStage2IncFn, ENum(1), Dyn)).toString()
-    // )
   }
 
+  test("mixed spoly and lifts") {
+    // let f[s] (x) = x +@s 1 in '( $(f[2] 1) * 2 ) 
+    val e1 = PLet("f", 
+      PSLam("s", 
+        PLam("x", None, PBinOp("+", PVar("x"), PLift(PNum(1), SVar("s")), SVar("s")), None)
+      ),
+      PBracket(
+        PBinOp("*", 
+          PEscape(
+            PApp(PSApp(PVar("f"), Dyn),
+            PLift(PNum(1), Dyn), Sta)
+          ),
+          PNum(2), Sta
+        )
+      )
+    )
+
+    // e1 -> "let x0 = 1 + 1 in let x1 = x0 * 2 in x1"
+    testEval(
+      e1,
+      "VCode("+
+        "ELet(x0,EBinOp(+,ENum(1),ENum(1),SNum(0))," +
+        "ELet(x1," +
+          "EBinOp(*,EVar(x0),ENum(2),SNum(0))," +
+          "EVar(x1))))"
+    )
+    // run e1 -> 4
+    testEval(PRun(e1), "VNum(4)")
+
+    // let f[s] (x) = x +@s 1 in '(let g = $(lift f[2]) in g 1) 
+    val e2 = PLet("f",
+      PSLam("s", 
+        PLam("x", None, PBinOp("+", PVar("x"), PLift(PNum(1), SVar("s")), SVar("s")), None)
+      ),
+      PBracket(
+        PLet("g", 
+          PEscape(PLift2(PSApp(PVar("f"), Dyn))),
+          PApp1(PVar("g"), PNum(1))
+        )
+      )
+    )
+    // e2 -> "let x2 = (fun x0 => let x1 = x0 + 1 in x1) in
+    //        let x2 = x0 1 in x2"
+    testEval(
+      e2,
+      "VCode(" +
+        "ELet(x2," +
+          "ELam(x0,None," +
+            "ELet(x1," +
+              "EBinOp(+,EVar(x0),ENum(1),SNum(0))," +
+              "EVar(x1))," +
+            "None)," +
+          "ELet(x3," +
+            "EApp(EVar(x2),ENum(1),SNum(0))," +
+            "EVar(x3))))"
+    )
+    // run e2 -> 4
+    testEval(PRun(e2), "VNum(2)")
+
+  }
 }
