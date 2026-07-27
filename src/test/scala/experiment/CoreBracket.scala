@@ -236,7 +236,7 @@ class EvalTest extends munit.FunSuite {
     )
   )
 
-  test("eval-unbracketed-boring") {
+  test("unbracketed primitives") {
     testEval(PNum(1), "VNum(1)")
     testEval(PBool(true), "VBool(true)")
     testEval(PBinOp1("+", PNum(1), PNum(2)), "VNum(3)")
@@ -277,6 +277,32 @@ class EvalTest extends munit.FunSuite {
               "EApp(EVar(x2),ENum(1),SNum(0))," +
               "EVar(x3))))"
     )
+  }
+
+  test("stage shadowing") {
+    // let x = 1 in '(let x = 2 in x)
+    // -> '2
+    val e = 
+      PLet("x", PNum(1),
+        PBracket(
+            PLet("x", PNum(2),
+            PVar("x"))))
+    testEval(e, "VCode(ENum(2))")
+    // fun x => '(fun x => x) 2
+    // -> let x1 = (fun x0 => x0) in x1
+    val e2 = 
+      PApp(
+        PLam("x", 
+          None,
+          PBracket(
+            PLam("x", None, PVar("x"), None)
+          ),
+          None
+        ),
+        PNum(2),
+        Sta
+      )
+    testEval(e2, "VCode(ELet(x1,ELam(x0,None,EVar(x0),None),EVar(x1)))")
   }
 
   test("mixed spoly and lifts") {
