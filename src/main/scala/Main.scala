@@ -34,7 +34,9 @@ def main(args: Array[String]): Unit =
     emitCSource(v, s, cFile, exeFile)
 
 private def runSource(source: String): (Value, Store) =
-  val prog = parse(source)
+  val prog = if Config.brackets
+             then bracketparser.translate(bracketparser.parse(source))
+             else parse(source)
   println(s"========Parsed Program=========")
   println(s"$prog")
   val tyProg = infer(prog)
@@ -105,6 +107,9 @@ private def parseArgs(args: List[String]): Unit =
         else
           Config.program = Some(src)
           loop(tail)
+      case ("--brackets" | "-b") :: tail =>
+        Config.brackets = true
+        loop(tail)
       case flag :: _ if flag.startsWith("-") =>
         invalid(s"Unknown option `$flag`.\n$usage")
       case path :: tail =>

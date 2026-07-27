@@ -11,6 +11,7 @@ object Config:
   var elab: Boolean = true
   // Enables inferring of stage application arguments
   var inferStApp: Boolean = false
+  var brackets: Boolean = false
 
   def resetCliState(): Unit =
     emitC = false
@@ -18,3 +19,4 @@ object Config:
     program = None
     elab = true
     inferStApp = false
+    brackets = false

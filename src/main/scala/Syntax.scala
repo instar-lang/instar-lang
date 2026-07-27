@@ -40,14 +40,17 @@ enum Expr:
   case EAssign(e1: Expr, e2: Expr, st: Option[Stage])
   case EAscribe(e: Expr, asTy: Type)
   case EFix(f: String, e: Expr, st: Option[Stage])
+  // brack/esc extension
+  case EBracket(e: Expr)
+  case EEscape(e: Expr)
   // Experimental:
   case ELoc(l: Loc)
   // Extend the language to allow programmers to inspect code values
   case EIsApp(e: Expr)
   case ECBNApp(e1: Expr, e2: Expr)
 
-val Sta = Stage.SNum(1)
-val Dyn = Stage.SNum(2)
+val Sta: Stage.SNum = Stage.SNum(1)
+val Dyn: Stage.SNum = Stage.SNum(2)
 
 extension (e: Expr)
   def isPure: Boolean =

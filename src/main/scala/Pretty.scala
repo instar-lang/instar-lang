@@ -129,6 +129,15 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
     case EIsApp(e) =>
       s"isApp(${renderExpr(e, 0)})"
 
+    case EBracket(e) =>
+      s"isApp(${renderExpr(e, 0)})"
+
+    // Not yet useful since code values should not contain these for now
+    case EEscape(e) =>
+      s"'(${renderExpr(e, 0)})"
+    case EEscape(e) =>
+      s"$$(${renderExpr(e, 0)})"
+
     case EUnit => "()"
     case ENum(i) => i.toString
     case EBool(true) => "true"
