@@ -38,12 +38,16 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
           s"let $x = ${renderExpr(rhs, 0)} in ${renderExpr(body, 0)}"
       maybeParens(rendered, parentPrec > 0)
 
-    case ELetRec(f, rhs, body) =>
-      extractHeader(rhs) match
+    case ELetRec(f, rhs, body, st) =>
+      val header = rhs match
+        case EAscribe(_, _) => None
+        case _ => extractHeader(rhs)
+      val rendered = header match
         case Some((binders, retTy, coreBody)) =>
-          s"letrec $f${renderHeader(binders)}${renderReturn(retTy)} = ${renderExpr(coreBody, 0)} in ${renderExpr(body, 0)}"
+          s"letrec${renderStageValue(st)} $f${renderHeader(binders)}${renderReturn(retTy)} = ${renderExpr(coreBody, 0)} in ${renderExpr(body, 0)}"
         case None =>
-          s"letrec $f = ${renderExpr(rhs, 0)} in ${renderExpr(body, 0)}"
+          s"letrec${renderStageValue(st)} $f = ${renderExpr(rhs, 0)} in ${renderExpr(body, 0)}"
+      maybeParens(rendered, parentPrec > 0)
 
     case ECond(e1, e2, e3, st) =>
       maybeParens(
@@ -129,9 +133,6 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
 
     case EAscribe(e, asTy) =>
       maybeParens(s"${renderExpr(e, 0)} : ${renderType(asTy, 0)}", true)
-
-    case EFix(f, e, st) =>
-      maybeParens(s"fix${renderStageValue(st)} $f. ${renderExpr(e, 0)}", parentPrec > 0)
 
     case EIsApp(e) =>
       s"isApp(${renderExpr(e, 0)})"

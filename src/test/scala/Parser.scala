@@ -328,15 +328,11 @@ class ParserTest extends FunSuite:
     assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
-  test("parses fix without explicit stage as first-stage fix") {
+  test("desugars fix without an explicit stage to letrec") {
     val parsed = parse("fix loop. fun(x: Int): Int => x")
 
     val expected =
-      EFix(
-        "loop",
-        ELam("x", Some(TInt), EVar("x"), Some(TInt)),
-        None,
-      )
+      ELetRec("loop", ELam("x", Some(TInt), EVar("x"), Some(TInt)), EVar("loop"))
 
     assertEquals(parsed, expected)
   }
@@ -345,13 +341,24 @@ class ParserTest extends FunSuite:
     val parsed = parse("fix@2 loop. fun(x: Int): Int => x")
 
     val expected =
-      EFix(
-        "loop",
-        ELam("x", Some(TInt), EVar("x"), Some(TInt)),
-        SNum(2),
-      )
+      ELetRec("loop", ELam("x", Some(TInt), EVar("x"), Some(TInt)), EVar("loop"), Some(Dyn))
 
     assertEquals(parsed, expected)
+  }
+
+  test("parses an explicitly annotated recursive binder") {
+    assertEquals(parse("fix loop: Int -> Int. fun(x: Int) => x"),
+      ELetRec("loop", EAscribe(ELam("x", Some(TInt), EVar("x"), None), TFun(TInt, TInt)), EVar("loop")))
+    assertEquals(parse("fix loop: Int -> Int. fun(x: Int) => x"),
+      parse("letrec loop: Int -> Int = fun(x: Int) => x in loop"))
+  }
+
+  test("parses a staged recursive binder annotation") {
+    assertEquals(parse("fix@2 loop: Code[Int -> Int]. fun@2(x: Code[Int]) => x"),
+      ELetRec("loop", EAscribe(ELift(ELam("x", Some(TInt.at(Dyn)), EVar("x"), None), Dyn),
+        TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn)), EVar("loop"), Some(Dyn)))
+    assertEquals(parse("fix@2 loop: Code[Int -> Int]. fun@2(x: Code[Int]) => x"),
+      parse("letrec@2 loop: Code[Int -> Int] = fun@2(x: Code[Int]) => x in loop"))
   }
 
   test("parses standalone types with constructors, staging, and arrows") {

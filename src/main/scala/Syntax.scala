@@ -79,7 +79,7 @@ enum Expr:
   case ELift(t: Expr, to: Stage)
   case ERun(t: Expr)
   case ELet(x: String, rhs: Expr, body: Expr)
-  case ELetRec(f: String, rhs: Expr, body: Expr)
+  case ELetRec(f: String, rhs: Expr, body: Expr, st: Option[Stage] = None)
   case ECond(e1: Expr, e2: Expr, e3: Expr, st: Option[Stage])
   case EBinOp(op: String, e1: Expr, e2: Expr, st: Option[Stage])
   case EUnaryOp(op: String, e: Expr, st: Option[Stage])
@@ -87,7 +87,6 @@ enum Expr:
   case EDeref(e: Expr, st: Option[Stage])
   case EAssign(e1: Expr, e2: Expr, st: Option[Stage])
   case EAscribe(e: Expr, asTy: Type)
-  case EFix(f: String, e: Expr, st: Option[Stage])
   // Experimental:
   case ELoc(l: Loc)
   // Extend the language to allow programmers to inspect code values
@@ -108,10 +107,9 @@ extension (e: Expr)
       case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
       case ERun(t) => t.isPure
       case ELet(_, rhs, body) => rhs.isPure && body.isPure
-      case ELetRec(_, rhs, body) => rhs.isPure && body.isPure
+      case ELetRec(_, rhs, body, _) => rhs.isPure && body.isPure
       case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
       case EAscribe(e, _) => e.isPure
-      case EFix(_, e, _) => e.isPure
       case _ => false
 
   def freeVar: Set[String] =
@@ -127,7 +125,7 @@ extension (e: Expr)
       case ELift(t, _) => t.freeVar
       case ERun(t) => t.freeVar
       case ELet(x, rhs, body) => rhs.freeVar ++ (body.freeVar - x)
-      case ELetRec(f, rhs, body) => (rhs.freeVar - f) ++ (body.freeVar - f)
+      case ELetRec(f, rhs, body, _) => (rhs.freeVar - f) ++ (body.freeVar - f)
       case ECond(e1, e2, e3, _) => e1.freeVar ++ e2.freeVar ++ e3.freeVar
       case EBinOp(_, e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EUnaryOp(_, e, _) => e.freeVar
@@ -135,7 +133,6 @@ extension (e: Expr)
       case EDeref(e, _) => e.freeVar
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EAscribe(e, _) => e.freeVar
-      case EFix(f, e, _) => e.freeVar - f
       case EIsApp(e) => e.freeVar
 
   // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
@@ -153,8 +150,8 @@ extension (e: Expr)
       case ERun(t) => ERun(t.subst(from, to))
       case ELet(x, rhs, body) =>
         ELet(x, rhs.subst(from, to), body.subst(from, to))
-      case ELetRec(f, rhs, body) =>
-        ELetRec(f, rhs.subst(from, to), body.subst(from, to))
+      case ELetRec(f, rhs, body, st) =>
+        ELetRec(f, rhs.subst(from, to), body.subst(from, to), st)
       case ECond(e1, e2, e3, s) =>
         ECond(e1.subst(from, to), e2.subst(from, to), e3.subst(from, to), s)
       case EBinOp(op, e1, e2, s) => EBinOp(op, e1.subst(from, to), e2.subst(from, to), s)
@@ -163,7 +160,6 @@ extension (e: Expr)
       case EDeref(e, s) => EDeref(e.subst(from, to), s)
       case EAssign(e1, e2, s) => EAssign(e1.subst(from, to), e2.subst(from, to), s)
       case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
-      case EFix(f, e, st) => EFix(f, e.subst(from, to), st)
 
 given Conversion[Stage, Option[Stage]] = Some(_)
 

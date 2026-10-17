@@ -15,7 +15,7 @@ trait SurfaceBase extends munit.FunSuite {
       case ENum(i) => ENum(i)
       case EBool(b) => EBool(b)
       case EVar(name) => EVar(name)
-      case ESLam(x, body, cs) => ESLam(x, normalizeExpr(body), cs)
+      case ESLam(s, body, constraints) => ESLam(s, normalizeExpr(body), constraints)
       case ESApp(expr, st) => ESApp(normalizeExpr(expr), st)
       case ELam(x, _, body, _) => ELam(x, None, normalizeExpr(body), None)
       case EBNLam(x, _, body, _) => EBNLam(x, None, normalizeExpr(body), None)
@@ -23,7 +23,7 @@ trait SurfaceBase extends munit.FunSuite {
       case ELift(t, to) => ELift(normalizeExpr(t), to)
       case ERun(t) => ERun(normalizeExpr(t))
       case ELet(x, rhs, body) => ELet(x, normalizeExpr(rhs), normalizeExpr(body))
-      case ELetRec(f, rhs, body) => ELetRec(f, normalizeExpr(rhs), normalizeExpr(body))
+      case ELetRec(f, rhs, body, st) => ELetRec(f, normalizeExpr(rhs), normalizeExpr(body), st)
       case ECond(e1, e2, e3, st) => ECond(normalizeExpr(e1), normalizeExpr(e2), normalizeExpr(e3), st)
       case EBinOp(op, e1, e2, st) => EBinOp(op, normalizeExpr(e1), normalizeExpr(e2), st)
       case EUnaryOp(op, e1, st) => EUnaryOp(op, normalizeExpr(e1), st)
@@ -31,7 +31,6 @@ trait SurfaceBase extends munit.FunSuite {
       case EDeref(e1, st) => EDeref(normalizeExpr(e1), st)
       case EAssign(e1, e2, st) => EAssign(normalizeExpr(e1), normalizeExpr(e2), st)
       case EAscribe(e1, _) => normalizeExpr(e1)
-      case EFix(f, e1, st) => EFix(f, normalizeExpr(e1), st)
       case ELoc(l) => ELoc(l)
       case EIsApp(e1) => EIsApp(normalizeExpr(e1))
       case ECBNApp(e1, e2) => ECBNApp(normalizeExpr(e1), normalizeExpr(e2))
@@ -250,22 +249,18 @@ class Core extends SurfaceBase {
 
     testEvalSurface(src,
       VCode(
-        ELet("x8",
-          EFix("f0",
-            ELet("x7",
-              ELam("x1", None,
-                ELet("x2", EBinOp("<=", EVar("x1"), ENum(1), Sta),
-                  ELet("x6",
-                    ECond(EVar("x2"), ENum(1),
-                      ELet("x3", EBinOp("-", EVar("x1"), ENum(1), Sta),
-                        ELet("x4", EApp(EVar("f0"), EVar("x3"), Sta),
-                          ELet("x5", EBinOp("*", EVar("x1"), EVar("x4"), Sta), EVar("x5")))),
-                      Sta),
-                    EVar("x6"))),
-                None),
-              EVar("x7")),
-            Sta),
-          ELet("x9", EApp(EVar("x8"), ENum(5), Sta), EVar("x9")))))
+        ELetRec("x0",
+          ELet("x7", ELam("x1", None,
+            ELet("x2", EBinOp("<=", EVar("x1"), ENum(1), Sta),
+              ELet("x6",
+                ECond(EVar("x2"), ENum(1),
+                  ELet("x3", EBinOp("-", EVar("x1"), ENum(1), Sta),
+                    ELet("x4", EApp(EVar("x0"), EVar("x3"), Sta),
+                      ELet("x5", EBinOp("*", EVar("x1"), EVar("x4"), Sta), EVar("x5")))),
+                  Sta),
+                EVar("x6"))),
+            None), EVar("x7")),
+          ELet("x8", EApp(EVar("x0"), ENum(5), Sta), EVar("x8")), Some(Sta))))
   }
 
   test("lift-loc") {

@@ -318,8 +318,8 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       σ(ρ(x)) match
         case VThunk(e, ρ, ς) => eval(e, ρ, ς, σ, k, γ)
         case v => k(v, σ, γ)
-    case ESLam(x, body, _) =>
-      k(VSClo(x, body, ρ, ς), σ, γ)
+    case ESLam(s, body, _) =>
+      k(VSClo(s, body, ρ, ς), σ, γ)
     case ESApp(e, st) =>
       eval(e, ρ, ς, σ, { case (VSClo(x, body, ρf, ςf), σ1, γ1) =>
         eval(body, ρf, ςf + (x -> evalStVar(st, ς)), σ1, k, γ1)
@@ -359,7 +359,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       eval(rhs, ρ, ς, σ, (v, σ1, γ1) =>
         val l = σ1.size
         eval(e, ρ + (x -> l), ς, σ1 + (l -> v), k, γ1), γ)
-    case ELetRec(f, rhs, e) =>
+    case ELetRec(f, rhs, e, st) if evalExprStage(st, ς) == Sta =>
       eval(rhs, ρ, ς, σ, {
         case (VClo(x, argTy, body, retTy, ρf, ςf), σ1, γ1) =>
           val l = σ1.size
@@ -372,6 +372,16 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val v = VSClo(x, body, ρf1, ςf)
           eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
       }, γ)
+    case ELetRec(f, rhs, e, st) if evalExprStage(st, ς) == Dyn =>
+      val name = fresh()
+      val l = σ.size
+      val recursiveEnv = ρ + (f -> l)
+      reify(rhs, recursiveEnv, ς, σ + (l -> VCode(EVar(name))), {
+        case (VCode(code), σ1) =>
+          eval(e, recursiveEnv, ς, σ1, k, { case (VCode(body), σ2) =>
+            γ(VCode(ELetRec(name, code, body, Some(Sta))), σ2)
+          })
+      })
     case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (VBool(b), σ1, γ1) =>
         if b then eval(e2, ρ, ς, σ1, k, γ1)
@@ -435,25 +445,6 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
         }, γ1)
       }, γ)
     case EAscribe(e, _) => eval(e, ρ, ς, σ, k, γ)
-    case EFix(f, e, s) if evalExprStage(s, ς) == Sta =>
-      eval(e, ρ, ς, σ, {
-        case (VClo(x, argTy, body, retTy, ρf, ςf), σ1, γ1) =>
-          val l = σ1.size
-          val v = VClo(x, argTy, body, retTy, ρf + (f -> l), ςf)
-          k(v, σ1 + (l -> v), γ1)
-        case (VSClo(x, body, ρf, ςf), σ1, γ1) =>
-          val l = σ1.size
-          val v = VSClo(x, body, ρf + (f -> l), ςf)
-          k(v, σ1 + (l -> v), γ1)
-      }, γ)
-    case EFix(f, e, s) if evalExprStage(s, ς) == Dyn =>
-      val l = σ.size
-      val ρ1 = ρ + (f -> l)
-      val g = fresh("f")
-      val σ1 = σ + (l -> VCode(EVar(g)))
-      reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
-        reflect(EFix(g, x, Some(Sta)), σ2, k, γ)
-      })
     // Experimental features below:
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
     case ECBNApp(e1, e2) =>

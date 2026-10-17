@@ -19,6 +19,20 @@ class PrettyTest extends FunSuite:
     assertEquals(parse(pretty.expr(parsed)), parsed)
   }
 
+  test("annotated named fixed points print and round-trip as letrec") {
+    val static = "fix f: Int -> Int. fun(x: Int) => x"
+    assertEquals(pretty.expr(parse(static)), "letrec f = (fun(x: Int) => x : Int -> Int) in f")
+    assertEquals(parse(pretty.expr(parse(static))), parse(static))
+    val dynamic = "fix@2 f: Code[Int -> Int]. fun@2(x: Code[Int]) => x"
+    assertEquals(pretty.expr(parse(dynamic)),
+      "letrec@2 f = (fun@2(x: Int @ 2) => x : (Int @ 2 -> Int @ 2) @ 2) in f")
+    assertEquals(parse(pretty.expr(parse(dynamic))), parse(dynamic))
+    val polymorphic = "fix f: forall[s]. Int @ s -> Int @ s. sfun[s] => fun(x: Int @ s) => x"
+    assertEquals(pretty.expr(parse(polymorphic)),
+      "letrec f = (sfun[s] => fun(x: Int @ s) => x : forall[s]. Int @ s -> Int @ s) in f")
+    assertEquals(parse(pretty.expr(parse(polymorphic))), parse(polymorphic))
+  }
+
   test("parse then pretty-print preserves canonical program text") {
     val src = "let f[s1, s2] = fun@s1(x: Int @ s2) => x in f[1, 1] 2"
     val parsed = parse(src)

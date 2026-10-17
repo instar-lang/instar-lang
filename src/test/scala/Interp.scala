@@ -801,26 +801,26 @@ class CoreEffTest extends Base {
   )
 
   val e10 = {
-    val fib = EFix("fib", ELam("n", Some(TInt),
+    val fib = ELetRec("fib", ELam("n", Some(TInt),
       ECond1(
         EBinOp1("<=", EVar("n"), ENum(1)),
         ENum(1),
         EBinOp1("*",
           EVar("n"),
           EApp1(EVar("fib"), EBinOp1("-", EVar("n"), ENum(1)))),
-      ), Some(TInt)), Sta)
+      ), Some(TInt)), EVar("fib"), Some(Sta))
     ELet("fib", fib, EApp1(EVar("fib"), ENum(5)))
   }
 
   val e11 = {
-    val fib = EFix("fib", ELift2(ELam("n", Some(TInt.at(Dyn)),
+    val fib = ELetRec("fib", ELift2(ELam("n", Some(TInt.at(Dyn)),
       ECond2(
         EBinOp2("<=", EVar("n"), ELift2(ENum(1))),
         ELift2(ENum(1)),
         EBinOp2("*",
           EVar("n"),
           EApp2(EVar("fib"), EBinOp2("-", EVar("n"), ELift2(ENum(1))))),
-      ), Some(TInt.at(Dyn)))), Dyn)
+      ), Some(TInt.at(Dyn)))), EVar("fib"), Some(Dyn))
     ELet("fib", fib, EApp2(EVar("fib"), ELift2(ENum(5))))
   }
 
@@ -882,7 +882,7 @@ class CoreEffTest extends Base {
 
   test("fix-second-stage") {
     testEval(e11,
-      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,Some(TInt),ELet(x2,EBinOp(<=,EVar(x1),ENum(1),Some(SNum(1))),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),Some(SNum(1))),ELet(x4,EApp(EVar(f0),EVar(x3),Some(SNum(1))),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),Some(SNum(1))),EVar(x5)))),Some(SNum(1))),EVar(x6))),Some(TInt)),EVar(x7)),Some(SNum(1))),ELet(x9,EApp(EVar(x8),ENum(5),Some(SNum(1))),EVar(x9))))")
+      "VCode(ELetRec(x0,ELet(x7,ELam(x1,Some(TInt),ELet(x2,EBinOp(<=,EVar(x1),ENum(1),Some(SNum(1))),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),Some(SNum(1))),ELet(x4,EApp(EVar(x0),EVar(x3),Some(SNum(1))),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),Some(SNum(1))),EVar(x5)))),Some(SNum(1))),EVar(x6))),Some(TInt)),EVar(x7)),ELet(x8,EApp(EVar(x0),ENum(5),Some(SNum(1))),EVar(x8)),Some(SNum(1))))")
 
     val (VCode(e), _) = eval(e11)
     testEval(e, "VNum(120)")

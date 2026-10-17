@@ -304,6 +304,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseLetRec(): Expr =
     expect(Kind.LetRec, "`letrec`")
+    val stage = parseOptionalStageValue()
     val name = parseIdentifier("recursive binding name")
     val binders = parseHeaderBinders()
 
@@ -319,7 +320,7 @@ private case class Parser(tokens: Vector[Token]):
         retTy match
           case Some(ty) => EAscribe(rhs, buildHeaderType(binders, ty))
           case None => rhs // Note: this is the case letrec defines a function without explicitly annotating the result type.
-      ELetRec(name, rhsWithAnn, body)
+      ELetRec(name, rhsWithAnn, body, stage)
     else
       val ann = parseOptionalTypeAnnotation()
       expect(Kind.Equal, "`=`")
@@ -327,8 +328,8 @@ private case class Parser(tokens: Vector[Token]):
       expect(Kind.In, "`in`")
       val body = parseExpr()
       ann match
-        case Some(ty) => ELetRec(name, EAscribe(rhs, ty), body)
-        case None => ELetRec(name, rhs, body)
+        case Some(ty) => ELetRec(name, EAscribe(rhs, ty), body, stage)
+        case None => ELetRec(name, rhs, body, stage)
 
   private def parseFun(): Expr =
     expect(Kind.Fun, "`fun`")
@@ -360,8 +361,13 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Fix, "`fix`")
     val stage = parseOptionalStageValue()
     val name = parseIdentifier("fixpoint name")
+    val ann = parseOptionalTypeAnnotation()
     expect(Kind.Dot, "`.`")
-    EFix(name, parseExpr(), stage)
+    val body = parseExpr()
+    val rhs = ann match
+      case Some(ty) => EAscribe(body, ty)
+      case None => body
+    ELetRec(name, rhs, EVar(name), stage)
 
   private def parseIf(): Expr =
     expect(Kind.If, "`if`")

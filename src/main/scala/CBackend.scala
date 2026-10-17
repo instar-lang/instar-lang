@@ -87,11 +87,11 @@ object CBackend:
         case lam @ ELam(_, _, _, _) =>
           emitLambdaInto(name, declare, lam, env, indent)
 
-        case fix @ EFix(_, _, st) =>
-          requireFirstStage(st, "fixpoints")
-          emitFixInto(name, declare, fix, env, indent)
+        case rec @ ELetRec(_, _, _, st) =>
+          requireFirstStage(st, "recursive bindings")
+          emitLetRecInto(name, declare, rec, env, indent)
 
-        case ECond(_, _, _, _) =>
+        case ECond(_, _, _, _) | ELet(_, _, _) =>
           val prefix = if declare then s"${indent}Value $name = make_unit();\n" else ""
           prefix + emitExpr(expr, name, env, indent)
 
@@ -131,44 +131,48 @@ object CBackend:
         out.append(s"${indent}${kw}$name = make_closure(&$funName, $envVar);\n")
       out.result()
 
-    private def emitFixInto(
+    private def emitLetRecInto(
       name: String,
       declare: Boolean,
-      fix: EFix,
+      rec: ELetRec,
       env: Map[String, String],
       indent: String,
     ): String =
-      val (prefix, lam) = extractRecursiveLambda(fix.e)
-      val prefixOut = new StringBuilder
-      var currentEnv = env
-      prefix.foreach { case (x, rhs) =>
-        val local = freshName("v")
-        prefixOut.append(emitInto(local, declare = true, rhs, currentEnv, indent))
-        currentEnv += (x -> local)
-      }
+      var rhs = stripAscriptions(rec.rhs)
+      while rhs match
+        case ELet(x, value, EVar(y)) if x == y =>
+          rhs = stripAscriptions(value)
+          true
+        case _ => false
+      do ()
+      val lam = rhs match
+        case lam: ELam => lam
+        case other => throw CompileException(s"Expected a recursive lambda, found $other")
+      val self = rec.f
+      val local = freshName("rec")
 
-      val captures = recursiveLambdaCaptures(fix.f, lam).toList.sorted
+      val captures = recursiveLambdaCaptures(self, lam).toList.sorted
       val captureFields = captures.zipWithIndex.map { case (x, i) => x -> s"capture_$i" }
-      val funName = freshName("fix_fun")
-      val envType = freshName("fix_env")
+      val funName = freshName("rec_fun")
+      val envType = freshName("rec_env")
 
       val funBodyEnv =
-        Map(lam.x -> "arg", fix.f -> "env->self") ++
+        Map(self -> "env->self", lam.x -> "arg") ++
           captureFields.map { case (x, field) => x -> s"env->$field" }
 
       lambdaDefs += emitLambdaDef(funName, Some(envType), captureFields, lam.body, funBodyEnv, recursive = true)
 
       val out = new StringBuilder
-      out.append(prefixOut.result())
       val envVar = freshName("env")
       out.append(s"${indent}$envType* $envVar = ($envType*)malloc(sizeof($envType));\n")
       out.append(s"${indent}if ($envVar == NULL) { instar_panic(\"out of memory\"); }\n")
       captureFields.foreach { case (x, field) =>
-        out.append(s"${indent}$envVar->$field = ${lookupVar(x, currentEnv)};\n")
+        out.append(s"${indent}$envVar->$field = ${lookupVar(x, env)};\n")
       }
-      val kw = if declare then "Value " else ""
-      out.append(s"${indent}${kw}$name = make_closure(&$funName, $envVar);\n")
-      out.append(s"${indent}$envVar->self = $name;\n")
+      out.append(s"${indent}Value $local = make_closure(&$funName, $envVar);\n")
+      out.append(s"${indent}$envVar->self = $local;\n")
+      if declare then out.append(s"${indent}Value $name = make_unit();\n")
+      out.append(emitExpr(rec.body, name, env + (self -> local), indent))
       out.result()
 
     private def emitLambdaDef(
@@ -242,7 +246,7 @@ object CBackend:
         case ELoc(l) =>
           s"make_ref_cell(&${ensureLiftedLoc(l)})"
 
-        case ELam(_, _, _, _) | EFix(_, _, _) | ECond(_, _, _, _) | ELet(_, _, _) =>
+        case ELam(_, _, _, _) | ELetRec(_, _, _, _) | ECond(_, _, _, _) | ELet(_, _, _) =>
           throw CompileException(s"Expected a simple ANF expression, found $expr")
 
         case unsupported =>
@@ -272,30 +276,6 @@ object CBackend:
 
     private def recursiveLambdaCaptures(f: String, lam: ELam): Set[String] =
       (stripAscriptions(lam.body).freeVar - lam.x) - f
-
-    private def extractRecursiveLambda(expr: Expr): (List[(String, Expr)], ELam) =
-      def loop(current: Expr, acc: List[(String, Expr)]): (List[(String, Expr)], ELam) =
-        stripAscriptions(current) match
-          case lam @ ELam(_, _, _, _) =>
-            (acc.reverse, lam)
-
-          case ELet(x, rhs, body) =>
-            loop(body, (x -> rhs) :: acc)
-
-          case EVar(x) =>
-            acc match
-              case (y, rhs) :: rest if x == y =>
-                stripAscriptions(rhs) match
-                  case lam @ ELam(_, _, _, _) => (rest.reverse, lam)
-                  case other =>
-                    throw CompileException(s"Recursive function must evaluate to a lambda, found $other")
-              case _ =>
-                throw CompileException(s"Recursive function must end in a lambda-bound variable, found $current")
-
-          case other =>
-            throw CompileException(s"Unsupported recursive function shape: $other")
-
-      loop(expr, Nil)
 
     private def stripAscriptions(expr: Expr): Expr =
       expr match

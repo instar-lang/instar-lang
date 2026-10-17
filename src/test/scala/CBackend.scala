@@ -14,6 +14,7 @@ import instar.interp.Value.*
 import instar.parser.parse
 import instar.syntax.*
 import instar.syntax.given
+import instar.typing.infer
 import Expr.*
 
 class CBackendTest extends FunSuite:
@@ -72,13 +73,38 @@ class CBackendTest extends FunSuite:
   }
 
   test("compiled recursive closures preserve recursion") {
+    {
+      val src = """
+        let fib = fix@2 fib. lift[2](fun(n: Code[Int]): Code[Int] =>
+          if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
+        in fib(lift[2](5))@2
+      """
+      val out = parseEvalCompile(src)
+      assertEquals(out, "120")
+    }
+    {
+      val code = VCode(ELetRec("f", ELam("f", None, EVar("f"), None),
+        EApp(EVar("f"), ENum(42), Some(Sta)), Some(Sta)))
+      assertEquals(runCompiledC(CBackend.compile(code)), "42")
+    }
+  }
+
+  test("annotated fix elaborates a computed body for the C backend") {
     val src = """
-      let fib = fix@2 fib. lift[2](fun(n: Code[Int]): Code[Int] =>
-        if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
-      in fib(lift[2](5))@2
+      let make = fun@2(n: Code[Int]) => n +@2 lift[2](1) in
+      let f = fix f: Code[Int -> Int]. make in f(lift[2](41))@2
     """
-    val out = parseEvalCompile(src)
-    assertEquals(out, "120")
+    assertEquals(runCompiledC(CBackend.compileResult(eval(infer(parse(src))))), "42")
+  }
+
+  test("compiled elaborated fix supports a symbolic outer stage") {
+    val src = """
+      let fact = (sfun[s] => fix f: (Int@s -> Int@s)@s.
+        fun@s(n: Int@s) => if@s n <=@s lift[s](1) then lift[s](1)
+          else n *@s f(n -@s lift[s](1))@s)[2]
+      in fact(lift[2](5))@2
+    """
+    assertEquals(runCompiledC(CBackend.compileResult(eval(infer(parse(src))))), "120")
   }
 
   test("compiled reference code returns the right value") {

@@ -164,14 +164,32 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       val resultTy = typedBody.ty.get.at(typedRhs.ty.get.stage)
       ELet(x, typedRhs, coerce(ctx, typedBody, resultTy)).withType(resultTy)
 
-    case ELetRec(f, rhs, body) =>
-      val recTy = resolveRecType(ctx, rhs)
-      val typedRhs = recTy match
-        case Some(t) => check(ctx + (f -> t), rhs, t)
-        case None => fail(s"recursive `letrec` binding `$f` needs an annotation")
-      val rhsTy = typedRhs.ty.get
-      val typedBody = infer(ctx + (f -> rhsTy), body)
-      ELetRec(f, typedRhs, typedBody).withType(typedBody.ty.get)
+    case ELetRec(f, EAscribe(rhs, ty), body, explicitStage) =>
+      WF.check(ctx, ty)
+      val st = ty.stage
+      explicitStage.foreach { s =>
+        WF.check(ctx, s)
+        assert(ctx.constraints.implyStEq(s, st), s"letrec stage $s does not match recursive type $ty")
+      }
+      val recursiveCtx = ctx + (f -> ty)
+      val typedRhs = check(recursiveCtx, rhs, ty)
+      val delayed = ty.base match
+        case TFun(arg, ret) =>
+          val x = Counter.fresh
+          val call = EApp(typedRhs, EVar(x).withType(arg), Some(st)).withType(ret)
+          val lam = ELam(x, Some(arg), call, Some(ret)).withType(TFun(arg, ret))
+          ELift(lam, st).withType(ty)
+        case TForallSt(s, inner, constraints) =>
+          val fresh = Counter.fresh
+          val stage = SVar(fresh)
+          val call = ESApp(typedRhs, stage).withType(Subst.ty(inner, s, stage))
+          ESLam(fresh, call, Subst.constraints(constraints, s, stage)).withType(ty)
+        case _ => fail(s"letrec requires a function or stage-polymorphic type, found $ty")
+      val typedBody = infer(recursiveCtx, body)
+      val resultTy = typedBody.ty.get.at(st)
+      ELetRec(f, delayed, coerce(recursiveCtx, typedBody, resultTy), Some(st)).withType(resultTy)
+    case ELetRec(f, _, _, _) =>
+      fail(s"recursive `letrec` binding `$f` needs a type annotation or an annotated function header")
 
     case ECond(cond, thn, els, stage) =>
       val typedCond = stage match
@@ -254,14 +272,6 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       WF.check(ctx, ty)
       check(ctx, e, ty)
 
-    case EFix(f, e, None) => infer(ctx, EFix(f, e, Some(Sta)))
-    case EFix(f, e, Some(st)) =>
-      val recTy = resolveRecType(ctx, e)
-      val typedBody = recTy match
-        case Some(t) => check(ctx + (f -> t), e, t)
-        case None => fail(s"recursive `fix` binding `$f` needs an annotation")
-      EFix(f, typedBody, Some(st)).withType(typedBody.ty.get)
-
     case ELoc(_) =>
       fail("cannot type-check internal location expressions")
 
@@ -327,30 +337,6 @@ private def coerce(ctx: Ctx, expr: Expr, expected: Type): Expr =
 private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
   coerce(ctx, infer(ctx, expr), expected)
 
-private def resolveRecType(ctx: Ctx, expr: Expr): Option[Type] =
-  expr match
-    case EAscribe(_, ann) => Some(ann)
-    case ELift(e, st) =>
-      resolveRecType(ctx, e) match
-        case Some(t) => Some(t.at(st))
-        case None => None
-    case ELam(_, Some(argTy), _, Some(retTy)) =>
-      Some(TFun(argTy, retTy))
-    case ELam(x, Some(argTy), body, None) =>
-      resolveRecType(ctx + (x -> argTy), body) match
-        case Some(retTy) => Some(TFun(argTy, retTy))
-        case None => None
-    case EBNLam(_, Some(argTy), _, Some(retTy)) =>
-      Some(TFun(argTy, retTy))
-    case EBNLam(x, Some(argTy), body, None) =>
-      resolveRecType(ctx + (x -> argTy), body) match
-        case Some(retTy) => Some(TFun(argTy, retTy))
-        case None => None
-    case ESLam(s, body, cs) =>
-      resolveRecType(ctx + (s, cs), body).map(TForallSt(s, _, cs))
-    case _ =>
-      None
-
 private object Subst:
   def constraints(cs: List[StageConstraint], from: String, to: Stage): List[StageConstraint] =
     def subst(st: Stage): Stage = Stage.substitute(st, from, to)
@@ -371,8 +357,7 @@ private object Subst:
       case ELift(t, st) => ELift(expr(t), stage(st))
       case ERun(t) => ERun(expr(t))
       case ELet(x, rhs, body) => ELet(x, expr(rhs), expr(body))
-      case ELetRec(x, rhs, body) => ELetRec(x, expr(rhs), expr(body))
-      case EFix(x, body, st) => EFix(x, expr(body), st.map(stage))
+      case ELetRec(x, rhs, body, st) => ELetRec(x, expr(rhs), expr(body), st.map(stage))
       case ECond(c, a, b, st) => ECond(expr(c), expr(a), expr(b), st.map(stage))
       case EBinOp(op, a, b, st) => EBinOp(op, expr(a), expr(b), st.map(stage))
       case EUnaryOp(op, t, st) => EUnaryOp(op, expr(t), st.map(stage))

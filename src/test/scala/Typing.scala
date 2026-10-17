@@ -100,6 +100,42 @@ class TypingTest extends FunSuite:
     assertEquals(inst.st, SNum(2))
   }
 
+  test("infer handles annotated letrec from parser output") {
+    val src = """
+      letrec fact: Int -> Int =
+        fun(n: Int): Int => if n <= 1 then 1 else n * fact(n - 1)
+      in fact(5)
+    """
+    val typed = infer(parse(src))
+    assert(Nil.implyTyEq(typed.ty.get, TInt.at()))
+    assertEquals(pretty.expr(typed),
+      "letrec@1 fact = lift[1](fun($s14: Int): Int => (fun($s12) => lift[1](fun($s13) => (fun($s11) => " +
+      "lift[1]($s11)) ($s12 ((fun($s10) => lift[1]($s10)) $s13@1)@1)@1)) (fun(n: Int): Int => (fun($s9) => " +
+      "lift[1]($s9)) (if@(1 | 1) (fun($s0) => lift[1 | 1]($s0)) n@1 <=@(1 | 1) (fun($s1) => lift[1 | 1]($s1)) " +
+      "1@1 then (fun($s7) => lift[1 | 1 | 1 | (1 | 1)]($s7)) 1@1 else (fun($s8) => lift[1 | 1 | 1 | (1 | " +
+      "1)]($s8)) ((fun($s5) => lift[1 | 1]($s5)) n@1 *@(1 | 1) (fun($s6) => lift[1 | 1]($s6)) (fact ((fun($s4) " +
+      "=> lift[1]($s4)) ((fun($s2) => lift[1 | 1]($s2)) n@1 -@(1 | 1) (fun($s3) => lift[1 | 1]($s3)) " +
+      "1@1)@1)@1)@1)@1)@1)@1 $s14@1) in (fun($s16) => lift[1]($s16)) (fact ((fun($s15) => lift[1]($s15)) " +
+      "5@1)@1)@1")
+  }
+
+  test("infer handles fix with an explicitly annotated recursive binder") {
+    val src =
+      "fix fib: Int -> Int. fun(n: Int) => if n <= 1 then 1 else n * fib(n - 1)"
+
+    val typed = infer(parse(src))
+    assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt).at()))
+    assertEquals(pretty.expr(typed),
+      "letrec@1 fib = lift[1](fun($s13: Int): Int => (fun($s11) => lift[1](fun($s12) => (fun($s10) => " +
+      "lift[1]($s10)) ($s11 ((fun($s9) => lift[1]($s9)) $s12@1)@1)@1)) (fun(n: Int): Int @ (1 | 1 | 1 | (1 | 1))" +
+      " => if@(1 | 1) (fun($s0) => lift[1 | 1]($s0)) n@1 <=@(1 | 1) (fun($s1) => lift[1 | 1]($s1)) 1@1 then " +
+      "(fun($s7) => lift[1 | 1 | 1 | (1 | 1)]($s7)) 1@1 else (fun($s8) => lift[1 | 1 | 1 | (1 | 1)]($s8)) " +
+      "((fun($s5) => lift[1 | 1]($s5)) n@1 *@(1 | 1) (fun($s6) => lift[1 | 1]($s6)) (fib ((fun($s4) => " +
+      "lift[1]($s4)) ((fun($s2) => lift[1 | 1]($s2)) n@1 -@(1 | 1) (fun($s3) => lift[1 | 1]($s3)) " +
+      "1@1)@1)@1)@1)@1)@1 $s13@1) in (fun($s16) => lift[1](fun($s17) => (fun($s15) => lift[1]($s15)) ($s16 " +
+      "((fun($s14) => lift[1]($s14)) $s17@1)@1)@1)) fib@1")
+  }
+
   test("ascription treats forall stage binders up to alpha-renaming") {
     val src = "fun(x: forall[a]. Int @ a): forall[a]. Int @ a => x"
     val expected =
@@ -824,6 +860,149 @@ class ElabTest extends FunSuite:
     assert(Nil.implyTyEq(joined.ty.get, joinedExpected))
   }
 
+  test("fix selects its stage from the declared recursive type") {
+    val static = "fix f: Int -> Int. fun(n: Int) => if n <= 0 then 1 else f(n - 1)"
+    assertEquals(pretty.expr(infer(parse(static))),
+      "letrec@1 f = lift[1](fun($s11: Int): Int => (fun($s9) => lift[1](fun($s10) => (fun($s8) => lift[1]($s8)) " +
+      "($s9 ((fun($s7) => lift[1]($s7)) $s10@1)@1)@1)) (fun(n: Int): Int @ (1 | 1 | 1 | 1) => if@(1 | 1) " +
+      "(fun($s0) => lift[1 | 1]($s0)) n@1 <=@(1 | 1) (fun($s1) => lift[1 | 1]($s1)) 0@1 then (fun($s5) => lift[1" +
+      " | 1 | 1 | 1]($s5)) 1@1 else (fun($s6) => lift[1 | 1 | 1 | 1]($s6)) (f ((fun($s4) => lift[1]($s4)) " +
+      "((fun($s2) => lift[1 | 1]($s2)) n@1 -@(1 | 1) (fun($s3) => lift[1 | 1]($s3)) 1@1)@1)@1)@1)@1 $s11@1) in " +
+      "(fun($s14) => lift[1](fun($s15) => (fun($s13) => lift[1]($s13)) ($s14 ((fun($s12) => lift[1]($s12)) " +
+      "$s15@1)@1)@1)) f@1")
+    assertEquals(run(s"($static)(3)"), Value.VNum(1))
+    assertEquals(pretty.expr(infer(parse("fix@(1 | 1) f: Int -> Int. fun(n: Int) => n"))),
+      "letrec@1 f = lift[1](fun($s4: Int): Int => (fun($s2) => lift[1](fun($s3) => (fun($s1) => lift[1]($s1)) " +
+      "($s2 ((fun($s0) => lift[1]($s0)) $s3@1)@1)@1)) (fun(n: Int): Int => n)@1 $s4@1) in (fun($s7) => " +
+      "lift[1](fun($s8) => (fun($s6) => lift[1]($s6)) ($s7 ((fun($s5) => lift[1]($s5)) $s8@1)@1)@1)) f@1")
+    val dynamic = "fix f: Code[Int -> Int]. fun@2(n: Code[Int]) => if n <= 0 then 1 else f(n - 1)"
+    assertEquals(pretty.expr(infer(parse(dynamic))),
+      "letrec@2 f = fun@2($s11: Int @ 2): Int @ 2 => (fun($s9) => fun@2($s10) => (fun($s8) => lift[2]($s8)) ($s9" +
+      " ((fun($s7) => lift[2]($s7)) $s10@1)@2)@1) (fun@2(n: Int @ 2): Int @ (2 | 1 | 1 | 2) => if@(2 | 1) " +
+      "(fun($s0) => lift[2 | 1]($s0)) n@1 <=@(2 | 1) (fun($s1) => lift[2 | 1]($s1)) 0@1 then (fun($s5) => lift[2" +
+      " | 1 | 1 | 2]($s5)) 1@1 else (fun($s6) => lift[2 | 1 | 1 | 2]($s6)) (f ((fun($s4) => lift[2]($s4)) " +
+      "((fun($s2) => lift[2 | 1]($s2)) n@1 -@(2 | 1) (fun($s3) => lift[2 | 1]($s3)) 1@1)@1)@2)@1)@1 $s11@2 in " +
+      "(fun($s14) => fun@2($s15) => (fun($s13) => lift[2]($s13)) ($s14 ((fun($s12) => lift[2]($s12)) " +
+      "$s15@1)@2)@1) f@1")
+    assertEquals(run(s"run(($dynamic)(3))"), Value.VNum(1))
+  }
+
+  test("fix preserves a symbolic outer stage") {
+    val src = "sfun[s] => fix@s f: (Int@s -> Int@s)@s. " +
+      "fun@s(n: Int@s) => if n <= 0 then 1 else f(n - 1)"
+    assertEquals(pretty.expr(infer(parse(src))),
+      "sfun[s] => letrec@s f = fun@s($s11: Int @ s): Int @ s => (fun($s9) => fun@s($s10) => (fun($s8) => " +
+      "lift[s]($s8)) ($s9 ((fun($s7) => lift[s]($s7)) $s10@1)@s)@1) (fun@s(n: Int @ s): Int @ (s | 1 | 1 | s) =>" +
+      " if@(s | 1) (fun($s0) => lift[s | 1]($s0)) n@1 <=@(s | 1) (fun($s1) => lift[s | 1]($s1)) 0@1 then " +
+      "(fun($s5) => lift[s | 1 | 1 | s]($s5)) 1@1 else (fun($s6) => lift[s | 1 | 1 | s]($s6)) (f ((fun($s4) => " +
+      "lift[s]($s4)) ((fun($s2) => lift[s | 1]($s2)) n@1 -@(s | 1) (fun($s3) => lift[s | 1]($s3)) " +
+      "1@1)@1)@s)@1)@1 $s11@s in (fun($s14) => fun@s($s15) => (fun($s13) => lift[s]($s13)) ($s14 ((fun($s12) => " +
+      "lift[s]($s12)) $s15@1)@s)@1) f@1")
+    assertEquals(run(s"($src)[1](3)"), Value.VNum(1))
+    assertEquals(run(s"run(($src)[2](lift[2](3)))"), Value.VNum(1))
+  }
+
+  test("fix preserves a joined outer stage") {
+    val src = "sfun[a, b] => fix f: (Int@(a | b) -> Int@(a | b))@(a | b). " +
+      "fun@(a | b)(x: Int@(a | b)) => x"
+    assertEquals(pretty.expr(infer(parse(src))),
+      "sfun[a, b] => letrec@(a | b) f = fun@(a | b)($s4: Int @ (a | b)): Int @ (a | b) => (fun($s2) => fun@(a | " +
+      "b)($s3) => (fun($s1) => lift[a | b]($s1)) ($s2 ((fun($s0) => lift[a | b]($s0)) $s3@1)@(a | b))@1) (fun@(a" +
+      " | b)(x: Int @ (a | b)): Int @ (a | b) => x)@1 $s4@(a | b) in (fun($s7) => fun@(a | b)($s8) => (fun($s6) " +
+      "=> lift[a | b]($s6)) ($s7 ((fun($s5) => lift[a | b]($s5)) $s8@1)@(a | b))@1) f@1")
+    assertEquals(run(s"($src)[1, 1](7)"), Value.VNum(7))
+    assertEquals(run(s"run(($src)[1, 2](lift[2](7)))"), Value.VNum(7))
+  }
+
+  test("fix supports annotated polymorphic recursion") {
+    val src = "fix f: forall[s]. Int -> Int@s. sfun[s] => fun(n: Int) => " +
+      "if n <= 0 then lift[s](1) else f[s](n - 1)"
+    assertEquals(pretty.expr(infer(parse(src))),
+      "letrec@1 f[$s9] = ((fun($s8) => $s8) (sfun[s] => fun(n: Int): Int @ (1 | 1 | s | s) => if@(1 | 1) " +
+      "(fun($s0) => lift[1 | 1]($s0)) n@1 <=@(1 | 1) (fun($s1) => lift[1 | 1]($s1)) 0@1 then (fun($s5) => lift[1" +
+      " | 1 | s | s]($s5)) (lift[s](1))@1 else (fun($s6) => lift[1 | 1 | s | s]($s6)) (f[s] ((fun($s4) => " +
+      "lift[1]($s4)) ((fun($s2) => lift[1 | 1]($s2)) n@1 -@(1 | 1) (fun($s3) => lift[1 | 1]($s3)) " +
+      "1@1)@1)@1)@1)@1)[$s9] in (fun($s11) => $s11) f@1")
+    assertEquals(run(s"($src)[1](3)"), Value.VNum(1))
+    assertEquals(run(s"run(($src)[2](3))"), Value.VNum(1))
+  }
+
+  test("fix delays a computed function body until calls") {
+    {
+      val src = """
+        let cell = ref(0) in
+        let f = fix f: Int -> Int.
+          let ignored = cell := !cell + 1 in fun(n: Int) => n in
+        let before = !cell in let first = f(1) in let second = f(2) in
+        before * 100 + !cell
+      """
+      assertEquals(pretty.expr(infer(parse(src))),
+        "let cell = ref@1(0) in (fun($s26) => lift[1]($s26)) (let f = letrec@1 f = lift[1](fun($s11: Int): Int => " +
+        "(fun($s9) => lift[1](fun($s10) => (fun($s8) => lift[1]($s8)) ($s9 ((fun($s7) => lift[1]($s7)) " +
+        "$s10@1)@1)@1)) (let ignored = cell :=@1 (fun($s2) => lift[1]($s2)) ((fun($s0) => lift[1 | 1]($s0)) (!@1 " +
+        "cell)@1 +@(1 | 1) (fun($s1) => lift[1 | 1]($s1)) 1@1)@1 in (fun($s5) => lift[1](fun($s6) => (fun($s4) => " +
+        "lift[1]($s4)) ($s5 ((fun($s3) => lift[1]($s3)) $s6@1)@1)@1)) (fun(n: Int): Int => n)@1)@1 $s11@1) in " +
+        "(fun($s14) => lift[1](fun($s15) => (fun($s13) => lift[1]($s13)) ($s14 ((fun($s12) => lift[1]($s12)) " +
+        "$s15@1)@1)@1)) f@1 in (fun($s25) => lift[1]($s25)) (let before = !@1 cell in (fun($s24) => lift[1]($s24))" +
+        " (let first = f ((fun($s16) => lift[1]($s16)) 1@1)@1 in (fun($s23) => lift[1]($s23)) (let second = f " +
+        "((fun($s17) => lift[1]($s17)) 2@1)@1 in (fun($s22) => lift[1]($s22)) ((fun($s20) => lift[1 | 1 | " +
+        "1]($s20)) ((fun($s18) => lift[1 | 1]($s18)) before@1 *@(1 | 1) (fun($s19) => lift[1 | 1]($s19)) 100@1)@1 " +
+        "+@(1 | 1 | 1) (fun($s21) => lift[1 | 1 | 1]($s21)) (!@1 cell)@1)@1)@1)@1)@1)@1")
+      assertEquals(run(src), Value.VNum(2))
+    }
+    {
+      val src = """
+        let cell = ref@2(lift[2](0)) in
+        letrec f: Code[Int -> Int] =
+          let ignored = cell :=@2 !@2 cell + 1 in fun@2(n: Code[Int]) => n
+        in let before = !@2 cell in let first = f(1) in let second = f(2) in
+        before * 100 + !@2 cell
+      """
+      assertEquals(pretty.expr(infer(parse(src))),
+        "let cell = ref@2(lift[2](0)) in (fun($s22) => lift[2]($s22)) (letrec@2 f = fun@2($s11: Int @ 2): Int @ 2 " +
+        "=> (fun($s9) => fun@2($s10) => (fun($s8) => lift[2]($s8)) ($s9 ((fun($s7) => lift[2]($s7)) $s10@1)@2)@1) " +
+        "(let ignored = cell :=@2 (fun($s2) => lift[2]($s2)) ((fun($s0) => lift[2 | 1]($s0)) (!@2 cell)@1 +@(2 | " +
+        "1) (fun($s1) => lift[2 | 1]($s1)) 1@1)@1 in (fun($s5) => fun@2($s6) => (fun($s4) => lift[2]($s4)) ($s5 " +
+        "((fun($s3) => lift[2]($s3)) $s6@1)@2)@1) (fun@2(n: Int @ 2): Int @ 2 => n)@1)@1 $s11@2 in (fun($s21) => " +
+        "lift[2]($s21)) (let before = !@2 cell in (fun($s20) => lift[2]($s20)) (let first = f ((fun($s12) => " +
+        "lift[2]($s12)) 1@1)@2 in (fun($s19) => lift[2]($s19)) (let second = f ((fun($s13) => lift[2]($s13)) " +
+        "2@1)@2 in (fun($s18) => lift[2]($s18)) ((fun($s16) => lift[2 | 1 | 2]($s16)) ((fun($s14) => lift[2 | " +
+        "1]($s14)) before@1 *@(2 | 1) (fun($s15) => lift[2 | 1]($s15)) 100@1)@1 +@(2 | 1 | 2) (fun($s17) => lift[2" +
+        " | 1 | 2]($s17)) (!@2 cell)@1)@1)@1)@1)@1)@1")
+      assertEquals(run(s"run($src)"), Value.VNum(2))
+    }
+  }
+
+  test("fix delays a computed polymorphic body until stage instantiation") {
+    {
+      val src = "fix f: forall[s]. Int@s -> Int@s. " +
+        "if true then sfun[s] => fun(x: Int@s) => x else f"
+      assertEquals(pretty.expr(infer(parse(src))),
+        "letrec@1 f[$s7] = ((fun($s6) => $s6) (if@1 true then (fun($s2) => $s2) (sfun[s] => fun(x: Int @ s): Int @" +
+        " s => x)@1 else (fun($s4) => $s4) f@1)@1)[$s7] in (fun($s9) => $s9) f@1")
+      assertEquals(run(s"($src)[1](3)"), Value.VNum(3))
+      assertEquals(run(s"run(($src)[2](3))"), Value.VNum(3))
+    }
+    {
+      val src = """
+        let cell = ref(0) in
+        letrec f: forall[s]. Int =
+          let ignored = cell := !cell + 1 in sfun[s] => 1
+        in let before = !cell in let first = f[1] in let second = f[2] in
+        before * 100 + !cell
+      """
+      assertEquals(pretty.expr(infer(parse(src))),
+        "let cell = ref@1(0) in (fun($s16) => lift[1]($s16)) (letrec@1 f[$s7] = ((fun($s6) => $s6) (let ignored = " +
+        "cell :=@1 (fun($s2) => lift[1]($s2)) ((fun($s0) => lift[1 | 1]($s0)) (!@1 cell)@1 +@(1 | 1) (fun($s1) => " +
+        "lift[1 | 1]($s1)) 1@1)@1 in (fun($s4) => $s4) (sfun[s] => 1)@1)@1)[$s7] in (fun($s15) => lift[1]($s15)) " +
+        "(let before = !@1 cell in (fun($s14) => lift[1]($s14)) (let first = f[1] in (fun($s13) => lift[1]($s13)) " +
+        "(let second = f[2] in (fun($s12) => lift[1]($s12)) ((fun($s10) => lift[1 | 1 | 1]($s10)) ((fun($s8) => " +
+        "lift[1 | 1]($s8)) before@1 *@(1 | 1) (fun($s9) => lift[1 | 1]($s9)) 100@1)@1 +@(1 | 1 | 1) (fun($s11) => " +
+        "lift[1 | 1 | 1]($s11)) (!@1 cell)@1)@1)@1)@1)@1)@1")
+      assertEquals(run(src), Value.VNum(2))
+    }
+  }
+
   test("coerce primitives") {
     {
       val expr = parse("fun(x: Int): Int@2 => 1")
@@ -899,6 +1078,34 @@ class ElabNegativeTest extends FunSuite:
     val src =
       "letrec fact = fun(n: Int) => if n <= 1 then 1 else n * fact(n - 1) in fact(5)"
     intercept[TypeException] { infer(parse(src)) }
+  }
+
+  test("fix requires an explicit recursive type") {
+    intercept[TypeException] { infer(parse("fix f. fun(x: Int): Int => x")) }
+  }
+
+  test("fix rejects primitive and reference recursive types") {
+    intercept[TypeException] { infer(parse("fix f: Int. 1")) }
+    intercept[TypeException] { infer(parse("fix f: Ref[Int]. ref(0)")) }
+  }
+
+  test("fix checks its body against the declared recursive type") {
+    intercept[TypeException] { infer(parse("fix f: Int -> Int. fun(x: Int) => false")) }
+  }
+
+  test("fix rejects an explicit stage that disagrees with its type") {
+    intercept[TypeException] { infer(parse("fix@2 f: Int -> Int. fun(x: Int) => x")) }
+    intercept[TypeException] { infer(parse("fix@1 f: Code[Int -> Int]. fun@2(x: Code[Int]) => x")) }
+    intercept[TypeException] {
+      infer(parse("sfun[s] => fix@1 f: (Int@s -> Int@s)@s. fun@s(x: Int@s) => x"))
+    }
+    intercept[TypeException] {
+      infer(parse("fix@2 f: forall[s]. Int@s -> Int@s. sfun[s] => fun(x: Int@s) => x"))
+    }
+  }
+
+  test("fix rejects ill-scoped recursive types") {
+    intercept[TypeException] { infer(parse("fix f: Int@missing -> Int. fun(x: Int) => x")) }
   }
 
   test("checking rejects incompatible result types") {
