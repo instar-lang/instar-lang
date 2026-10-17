@@ -177,14 +177,14 @@ class Core extends SurfaceBase {
 
   test("rec-imp-stage-poly") {
     val runtimeSrc = """
-      letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int @ s =
-        sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int]@s): Int @ s =>
+      letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int@s]@s -> Int @ s =
+        sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int@s]@s): Int @ s =>
           if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower[s](b)(n - 1)(result)
       in impPower[1](2)(3)(ref(1))
     """
     val codeSrc = """
-      letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int @ s =
-        sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int]@s): Int @ s =>
+      letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int@s]@s -> Int @ s =
+        sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int@s]@s): Int @ s =>
           if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower[s](b)(n - 1)(result)
       in lift[2](fun(x: Code[Int]): Code[Int] => impPower[2](x)(3)(ref@2(lift[2](1))))
     """
@@ -211,7 +211,7 @@ class Core extends SurfaceBase {
 
   test("rec-imp-stage-poly letrec-header-sugar") {
     val runtimeSrc = """
-      letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int]@s): Int @ s =
+      letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int@s]@s): Int @ s =
         if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower[s](b)(n - 1)(result)
       in impPower[1](2)(3)(ref(1))
     """

@@ -53,7 +53,9 @@ private object WF:
         check(ctx, ret)
         ctx.constraints.assertStLeq(st, arg.stage)
         ctx.constraints.assertStLeq(st, ret.stage)
-      case TRef(inner) => check(ctx, inner)
+      case TRef(inner) =>
+        check(ctx, inner)
+        ctx.constraints.assertStLeq(st, inner.stage)
       case TForallSt(s, body, constraints) =>
         assert(ctx.constraints.implyStEq(st, Sta), "stage abstractions must be at stage 1")
         if ctx.containsStVar(s) then
@@ -242,7 +244,8 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EAlloc(e, Some(st)) =>
       WF.check(ctx, st)
       val typedE = infer(ctx, e)
-      val elemTy = unwrapAtStage(ctx, typedE.ty.get, st)
+      val elemTy = typedE.ty.get
+      ctx.constraints.assertStLeq(st, elemTy.stage)
       EAlloc(typedE, Some(st)).withType(TRef(elemTy).at(st))
 
     case EDeref(e, None) => infer(ctx, EDeref(e, Some(Sta)))
@@ -250,9 +253,12 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EDeref(e, Some(st)) =>
       WF.check(ctx, st)
       val typedE = infer(ctx, e)
-      unwrapAtStage(ctx, typedE.ty.get, st).base match
+      val refTy = typedE.ty.get
+      refTy.base match
         case TRef(elemTy) =>
-          EDeref(typedE, Some(st)).withType(if ctx.constraints.implyStEq(st, Sta) then elemTy else elemTy.at(st))
+          assert(ctx.constraints.implyStEq(refTy.stage, st),
+            s"reference stage ${refTy.stage} does not match dereference stage $st")
+          EDeref(typedE, Some(st)).withType(elemTy)
         case other =>
           fail(s"`!` expects a reference, found $other")
 
@@ -261,9 +267,12 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EAssign(e1, e2, Some(st)) =>
       WF.check(ctx, st)
       val typedL = infer(ctx, e1)
-      unwrapAtStage(ctx, typedL.ty.get, st).base match
+      val refTy = typedL.ty.get
+      refTy.base match
         case TRef(elemTy) =>
-          val typedR = check(ctx, e2, if ctx.constraints.implyStEq(st, Sta) then elemTy else elemTy.at(st))
+          assert(ctx.constraints.implyStEq(refTy.stage, st),
+            s"reference stage ${refTy.stage} does not match assignment stage $st")
+          val typedR = check(ctx, e2, elemTy)
           EAssign(typedL, typedR, Some(st)).withType(TUnit.at(st))
         case other =>
           fail(s"`:=` expects a reference on the left, found $other")
@@ -387,12 +396,6 @@ private def freshenStageBinder(lam: ESLam): Expr =
   val fresh = Counter.fresh
   ESLam(fresh, Subst.expr(lam.body, lam.s, SVar(fresh)),
     Subst.constraints(lam.constraints, lam.s, SVar(fresh)))
-
-private def unwrapAtStage(ctx: Ctx, ty: Type, st: Stage): Type =
-  if ctx.constraints.implyStEq(st, Sta) then ty
-  else
-    assert(ctx.constraints.implyStEq(ty.stage, st), s"type $ty is not available at stage $st")
-    ty.at(Sta)
 
 private def inferBinOp(op: String, st: Stage): (Type, Type) =
   op match

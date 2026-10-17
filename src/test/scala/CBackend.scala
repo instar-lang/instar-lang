@@ -119,8 +119,8 @@ class CBackendTest extends FunSuite:
 
   test("stage-poly imperative power") {
     val src = """
-    letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int@s =
-      sfun[s] => fun(b: Int@s) => fun(n: Int) => fun(result: Ref[Int]@s): Int@s =>
+    letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int@s]@s -> Int@s =
+      sfun[s] => fun(b: Int@s) => fun(n: Int) => fun(result: Ref[Int@s]@s): Int@s =>
         if n == 0
         then !@s result
         else
@@ -136,7 +136,7 @@ class CBackendTest extends FunSuite:
 
   test("stage-poly imperative power with letrec-header sugar") {
     val src = """
-    letrec impPower[s] (b: Int@s) (n: Int) (result: Ref[Int]@s): Int@s =
+    letrec impPower[s] (b: Int@s) (n: Int) (result: Ref[Int@s]@s): Int@s =
       if n == 0
       then !@s result
       else

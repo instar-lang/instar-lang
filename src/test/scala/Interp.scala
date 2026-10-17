@@ -775,7 +775,7 @@ class CoreEffTest extends Base {
   )
 
   /*
-    def impPower[s](b: Intˢ, n: Int, result: Ref[Int]ˢ): Intˢ =
+    def impPower[s](b: Intˢ, n: Int, result: Ref[Intˢ]ˢ): Intˢ =
       if n == 0 then
         !ˢresult
       else
@@ -789,14 +789,14 @@ class CoreEffTest extends Base {
       ESLam("s",
         ELam("b", Some(TAt(TInt, SVar("s"))),
           ELam("n", Some(TInt),
-            ELam("result", Some(TAt(TRef(TInt), SVar("s"))),
+            ELam("result", Some(TAt(TRef(TInt.at(SVar("s"))), SVar("s"))),
               ECond1(
                 EBinOp1("==", EVar("n"), ENum(0)),
                 EDeref(EVar("result"), SVar("s")),
                 ELet("_", EAssign(EVar("result"), EBinOp("*", EVar("b"), EDeref(EVar("result"), SVar("s")), SVar("s")), SVar("s")),
                   EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SVar("s")), EVar("b")), EBinOp1("-", EVar("n"), ENum(1))), EVar("result")))),
-            Some(TAt(TInt, SVar("s")))), Some(TFun(TAt(TRef(TInt), SVar("s")), TAt(TInt, SVar("s"))))), Some(TAt(TInt, SVar("s"))))),
-      TForallSt("s", TFun(TAt(TInt, SVar("s")), TFun(TInt, TFun(TRef(TInt), TAt(TInt, SVar("s"))))))),
+            Some(TAt(TInt, SVar("s")))), Some(TFun(TAt(TRef(TInt.at(SVar("s"))), SVar("s")), TAt(TInt, SVar("s"))))), Some(TAt(TInt, SVar("s"))))),
+      TForallSt("s", TFun(TAt(TInt, SVar("s")), TFun(TInt, TFun(TRef(TInt.at(SVar("s"))).at(SVar("s")), TAt(TInt, SVar("s"))))))),
     body
   )
 

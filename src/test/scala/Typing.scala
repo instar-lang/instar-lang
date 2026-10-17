@@ -695,6 +695,50 @@ class ElabTest extends FunSuite:
       "lift[d](x)")
   }
 
+  test("references preserve the stages of their element types") {
+    {
+      val src = "ref@2(lift[2](1))"
+      val typed = infer(parse(src))
+      assertEquals(typed.ty, Some(TRef(TInt.at(Dyn)).at(Dyn)))
+      assertEquals(pretty.expr(typed), "ref@2(lift[2](1))")
+    }
+    {
+      val src = "(ref@2(lift[2](1)): Code[Ref[Int]])"
+      val typed = infer(parse(src))
+      assertEquals(typed.ty, Some(TRef(TInt.at(Dyn)).at(Dyn)))
+      assertEquals(pretty.expr(typed), "(fun($s0) => $s0) (ref@2(lift[2](1)))@1")
+      assertEquals(run(s"run(!@2 $src)"), Value.VNum(1))
+    }
+    {
+      val src = "!@2(ref@2(lift[2](1)))"
+      val typed = infer(parse(src))
+      assertEquals(typed.ty, Some(TInt.at(Dyn)))
+      assertEquals(pretty.expr(typed), "!@2 ref@2(lift[2](1))")
+      assertEquals(run(s"run($src)"), Value.VNum(1))
+    }
+    {
+      val src = "!@1(ref@1(lift[2](1)))"
+      val typed = infer(parse(src))
+      assertEquals(typed.ty, Some(TInt.at(Dyn)))
+      assertEquals(pretty.expr(typed), "!@1 ref@1(lift[2](1))")
+      assertEquals(run(s"run($src)"), Value.VNum(1))
+    }
+    {
+      val src = "ref@2(ref@2(lift[2](1)))"
+      val typed = infer(parse(src))
+      assertEquals(typed.ty, Some(TRef(TRef(TInt.at(Dyn)).at(Dyn)).at(Dyn)))
+      assertEquals(pretty.expr(typed), "ref@2(ref@2(lift[2](1)))")
+    }
+    {
+      val src = "sfun[s] => fun(r: Ref[Int@s]@s) => !@s r"
+      val typed = infer(parse(src))
+      assertEquals(pretty.expr(typed),
+        "sfun[s] => fun(r: Ref[Int @ s] @ s): Int @ s => !@s r")
+      assertEquals(run(s"($src)[1](ref@1(1))"), Value.VNum(1))
+      assertEquals(run(s"run(($src)[2](ref@2(lift[2](1))))"), Value.VNum(1))
+    }
+  }
+
   test("reference stage join instantiated at [1, 1]") {
     val src =
       "let use[a, b] = let cell = ref@(a | b)(lift[a | b](1)) in let ignored = cell :=@(b | a) lift[a | b](2) in " +
@@ -702,7 +746,7 @@ class ElabTest extends FunSuite:
     val typed = infer(parse(src))
     assertEquals(pretty.expr(typed),
       "let use[a, b] = let cell = ref@(a | b)(lift[a | b](1)) in (fun($s2) => lift[a | b]($s2)) (let ignored = " +
-      "cell :=@(b | a) (fun($s0) => lift[b | a]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
+      "cell :=@(b | a) (fun($s0) => lift[a | b]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
       " | a) cell)@1)@1 in (fun($s3) => lift[1]($s3)) (use[1, 1])@1")
     assertEquals(run(src), Value.VNum(2))
   }
@@ -714,7 +758,7 @@ class ElabTest extends FunSuite:
     val typed = infer(parse(src))
     assertEquals(pretty.expr(typed),
       "(let use[a, b] = let cell = ref@(a | b)(lift[a | b](1)) in (fun($s2) => lift[a | b]($s2)) (let ignored = " +
-      "cell :=@(b | a) (fun($s0) => lift[b | a]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
+      "cell :=@(b | a) (fun($s0) => lift[a | b]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
       " | a) cell)@1)@1 in (fun($s5) => lift[1](fun($s6) => (fun($s4) => lift[1 | 2]($s4)) ($s5 ((fun($s3) => " +
       "lift[1]($s3)) $s6@1)@1)@1)) (fun(unit: Unit): Int @ (1 | 2) => use[1, 2])@1) ((fun($s7) => lift[1]($s7)) " +
       "(())@1)@1")
@@ -728,7 +772,7 @@ class ElabTest extends FunSuite:
     val typed = infer(parse(src))
     assertEquals(pretty.expr(typed),
       "(let use[a, b] = let cell = ref@(a | b)(lift[a | b](1)) in (fun($s2) => lift[a | b]($s2)) (let ignored = " +
-      "cell :=@(b | a) (fun($s0) => lift[b | a]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
+      "cell :=@(b | a) (fun($s0) => lift[a | b]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
       " | a) cell)@1)@1 in (fun($s5) => lift[1](fun($s6) => (fun($s4) => lift[2 | 1]($s4)) ($s5 ((fun($s3) => " +
       "lift[1]($s3)) $s6@1)@1)@1)) (fun(unit: Unit): Int @ (2 | 1) => use[2, 1])@1) ((fun($s7) => lift[1]($s7)) " +
       "(())@1)@1")
@@ -742,7 +786,7 @@ class ElabTest extends FunSuite:
     val typed = infer(parse(src))
     assertEquals(pretty.expr(typed),
       "(let use[a, b] = let cell = ref@(a | b)(lift[a | b](1)) in (fun($s2) => lift[a | b]($s2)) (let ignored = " +
-      "cell :=@(b | a) (fun($s0) => lift[b | a]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
+      "cell :=@(b | a) (fun($s0) => lift[a | b]($s0)) (lift[a | b](2))@1 in (fun($s1) => lift[b | a]($s1)) (!@(b" +
       " | a) cell)@1)@1 in (fun($s5) => lift[1](fun($s6) => (fun($s4) => lift[2 | 2]($s4)) ($s5 ((fun($s3) => " +
       "lift[1]($s3)) $s6@1)@1)@1)) (fun(unit: Unit): Int @ (2 | 2) => use[2, 2])@1) ((fun($s7) => lift[1]($s7)) " +
       "(())@1)@1")
@@ -1040,6 +1084,16 @@ class ElabTest extends FunSuite:
   }
 
 class ElabNegativeTest extends FunSuite:
+  test("references require well-formed element stages and matching operation stages") {
+    intercept[TypeException] { infer(parse("fun(r: Ref[Int@1]@2) => r")) }
+    intercept[TypeException] { infer(parse("sfun[s] => fun(r: Ref[Int]@s) => r")) }
+    intercept[TypeException] { infer(parse("ref@2(1)")) }
+    intercept[TypeException] { infer(parse("!@1(ref@2(lift[2](1)))")) }
+    intercept[TypeException] { infer(parse("!@2(ref@1(lift[2](1)))")) }
+    intercept[TypeException] { infer(parse("ref@2(lift[2](1)) :=@1 2")) }
+    intercept[TypeException] { infer(parse("ref@1(lift[2](1)) :=@2 lift[2](2)")) }
+  }
+
   test("function annotations cannot place components before the function") {
     intercept[TypeException] { infer(parse("fun(f: (Int@1 -> Int@1)@2) => f")) }
     intercept[TypeException] { infer(parse("fun(f: (Int@1 -> Int@2)@2) => f")) }

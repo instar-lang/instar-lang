@@ -254,13 +254,13 @@ class ParserTest extends FunSuite:
 
   test("desugars letrec function bindings to the same AST as sfun/fun") {
     val oldSyntax =
-      """letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int] @ s -> Int @ s =
-        |  sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int] @ s): Int @ s => result
+      """letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int @ s] @ s -> Int @ s =
+        |  sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int @ s] @ s): Int @ s => result
         |in impPower[1](2)(3)(ref(1))
         |""".stripMargin
 
     val newSyntax =
-      """letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int] @ s): Int @ s =
+      """letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int @ s] @ s): Int @ s =
         |  result
         |in impPower[1] 2 3 (ref(1))
         |""".stripMargin
@@ -362,8 +362,8 @@ class ParserTest extends FunSuite:
   }
 
   test("parses standalone types with constructors, staging, and arrows") {
-    val ty = parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
-    assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TInt.at(Dyn))).at())
+    val ty = parseType("forall[s]. Ref[Int @ s] @ s -> Code[Int]")
+    assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt.at(SVar("s"))), SVar("s")), TInt.at(Dyn))).at())
   }
 
   test("skips line comments in programs") {
