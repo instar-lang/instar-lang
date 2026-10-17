@@ -27,6 +27,21 @@ class MainTest extends FunSuite:
     assert(out.contains("42"))
   }
 
+  test("main elaborates mixed-stage inline programs") {
+    val out = captureStdout {
+      main(Array("--program", "run(1 + lift[2](2))"))
+    }
+    assert(out.contains("Some(TInt)"))
+    assert(out.linesIterator.toList.lastOption.contains("3"))
+  }
+
+  test("main rejects the removed --no-elab option") {
+    val error = intercept[IllegalArgumentException] {
+      main(Array("--no-elab", "--program", "1"))
+    }
+    assert(error.getMessage.startsWith("Unknown option `--no-elab`."))
+  }
+
   test("main compiles and runs inline programs via --emit-c --program") {
     val cFile = inlineCOutputPath
     val exeFile = inlineExecutableOutputPath

@@ -270,6 +270,7 @@ def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store
     case _ => k(VCode(e), σ, γ)
 
 def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
+  case code @ VCode(_) => k(code, σ, γ)
   case VUnit => reflect(EUnit, σ, k, γ)
   case VNum(i) => reflect(ENum(i), σ, k, γ)
   case VBool(b) => reflect(EBool(b), σ, k, γ)

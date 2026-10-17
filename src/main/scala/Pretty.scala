@@ -52,16 +52,16 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
       )
 
     case ELam(x, argTy, body, retTy) =>
-      val arg = argTy.map(renderType(_, 0)).getOrElse("_")
+      val arg = argTy.map(t => s": ${renderType(t, 0)}").getOrElse("")
       maybeParens(
-        s"fun($x: $arg)${renderReturn(retTy)} => ${renderExpr(body, 0)}",
+        s"fun($x$arg)${renderReturn(retTy)} => ${renderExpr(body, 0)}",
         parentPrec > 0,
       )
 
     case EBNLam(x, argTy, body, retTy) =>
-      val arg = argTy.map(renderType(_, 0)).getOrElse("_")
+      val arg = argTy.map(t => s": ${renderType(t, 0)}").getOrElse("")
       maybeParens(
-        s"fun!($x: $arg)${renderReturn(retTy)} => ${renderExpr(body, 0)}",
+        s"fun!($x$arg)${renderReturn(retTy)} => ${renderExpr(body, 0)}",
         parentPrec > 0,
       )
 

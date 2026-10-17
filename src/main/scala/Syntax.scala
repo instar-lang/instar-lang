@@ -116,11 +116,12 @@ extension (e: Expr)
 
   def freeVar: Set[String] =
     e match
-      case EUnit | ENum(_) | EBool(_) => Set()
+      case EUnit | ENum(_) | EBool(_) | ELoc(_) => Set()
       case EVar(x) => Set(x)
       case ESLam(s, body, _) => body.freeVar
       case ESApp(e, _) => e.freeVar
       case ELam(x, _, body, _) => body.freeVar - x
+      case EBNLam(x, _, body, _) => body.freeVar - x
       case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case ECBNApp(e1, e2) => e1.freeVar ++ e2.freeVar
       case ELift(t, _) => t.freeVar
@@ -135,6 +136,7 @@ extension (e: Expr)
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EAscribe(e, _) => e.freeVar
       case EFix(f, e, _) => e.freeVar - f
+      case EIsApp(e) => e.freeVar
 
   // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
   // and all variables after reflect are distinct, so we do not need to consider variable capture here.
@@ -142,7 +144,7 @@ extension (e: Expr)
     e match
       case EUnit | ENum(_) | EBool(_) => e
       case EVar(x) => if x == from then to else e
-      case ESLam(s, body, cs) => ESLam(s, body.subst(from, to), cs)
+      case ESLam(s, body, constraints) => ESLam(s, body.subst(from, to), constraints)
       case ESApp(e, st) => ESApp(e.subst(from, to), st)
       case ELam(x, argTy, body, retTy) =>
         ELam(x, argTy, body.subst(from, to), retTy)
@@ -161,8 +163,7 @@ extension (e: Expr)
       case EDeref(e, s) => EDeref(e.subst(from, to), s)
       case EAssign(e1, e2, s) => EAssign(e1.subst(from, to), e2.subst(from, to), s)
       case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
-      case EFix(f, e, s) =>
-        EFix(f, e.subst(from, to), s)
+      case EFix(f, e, st) => EFix(f, e.subst(from, to), st)
 
 given Conversion[Stage, Option[Stage]] = Some(_)
 

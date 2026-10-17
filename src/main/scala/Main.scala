@@ -91,9 +91,6 @@ private def parseArgs(args: List[String]): Unit =
   def loop(rest: List[String]): Unit =
     rest match
       case Nil => ()
-      case "--no-elab" :: tail =>
-        Config.elab = false
-        loop(tail)
       case "--emit-c" :: tail =>
         Config.emitC = true
         loop(tail)
