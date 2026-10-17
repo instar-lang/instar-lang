@@ -4,6 +4,8 @@ import munit.IgnoreSuite
 import munit.FunSuite
 
 import instar.Config
+import instar.pretty
+import StageConstraints.*
 import instar.parser.parse
 import instar.syntax.*
 import instar.syntax.given
@@ -45,6 +47,21 @@ class Fixme extends FunSuite:
 
 class TypingTest extends FunSuite:
 
+  test("quantified constraints are compared up to alpha-renaming and entailment") {
+    val ty = instar.parser.parseType("forall[s: 1 <= s, s <= 2]. Int@s")
+    val expected = instar.parser.parseType("forall[t]. Int@t")
+    assert(Nil.implyTyEq(ty, expected))
+    assert(!Nil.implyTyEq(instar.parser.parseType("forall[s: 2 <= s]. Int@s"), expected))
+  }
+
+  test("join constraints compose transitively") {
+    val src = "sfun[a, b, c, d: a <= b | c, b <= d, c <= d] => fun(x: Int@a) => lift[d](x)"
+    val typed = infer(parse(src))
+    assertEquals(pretty.expr(typed),
+      "sfun[a] => sfun[b] => sfun[c] => sfun[d: a <= b | c, b <= d, c <= d] => fun(x: Int @ a): Int @ d => " +
+      "lift[d](x)")
+  }
+
   test("stage-poly function") {
     val str1 = """
       let f[s] = fun@s(x: Int @ s) => x in
@@ -60,7 +77,7 @@ class TypingTest extends FunSuite:
       g[1]
     """
     val checked2 = infer(parse(str2))
-    assertEquals(checked2.ty, Some(TFun(TInt, TInt)))
+    assert(Nil.implyTyEq(checked2.ty.get, TFun(TInt, TInt)))
   }
 
   test("infer resolves omitted first-stage markers") {
@@ -226,5 +243,30 @@ class ElabTest extends FunSuite:
       val inferred = infer(expr)
       assertEquals(inferred, ESLam("s",ELam("x",Some(TInt),ELift(EVar("x"),SVar("s")),Some(TAt(TInt,SVar("s"))))))
     }
+  }
+
+
+class ElabNegativeTest extends FunSuite:
+  test("stage applications reject backward promotion") {
+    intercept[TypeException] {
+      infer(parse("let promote[a, b: a <= b](x: Int@a) = lift[b](x) in promote[2, 1](lift[2](3))"))
+    }
+  }
+
+  test("stage applications reject an unsatisfied joined constraint") {
+    intercept[TypeException] { infer(parse("let force[a, b: 2 <= a | b] = 1 in force[1, 1]")) }
+  }
+
+  test("unsatisfiable constraints reject stage 1") {
+    intercept[TypeException] { infer(parse("(sfun[s: 2 <= s, s <= 1] => 1)[1]")) }
+  }
+
+  test("unsatisfiable constraints reject stage 2") {
+    intercept[TypeException] { infer(parse("(sfun[s: 2 <= s, s <= 1] => 1)[2]")) }
+  }
+
+  test("stage binders reject unbound variables") {
+    intercept[TypeException] { infer(parse("sfun[s: s <= missing] => 1")) }
+    intercept[TypeException] { infer(parse("sfun[a] => lift[a | missing](1)")) }
   }
 

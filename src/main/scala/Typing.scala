@@ -4,12 +4,12 @@ import instar.Config
 import instar.syntax.*
 import Expr.*
 import Stage.*
+import StageConstraints.*
 import Type.*
-
-type ⇀[A, B] = PartialFunction[A, B]
 
 object Counter:
   private var count: Int = 0
+  def reset(): Unit = count = 0
   def fresh: String =
     val c = count
     count += 1
@@ -17,16 +17,64 @@ object Counter:
 
 final class TypeException(message: String) extends RuntimeException(message)
 
-private case class Ctx(env: Map[String, Type] = Map(), stEnv: Set[String] = Set()):
+private case class Ctx(
+  env: Map[String, Type] = Map(),
+  stEnv: Map[String, Set[StageConstraint]] = Map(),
+):
   def +(xt: (String, Type)): Ctx = copy(env = env + xt)
-  def +(x: String): Ctx = copy(stEnv = stEnv + x)
+  def +(s: String, cs: List[StageConstraint]): Ctx =
+    assert(!containsStVar(s), s"stage variable `$s` is already bound")
+    val extended = copy(stEnv = stEnv + (s -> cs.toSet))
+    cs.foreach { c => WF.check(extended, c.lower); WF.check(extended, c.upper) }
+    extended
+  def constraints: List[StageConstraint] = stEnv.valuesIterator.flatten.toSet.toList
   def containsVar(x: String): Boolean = env.contains(x)
   def containsStVar(x: String): Boolean = stEnv.contains(x)
   def apply(x: String): Type = env(x)
 
-def infer(expr: Expr): Expr = infer(Ctx(), expr)
+private object WF:
+  def check(ctx: Ctx, st: Stage): Unit =
+    st match
+      case SNum(1) | SNum(2) => ()
+      case SNum(n) => fail(s"unsupported stage $n; expected 1 or 2")
+      case SVar(s) =>
+        assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
+      case SJoin(a, b) =>
+        check(ctx, a)
+        check(ctx, b)
 
-def check(expr: Expr, expected: Type): Expr = check(Ctx(), expr, expected)
+  def check(ctx: Ctx, ty: Type): Unit =
+    val base = ty.base
+    val st = ty.stage
+    check(ctx, st)
+    base match
+      case TInt | TBool | TUnit => ()
+      case TFun(arg, ret) =>
+        check(ctx, arg)
+        check(ctx, ret)
+        ctx.constraints.assertStLeq(st, arg.stage)
+        ctx.constraints.assertStLeq(st, ret.stage)
+      case TRef(inner) => check(ctx, inner)
+      case TForallSt(s, body, constraints) =>
+        assert(ctx.constraints.implyStEq(st, Sta), "stage abstractions must be at stage 1")
+        if ctx.containsStVar(s) then
+          val fresh = Counter.fresh
+          check(ctx + (fresh, Subst.constraints(constraints, s, SVar(fresh))),
+            Subst.ty(body, s, SVar(fresh)))
+        else check(ctx + (s, constraints), body)
+      case TAt(_, _) => fail("unexpected outer type annotation")
+
+def infer(expr: Expr): Expr =
+  Counter.reset()
+  infer(Ctx(), expr)
+
+def check(expr: Expr, expected: Type): Expr =
+  Counter.reset()
+  val ctx = Ctx()
+  WF.check(ctx, expected)
+  check(ctx, expr, expected)
+
+type ⇀[A, B] = PartialFunction[A, B]
 
 private def inferElab: (Ctx, Expr) ⇀ Expr =
   case (ctx, EApp(e1, e2, None)) =>
@@ -63,7 +111,8 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       EVar(x).withType(ctx(x))
 
     case ELam(x, Some(argTy), body, retTy) =>
-      // TODO: check well-formedness of argTy and retTy
+      WF.check(ctx, argTy)
+      retTy.foreach(t => WF.check(ctx, t))
       val tyBody =
         retTy match
           case Some(t) => check(ctx + (x -> argTy), body, t)
@@ -73,16 +122,23 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case ELam(_, None, _, _) =>
       fail("cannot infer a lambda without a parameter type")
 
+    case lam: ESLam if ctx.containsStVar(lam.s) =>
+      infer(ctx, freshenStageBinder(lam))
     case ESLam(s, body, cs) =>
-      val typedBody = infer(ctx + s, body)
+      val typedBody = infer(ctx + (s, cs), body)
       val bodyTy = typedBody.ty.get
       ESLam(s, typedBody, cs).withType(TForallSt(s, bodyTy, cs))
 
     case ESApp(e, st) =>
-      checkWF(ctx, st)
+      WF.check(ctx, st)
       val typedFun = infer(ctx, e)
-      val TForallSt(s, bodyTy, _) = typedFun.ty.get
-      ESApp(typedFun, st).withType(substStage(bodyTy, s, st))
+      typedFun.ty.get.base match
+        case TForallSt(s, bodyTy, constraints) =>
+          Subst.constraints(constraints, s, st).foreach { c =>
+            ctx.constraints.assertStLeq(c.lower, c.upper)
+          }
+          ESApp(typedFun, st).withType(Subst.ty(bodyTy, s, st))
+        case other => fail(s"expected a stage-polymorphic type, found $other")
 
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))
 
@@ -96,12 +152,19 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
           fail(s"expected a function, found $other")
 
     case ELift(e, st) =>
-      val typedInner = infer(ctx, e)
-      val innerTy = typedInner.ty.get
-      if innerTy.stage == Dyn && st == Dyn then fail("cannot lift code values")
-      if innerTy.base.isInstanceOf[TRef] && st == Dyn && innerTy.stage == Sta then
-        fail("cannot lift references")
-      ELift(typedInner, st).withType(innerTy.at(st))
+      val typed = infer(ctx, e)
+      val ty = typed.ty.get
+      if ty.stage == Dyn && st == Dyn then fail("cannot lift code values")
+      WF.check(ctx, st)
+      ctx.constraints.assertStLeq(ty.stage, st)
+      ty.base match
+        case TInt | TBool | TUnit => ()
+        case TFun(arg, ret) =>
+          ctx.constraints.assertStLeq(st, arg.stage)
+          ctx.constraints.assertStLeq(st, ret.stage)
+        case _ if ctx.constraints.implyStEq(ty.stage, st) => ()
+        case _ => fail(s"cannot lift type $ty to $st")
+      ELift(typed, st).withType(ty.at(st))
 
     case ERun(e) =>
       val typedInner = infer(ctx, e)
@@ -282,7 +345,7 @@ private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
       expected match
         case TForallSt(s1, bodyTy, _) =>
           val bodyTy1 = if s == s1 then bodyTy else substStage(bodyTy, s1, SVar(s))
-          ESLam(s, check(ctx + s, body, bodyTy1), cs).withType(expected)
+          ESLam(s, check(ctx + (s, cs), body, bodyTy1), cs).withType(expected)
         case other =>
           fail(s"expected a stage-polymorphic type, found $other")
 
@@ -312,26 +375,12 @@ private def resolveRecType(ctx: Ctx, expr: Expr): Option[Type] =
         case Some(retTy) => Some(TFun(argTy, retTy))
         case None => None
     case ESLam(s, body, cs) =>
-      resolveRecType(ctx + s, body).map(TForallSt(s, _, cs))
+      resolveRecType(ctx + (s, cs), body).map(TForallSt(s, _, cs))
     case _ =>
       None
 
-private def checkWF(ctx: Ctx, st: Stage): Unit =
-  st match
-    case SNum(_) => ()
-    case SJoin(a, b) => checkWF(ctx, a); checkWF(ctx, b)
-    case SVar(s) =>
-      assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
-
 private def substStage(ty: Type, from: String, to: Stage): Type =
-  ty match
-    case TUnit | TInt | TBool => ty
-    case TFun(a, b) => TFun(substStage(a, from, to), substStage(b, from, to))
-    case TRef(t) => TRef(substStage(t, from, to))
-    case TForallSt(s, _, _) if s == from => ty
-    case TForallSt(s, t, cs) => TForallSt(s, substStage(t, from, to), cs)
-    case TAt(t, st) =>
-      TAt(substStage(t, from, to), Stage.substitute(st, from, to)).at()
+  Subst.ty(ty, from, to)
 
 private def stageOf(ty: Type): Stage = ty.stage
 
@@ -363,15 +412,59 @@ private def ensureSame(found: Type, expected: Type, expr: Option[Expr] = None): 
   assert(equivType(found, expected), s"type mismatch: found $found, expected $expected, expr: $expr")
 
 private def equivType(left: Type, right: Type): Boolean =
-  if left.stage != right.stage then false
-  else (left.base, right.base) match
-    case (TUnit, TUnit) | (TInt, TInt) | (TBool, TBool) => true
-    case (TFun(a, b), TFun(c, d)) => equivType(a, c) && equivType(b, d)
-    case (TRef(a), TRef(b)) => equivType(a, b)
-    case (TForallSt(x, a, ac), TForallSt(y, b, bc)) if ac == bc =>
-      val fresh = Counter.fresh
-      equivType(substStage(a, x, SVar(fresh)), substStage(b, y, SVar(fresh)))
-    case _ => false
+  Nil.implyTyEq(left, right)
+
+private object Subst:
+  def constraints(cs: List[StageConstraint], from: String, to: Stage): List[StageConstraint] =
+    def subst(st: Stage): Stage = Stage.substitute(st, from, to)
+    cs.map(c => StageConstraint(subst(c.lower), subst(c.upper)))
+
+  def expr(e: Expr, from: String, to: Stage): Expr =
+    def stage(st: Stage): Stage = Stage.substitute(st, from, to)
+    def expr(t: Expr): Expr = Subst.expr(t, from, to)
+    def ty(t: Type): Type = Subst.ty(t, from, to)
+    val result = e match
+      case EUnit | ENum(_) | EBool(_) | EVar(_) | ELoc(_) => e
+      case ESLam(s, _, _) if s == from => return e
+      case ESLam(s, body, cs) => ESLam(s, expr(body), constraints(cs, from, to))
+      case ESApp(t, s) => ESApp(expr(t), stage(s))
+      case ELam(x, arg, body, ret) => ELam(x, arg.map(ty), expr(body), ret.map(ty))
+      case EBNLam(x, arg, body, ret) => EBNLam(x, arg.map(ty), expr(body), ret.map(ty))
+      case EApp(a, b, st) => EApp(expr(a), expr(b), st.map(stage))
+      case ELift(t, st) => ELift(expr(t), stage(st))
+      case ERun(t) => ERun(expr(t))
+      case ELet(x, rhs, body) => ELet(x, expr(rhs), expr(body))
+      case ELetRec(x, rhs, body) => ELetRec(x, expr(rhs), expr(body))
+      case EFix(x, body, st) => EFix(x, expr(body), st.map(stage))
+      case ECond(c, a, b, st) => ECond(expr(c), expr(a), expr(b), st.map(stage))
+      case EBinOp(op, a, b, st) => EBinOp(op, expr(a), expr(b), st.map(stage))
+      case EUnaryOp(op, t, st) => EUnaryOp(op, expr(t), st.map(stage))
+      case EAlloc(t, st) => EAlloc(expr(t), st.map(stage))
+      case EDeref(t, st) => EDeref(expr(t), st.map(stage))
+      case EAssign(a, b, st) => EAssign(expr(a), expr(b), st.map(stage))
+      case EAscribe(t, tpe) => EAscribe(expr(t), ty(tpe))
+      case EIsApp(t) => EIsApp(expr(t))
+      case ECBNApp(a, b) => ECBNApp(expr(a), expr(b))
+    e.ty.foreach(t => result.withType(ty(t)))
+    result
+
+  def ty(tpe: Type, from: String, to: Stage): Type =
+    tpe match
+      case TUnit | TInt | TBool => tpe
+      case TAt(t, st) => TAt(ty(t, from, to), Stage.substitute(st, from, to))
+      case TFun(arg, ret) => TFun(ty(arg, from, to), ty(ret, from, to))
+      case TRef(t) => TRef(ty(t, from, to))
+      case TForallSt(s, _, _) if s == from => tpe
+      case TForallSt(s, t, cs) if Stage.variables(to)(s) =>
+        val fresh = Counter.fresh
+        val renamed = TForallSt(fresh, ty(t, s, SVar(fresh)), constraints(cs, s, SVar(fresh)))
+        ty(renamed, from, to)
+      case TForallSt(s, t, cs) => TForallSt(s, ty(t, from, to), constraints(cs, from, to))
+
+private def freshenStageBinder(lam: ESLam): Expr =
+  val fresh = Counter.fresh
+  ESLam(fresh, Subst.expr(lam.body, lam.s, SVar(fresh)),
+    Subst.constraints(lam.constraints, lam.s, SVar(fresh)))
 
 private def fail(message: String): Nothing =
   throw TypeException(message)
