@@ -10,6 +10,47 @@ import Type.*
 
 class ParserTest extends FunSuite:
 
+  test("function annotations preserve independent stages") {
+    assertEquals(parseType("(Int@1 -> Int@1)@2"),
+      TAt(TFun(TAt(TInt, Sta), TAt(TInt, Sta)), Dyn))
+    assertEquals(parseType("(Int@2 -> Int@1)@1"),
+      TAt(TFun(TAt(TInt, Dyn), TAt(TInt, Sta)), Sta))
+  }
+
+  test("explicit stage 1 is represented by TAt") {
+    assertEquals(parseType("Int@1"), TAt(TInt, Sta))
+    assertEquals(parseType("Int"), TInt)
+  }
+
+  test("Code expands every type annotation to stage 2") {
+    assertEquals(parseType("Code[Int -> Int]"),
+      TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+    assertEquals(parseType("Code[Int@1 -> Int@2]"),
+      TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+    assertEquals(parseType("Code[Int]"), TInt.at(Dyn))
+    assertEquals(parseType("Code[Bool@1]"), TBool.at(Dyn))
+    assertEquals(parseType("Code[Unit@s]"), TUnit.at(Dyn))
+    assertEquals(parseType("Code[(Int@1 -> Ref[Int@1])@1 -> Int@1]"),
+      TFun(TFun(TInt.at(Dyn), TRef(TInt.at(Dyn)).at(Dyn)).at(Dyn), TInt.at(Dyn)).at(Dyn))
+  }
+
+  test("Code and explicit recursive stage annotations have the same parsed type") {
+    val code = parseType("Code[Int -> Int]")
+    val annotated = parseType("(Int@2 -> Int@2)@2")
+    assertEquals(code, TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+    assertEquals(annotated, TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+    assertEquals(code, annotated)
+    assertEquals(parseType("Code[Int -> Int]@1"),
+      TAt(TFun(TInt.at(Dyn), TInt.at(Dyn)), Sta))
+    assertEquals(parseType("Code[(Int -> Int)@1]"),
+      TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+  }
+
+  test("nested Code expands idempotently") {
+    assertEquals(parseType("Code[Code[Int@1 -> Int@1]]"),
+      TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+  }
+
   test("lexes and parses let/fun/application") {
     val input = "let inc = fun(x: Int): Int => x + 1 in inc(41)"
     val parsed = parse(input)
@@ -256,7 +297,7 @@ class ParserTest extends FunSuite:
 
   test("parses standalone types with constructors, staging, and arrows") {
     val ty = parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
-    assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TCode(TInt))))
+    assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TInt.at(Dyn))))
   }
 
   test("skips line comments in programs") {

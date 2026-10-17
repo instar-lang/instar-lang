@@ -142,7 +142,6 @@ private def renderType(ty: Type, parentPrec: Int): String =
     case TInt => "Int"
     case TBool => "Bool"
     case TRef(t) => s"Ref[${renderType(t, 0)}]"
-    case TCode(t) => s"Code[${renderType(t, 0)}]"
     case TForallSt(s, t) =>
       maybeParens(s"forall[$s]. ${renderType(t, 0)}", parentPrec > 0)
     case TFun(t1, t2) =>

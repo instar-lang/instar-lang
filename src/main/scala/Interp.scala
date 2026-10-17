@@ -37,11 +37,7 @@ enum Value:
   case VThunk(e: Expr, ρ: Env, ς: StEnv)
 
 extension (t: Option[Type])
-  // Assuming well-formedness of types
-  def erase: Option[Type] =
-    t match
-      case Some(TCode(t1)) => Some(t1)
-      case _ => t
+  def erase: Option[Type] = t.map(_.erase)
 
 import Stage.*
 import Expr.*

@@ -543,12 +543,8 @@ private case class Parser(tokens: Vector[Token]):
     val base = parseAtomicType()
     if at(Kind.At) then
       advance()
-      parseStage() match
-        case SNum(1) => base
-        case SNum(2) => TCode(base)
-        case st => TAt(base, st)
-    else
-      base
+      TAt(base.base, parseStage())
+    else base
 
   private def parseAtomicType(): Type =
     current.kind match
@@ -558,30 +554,32 @@ private case class Parser(tokens: Vector[Token]):
           advance()
           val arg = parseTypeExpr()
           expect(Kind.RBracket, "`]`")
-          applyTypeConstructor(name, Some(arg))
+          name match
+            case "Code" => normalizeType(arg)
+            case "Ref" => TRef(arg).at()
+            case _ => fail(s"Unsupported type constructor `$name`")
         else
-          applyTypeConstructor(name, None)
+          val base = name match
+            case "Unit" => TUnit
+            case "Int" => TInt
+            case "Bool" => TBool
+            case "Code" | "Ref" => fail(s"`$name` must be applied as `$name[T]`")
+            case _ => fail(s"Unsupported type constructor `$name`")
+          base.at()
       case Kind.LParen =>
         advance()
         val ty = parseTypeExpr()
         expect(Kind.RParen, "`)`")
         ty
-      case _ =>
-        fail("Expected a type")
+      case _ => fail("Expected a type")
 
-  private def applyTypeConstructor(name: String, arg: Option[Type]): Type =
-    (name, arg) match
-      case ("Unit", None) => TUnit
-      case ("Int", None) => TInt
-      case ("Bool", None) => TBool
-      case ("Ref", Some(t)) => TRef(t)
-      case ("Code", Some(t)) => TCode(t)
-      case ("Code", None) =>
-        fail("`Code` must be applied as `Code[T]`")
-      case ("Ref", None) =>
-        fail("`Ref` must be applied as `Ref[T]`")
-      case _ =>
-        fail(s"Unsupported type constructor `$name` for CoreEffOpt")
+  private def normalizeType(ty: Type): Type =
+    val base = ty.base match
+      case TFun(arg, ret) => TFun(normalizeType(arg), normalizeType(ret))
+      case TRef(inner) => TRef(normalizeType(inner))
+      case TForallSt(s, body) => TForallSt(s, normalizeType(body))
+      case other => other
+    base.at(Dyn)
 
   private def parseOptionalTypeAnnotation(): Option[Type] =
     if at(Kind.Colon) then

@@ -98,24 +98,16 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case ELift(e, st) =>
       val typedInner = infer(ctx, e)
       val innerTy = typedInner.ty.get
-      val newType = (innerTy, st) match
-        case (TFun(TCode(a), TCode(b)), SNum(2)) => TCode(TFun(a, b))
-        case (TFun(TAt(a, st1), TAt(b, st2)), SVar(st3))
-          if st1 == st2 && st2 == SVar(st3) => TAt(TFun(a, b), st1)
-          // TODO: need to track constraint for inequalities
-        case (TCode(_), SNum(2)) => fail("cannot lift code values")
-        case (TRef(t), SNum(2)) => fail("cannot lift references")
-        case (TAt(t, s1), s2) if s1 == s2 => TAt(t, s1)
-        case (t, SNum(2)) => TCode(t)
-        case (t, SNum(1)) => t
-        case (t, SVar(s)) => TAt(t, SVar(s)) // TODO: constraint s to be >= stageOf(t)
-      ELift(typedInner, st).withType(newType)
+      if innerTy.stage == Dyn && st == Dyn then fail("cannot lift code values")
+      if innerTy.base.isInstanceOf[TRef] && st == Dyn && innerTy.stage == Sta then
+        fail("cannot lift references")
+      ELift(typedInner, st).withType(innerTy.at(st))
 
     case ERun(e) =>
       val typedInner = infer(ctx, e)
-      typedInner.ty.get match
-        case TCode(t) => ERun(typedInner).withType(t)
-        case other => fail(s"`run` expects `Code[T]`, found $other")
+      val ty = typedInner.ty.get
+      if ty.stage == Dyn then ERun(typedInner).withType(ty.erase)
+      else fail(s"`run` expects `Code[T]`, found $ty")
 
     case ELet(x, rhs, body) =>
       val typedRhs = infer(ctx, rhs)
@@ -203,7 +195,7 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EIsApp(e) =>
       val typedE = infer(ctx, e)
       typedE.ty.getOrElse(fail("internal error: isApp argument is missing a type")) match
-        case TCode(_) => EIsApp(typedE).withType(TBool)
+        case ty if ty.stage == Dyn => EIsApp(typedE).withType(TBool)
         case other => fail(s"`isApp` expects `Code[T]`, found $other")
 
     case ECBNApp(e1, e2) =>
@@ -226,13 +218,9 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       fail("cannot infer a by-name lambda without a parameter type")
 
 def coerce(e: Expr, t1: Type, to: Type): Expr =
-  to match
-    case TCode(t2) if equivType(t1, t2) =>
-      ELift(e, SNum(2)).withType(TCode(t2))
-    case TAt(t2, st) if equivType(t1, t2) =>
-      ELift(e, st).withType(TAt(t2, st))
-    case t2 if equivType(t1, t2) => e
-    case other => fail(s"cannot coerce type $t1 to $other")
+  if equivType(t1, to) then e
+  else if equivType(t1.at(Sta), to.at(Sta)) then ELift(e, to.stage).withType(to)
+  else fail(s"cannot coerce type $t1 to $to")
 
 private def checkElab: PartialFunction[(Ctx, Expr, Type), Expr] =
   case (ctx, EUnit, expected) =>
@@ -251,9 +239,9 @@ private def checkElab: PartialFunction[(Ctx, Expr, Type), Expr] =
         val typedThen = check(ctx, e2, expected)
         val typedElse = check(ctx, e3, expected)
         ECond(typedCond, typedThen, typedElse, Some(SNum(1))).withType(expected)
-      case TCode(TBool) =>
+      case TAt(TBool, SNum(2)) =>
         expected match
-          case TCode(_) =>
+          case TAt(_, SNum(2)) =>
             val typedThen = check(ctx, e2, expected)
             val typedElse = check(ctx, e3, expected)
             ECond(typedCond, typedThen, typedElse, Some(SNum(2))).withType(expected)
@@ -309,7 +297,7 @@ private def resolveRecType(ctx: Ctx, expr: Expr): Option[Type] =
     case EAscribe(_, ann) => Some(ann)
     case ELift(e, st) =>
       resolveRecType(ctx, e) match
-        case Some(t) => Some(TCode(unliftType(t, st)))
+        case Some(t) => Some(t.at(st))
         case None => None
     case ELam(_, Some(argTy), _, Some(retTy)) =>
       Some(TFun(argTy, retTy))
@@ -337,56 +325,25 @@ private def checkWF(ctx: Ctx, st: Stage): Unit =
 private def substStage(ty: Type, from: String, to: Stage): Type =
   ty match
     case TUnit | TInt | TBool => ty
-    case TFun(t1, t2) => TFun(substStage(t1, from, to), substStage(t2, from, to))
+    case TFun(a, b) => TFun(substStage(a, from, to), substStage(b, from, to))
     case TRef(t) => TRef(substStage(t, from, to))
-    case TForallSt(s, t) if s == from => TForallSt(s, t)
-    case TForallSt(s, t) if SVar(s) == to => t
+    case TForallSt(s, _) if s == from => ty
     case TForallSt(s, t) => TForallSt(s, substStage(t, from, to))
-    case TAt(t, SVar(s)) if s == from =>
-      val t1 = substStage(t, from, to)
-      to match
-        case SVar(_) => TAt(t1, to)
-        case SNum(1) => t1
-        case SNum(2) => TCode(t1)
-    case TAt(t, SVar(s)) => TAt(substStage(t, from, to), SVar(s))
-    case TAt(t, SNum(1)) => substStage(t, from, to)
-    case TAt(t, SNum(2)) => TCode(substStage(t, from, to))
-    case TCode(t) => TCode(substStage(t, from, to))
+    case TAt(t, st) =>
+      TAt(substStage(t, from, to), if st == SVar(from) then to else st).at()
 
-private def stageOf(ty: Type): Stage =
-  ty match
-    case TAt(_, st) => st
-    case TCode(_) => SNum(2)
-    case _ => SNum(1)
+private def stageOf(ty: Type): Stage = ty.stage
 
 private def stageOf(ty1: Type, ty2: Type): Stage =
-  (ty1, ty2) match
-    case (TAt(_, st1), TAt(_, st2)) if st1 == st2 => st1 // Note (GW): this is the constraint imposed...
-    case (TCode(_), TCode(_)) => SNum(2)
-    case _ => SNum(1)
+  if ty1.stage == ty2.stage then ty1.stage else Sta
 
 private def wrapAtStage(ty: Type, st: Stage): Type =
-  st match
-    case SNum(1) => ty
-    case SNum(2) => TCode(ty)
-    case _ => TAt(ty, st)
+  if st == Sta then ty else ty.at(st)
 
 private def unwrapAtStage(ty: Type, st: Stage): Type =
-  (ty, st) match
-    case (t, SNum(1)) => t
-    case (TCode(t), SNum(2)) => t
-    case (TAt(t, s1), s2) if s1 == s2 => t // Note (GW): this is the constraint imposed...
-    case (other, _) => fail(s"type $other is not available at stage $st")
-
-private def unliftType(ty: Type, st: Stage): Type =
-  (ty, st) match
-    case (TCode(t), SNum(2)) => unliftType(t, st)
-    case (TAt(t, s1), s2) if s1 == s2 => unliftType(t, st)
-    case (TFun(t1, t2), _) => TFun(unliftType(t1, st), unliftType(t2, st))
-    case (TRef(t), _) => TRef(unliftType(t, st))
-    case (TForallSt(s, t), _) => TForallSt(s, unliftType(t, st))
-    case (t, SNum(1)) => t
-    case (other, _) => other
+  if st == Sta then ty
+  else if ty.stage == st then ty.base
+  else fail(s"type $ty is not available at stage $st")
 
 private def inferBinOp(op: String, st: Stage): (Type, Type) =
   op match
@@ -405,23 +362,15 @@ private def ensureSame(found: Type, expected: Type, expr: Option[Expr] = None): 
   assert(equivType(found, expected), s"type mismatch: found $found, expected $expected, expr: $expr")
 
 private def equivType(left: Type, right: Type): Boolean =
-  (left, right) match
+  if left.stage != right.stage then false
+  else (left.base, right.base) match
     case (TUnit, TUnit) | (TInt, TInt) | (TBool, TBool) => true
-    case (TFun(l1, l2), TFun(r1, r2)) =>
-      equivType(l1, r1) && equivType(l2, r2)
-    case (TRef(l), TRef(r)) =>
-      equivType(l, r)
-    case (TCode(l), TCode(r)) =>
-      equivType(l, r)
-    case (TAt(t1, st1), TAt(t2, st2)) =>
-      equivType(t1, t2) && st1 == st2
-    case (TForallSt(x, t1), TForallSt(y, t2)) if x == y =>
-      equivType(t1, t2)
-    case (TForallSt(x, t1), TForallSt(y, t2)) =>
-      val z = Counter.fresh
-      equivType(substStage(t1, x, SVar(z)), substStage(t2, y, SVar(z)))
-    case _ =>
-      false
+    case (TFun(a, b), TFun(c, d)) => equivType(a, c) && equivType(b, d)
+    case (TRef(a), TRef(b)) => equivType(a, b)
+    case (TForallSt(x, a), TForallSt(y, b)) =>
+      val fresh = Counter.fresh
+      equivType(substStage(a, x, SVar(fresh)), substStage(b, y, SVar(fresh)))
+    case _ => false
 
 private def fail(message: String): Nothing =
   throw TypeException(message)

@@ -20,7 +20,7 @@ class Fixme extends FunSuite:
         f[2, 2]
       """
       val checked = infer(parse(str))
-      assert(checked.ty == Some(TCode(TFun(TInt, TInt))))
+      assert(checked.ty == Some(TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn)))
     }
     {
       val str = """
@@ -44,7 +44,6 @@ class Fixme extends FunSuite:
   }
 
 class TypingTest extends FunSuite:
-  Config.elab = false
 
   test("stage-poly function") {
     val str1 = """
@@ -53,7 +52,7 @@ class TypingTest extends FunSuite:
       g[2]
     """
     val checked1 = infer(parse(str1))
-    assertEquals(checked1.ty, Some(TCode(TFun(TInt, TInt))))
+    assertEquals(checked1.ty, Some(TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn)))
 
     val str2 = """
       let f[s] = fun@s(x: Int @ s) => x in
@@ -93,7 +92,7 @@ class TypingTest extends FunSuite:
 
   test("infer instantiates stage-polymorphic expressions") {
     val typed = infer(parse("(sfun[s] => lift[s](fun(x: Int @ s): Int @ s => x))[2]"))
-    assertEquals(typed.ty, Some(TCode(TFun(TInt, TInt))))
+    assertEquals(typed.ty, Some(TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn)))
     val inst = typed.asInstanceOf[ESApp]
     assertEquals(inst.st, SNum(2))
   }
@@ -154,7 +153,7 @@ class TypingTest extends FunSuite:
   test("stage poly add") {
     val expr = "let add[s] (x: Int@s) (y: Int@s) = x +@s y in add[2](lift[2](2))(lift[2](3))"
     val inferred = infer(parse(expr))
-    assert(inferred.ty.get == TCode(TInt))
+    assert(inferred.ty.get == TInt.at(Dyn))
   }
 
   test("lift2-lift2") {
@@ -187,7 +186,7 @@ class ElabTest extends FunSuite:
     val str = """
       if lift[2](true) then 1 else 2
     """
-    val checked = check(parse(str), TCode(TInt))
+    val checked = check(parse(str), TInt.at(Dyn))
   }
 
   test("stage var") {
@@ -195,24 +194,24 @@ class ElabTest extends FunSuite:
     val inferred = infer(parse(expr))
     assert(inferred.asInstanceOf[ELet].rhs.asInstanceOf[ESLam].body.asInstanceOf[ELam].body.asInstanceOf[ELam].body ==
       EBinOp("+",EVar("x"),EVar("y"),Some(SVar("s"))))
-    assert(inferred.ty.get == TCode(TInt))
+    assert(inferred.ty.get == TInt.at(Dyn))
   }
 
   test("coerce primitives") {
     {
       val expr = parse("fun(x: Int): Int@2 => 1")
       val inferred = infer(expr)
-      assertEquals(inferred, ELam("x",Some(TInt),ELift(ENum(1),SNum(2)),Some(TCode(TInt))))
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(ENum(1),SNum(2)),Some(TInt.at(Dyn))))
     }
     {
       val expr = parse("fun(x: Int): Unit@2 => ()")
       val inferred = infer(expr)
-      assertEquals(inferred, ELam("x",Some(TInt),ELift(EUnit,SNum(2)),Some(TCode(TUnit))))
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(EUnit,SNum(2)),Some(TUnit.at(Dyn))))
     }
     {
       val expr = parse("fun(x: Int): Bool@2 => true")
       val inferred = infer(expr)
-      assertEquals(inferred, ELam("x",Some(TInt),ELift(EBool(true),SNum(2)),Some(TCode(TBool))))
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(EBool(true),SNum(2)),Some(TBool.at(Dyn))))
     }
   }
 
@@ -220,7 +219,7 @@ class ElabTest extends FunSuite:
     {
       val expr = parse("fun(x: Int): Int@2 => x")
       val inferred = infer(expr)
-      assertEquals(inferred, ELam("x",Some(TInt),ELift(EVar("x"),SNum(2)),Some(TCode(TInt))))
+      assertEquals(inferred, ELam("x",Some(TInt),ELift(EVar("x"),SNum(2)),Some(TInt.at(Dyn))))
     }
     {
       val expr = parse("sfun[s] => fun(x: Int): Int@s => x")

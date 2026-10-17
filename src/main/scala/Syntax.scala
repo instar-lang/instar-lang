@@ -12,7 +12,23 @@ enum Type:
   case TRef(t: Type)
   case TForallSt(s: String, t: Type)
   case TAt(t: Type, s: Stage)
-  case TCode(t: Type)
+
+  def stage: Stage = this match
+    case TAt(_, s) => s
+    case _ => Sta
+
+  def base: Type = this match
+    case TAt(t, _) => t.base
+    case t => t
+
+  def at(target: Stage = stage): Type =
+    val t = base
+    if target == t.stage then t else TAt(t, target)
+
+  def erase: Type = base match
+    case TFun(arg, ret) => TFun(arg.erase, ret.erase)
+    case TRef(inner) => TRef(inner.erase)
+    case t => t
 
 type Loc = Int
 
