@@ -89,6 +89,7 @@ def evalPrimUnary(op: String, v: Value): Value =
 def evalStVar(s: Stage, ς: StEnv): Stage =
   s match
     case SVar(st) => ς(st)
+    case SJoin(a, b) => Stage.join(evalStVar(a, ς), evalStVar(b, ς))
     case _ => s
 
 def evalExprStage(s: Option[Stage], ς: StEnv): Stage =
@@ -316,7 +317,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       σ(ρ(x)) match
         case VThunk(e, ρ, ς) => eval(e, ρ, ς, σ, k, γ)
         case v => k(v, σ, γ)
-    case ESLam(x, body) =>
+    case ESLam(x, body, _) =>
       k(VSClo(x, body, ρ, ς), σ, γ)
     case ESApp(e, st) =>
       eval(e, ρ, ς, σ, { case (VSClo(x, body, ρf, ςf), σ1, γ1) =>

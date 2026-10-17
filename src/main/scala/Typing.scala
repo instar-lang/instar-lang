@@ -73,15 +73,15 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case ELam(_, None, _, _) =>
       fail("cannot infer a lambda without a parameter type")
 
-    case ESLam(s, body) =>
+    case ESLam(s, body, cs) =>
       val typedBody = infer(ctx + s, body)
       val bodyTy = typedBody.ty.get
-      ESLam(s, typedBody).withType(TForallSt(s, bodyTy))
+      ESLam(s, typedBody, cs).withType(TForallSt(s, bodyTy, cs))
 
     case ESApp(e, st) =>
       checkWF(ctx, st)
       val typedFun = infer(ctx, e)
-      val TForallSt(s, bodyTy) = typedFun.ty.get
+      val TForallSt(s, bodyTy, _) = typedFun.ty.get
       ESApp(typedFun, st).withType(substStage(bodyTy, s, st))
 
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))
@@ -278,11 +278,11 @@ private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
         case other =>
           fail(s"expected a function type, found $other")
 
-    case ESLam(s, body) =>
+    case ESLam(s, body, cs) =>
       expected match
-        case TForallSt(s1, bodyTy) =>
+        case TForallSt(s1, bodyTy, _) =>
           val bodyTy1 = if s == s1 then bodyTy else substStage(bodyTy, s1, SVar(s))
-          ESLam(s, check(ctx + s, body, bodyTy1)).withType(expected)
+          ESLam(s, check(ctx + s, body, bodyTy1), cs).withType(expected)
         case other =>
           fail(s"expected a stage-polymorphic type, found $other")
 
@@ -311,14 +311,15 @@ private def resolveRecType(ctx: Ctx, expr: Expr): Option[Type] =
       resolveRecType(ctx + (x -> argTy), body) match
         case Some(retTy) => Some(TFun(argTy, retTy))
         case None => None
-    case ESLam(s, body) =>
-      resolveRecType(ctx + s, body).map(TForallSt(s, _))
+    case ESLam(s, body, cs) =>
+      resolveRecType(ctx + s, body).map(TForallSt(s, _, cs))
     case _ =>
       None
 
 private def checkWF(ctx: Ctx, st: Stage): Unit =
   st match
     case SNum(_) => ()
+    case SJoin(a, b) => checkWF(ctx, a); checkWF(ctx, b)
     case SVar(s) =>
       assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
 
@@ -327,10 +328,10 @@ private def substStage(ty: Type, from: String, to: Stage): Type =
     case TUnit | TInt | TBool => ty
     case TFun(a, b) => TFun(substStage(a, from, to), substStage(b, from, to))
     case TRef(t) => TRef(substStage(t, from, to))
-    case TForallSt(s, _) if s == from => ty
-    case TForallSt(s, t) => TForallSt(s, substStage(t, from, to))
+    case TForallSt(s, _, _) if s == from => ty
+    case TForallSt(s, t, cs) => TForallSt(s, substStage(t, from, to), cs)
     case TAt(t, st) =>
-      TAt(substStage(t, from, to), if st == SVar(from) then to else st).at()
+      TAt(substStage(t, from, to), Stage.substitute(st, from, to)).at()
 
 private def stageOf(ty: Type): Stage = ty.stage
 
@@ -367,7 +368,7 @@ private def equivType(left: Type, right: Type): Boolean =
     case (TUnit, TUnit) | (TInt, TInt) | (TBool, TBool) => true
     case (TFun(a, b), TFun(c, d)) => equivType(a, c) && equivType(b, d)
     case (TRef(a), TRef(b)) => equivType(a, b)
-    case (TForallSt(x, a), TForallSt(y, b)) =>
+    case (TForallSt(x, a, ac), TForallSt(y, b, bc)) if ac == bc =>
       val fresh = Counter.fresh
       equivType(substStage(a, x, SVar(fresh)), substStage(b, y, SVar(fresh)))
     case _ => false

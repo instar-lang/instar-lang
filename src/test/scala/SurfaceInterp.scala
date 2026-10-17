@@ -15,7 +15,7 @@ trait SurfaceBase extends munit.FunSuite {
       case ENum(i) => ENum(i)
       case EBool(b) => EBool(b)
       case EVar(name) => EVar(name)
-      case ESLam(x, body) => ESLam(x, normalizeExpr(body))
+      case ESLam(x, body, cs) => ESLam(x, normalizeExpr(body), cs)
       case ESApp(expr, st) => ESApp(normalizeExpr(expr), st)
       case ELam(x, _, body, _) => ELam(x, None, normalizeExpr(body), None)
       case EBNLam(x, _, body, _) => EBNLam(x, None, normalizeExpr(body), None)

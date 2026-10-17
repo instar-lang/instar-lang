@@ -5,12 +5,44 @@ import scala.language.implicitConversions
 enum Stage:
   case SNum(n: Int)
   case SVar(x: String)
+  case SJoin(left: Stage, right: Stage)
+
+  def |(other: Stage): Stage = SJoin(this, other)
+
+object Stage:
+  def variables(stage: Stage): Set[String] = stage match
+    case SNum(_) => Set.empty
+    case SVar(name) => Set(name)
+    case SJoin(a, b) => variables(a) ++ variables(b)
+
+  def simplify(stage: Stage): Stage =
+    def terms(s: Stage): List[Stage] = s match
+      case SJoin(a, b) => terms(a) ++ terms(b)
+      case other => List(other)
+    val parts = terms(stage)
+    if parts.contains(SNum(2)) then SNum(2)
+    else
+      val remaining = parts.filterNot(_ == SNum(1)).distinct.sortBy {
+        case SVar(name) => (1, name)
+        case SNum(n) => (0, n.toString)
+        case _: SJoin => (2, "")
+      }
+      remaining.reduceOption(SJoin(_, _)).getOrElse(SNum(1))
+
+  def join(a: Stage, b: Stage): Stage = simplify(SJoin(a, b))
+
+  def substitute(stage: Stage, from: String, to: Stage): Stage = stage match
+    case SVar(name) if name == from => to
+    case SJoin(a, b) => SJoin(substitute(a, from, to), substitute(b, from, to))
+    case other => other
+
+case class StageConstraint(lower: Stage, upper: Stage)
 
 enum Type:
   case TUnit, TInt, TBool
   case TFun(t1: Type, t2: Type)
   case TRef(t: Type)
-  case TForallSt(s: String, t: Type)
+  case TForallSt(s: String, t: Type, constraints: List[StageConstraint] = Nil)
   case TAt(t: Type, s: Stage)
 
   def stage: Stage = this match
@@ -39,7 +71,7 @@ enum Expr:
   case ENum(i: Int)
   case EBool(b: Boolean)
   case EVar(name: String)
-  case ESLam(x: String, body: Expr)
+  case ESLam(s: String, body: Expr, constraints: List[StageConstraint] = Nil)
   case ESApp(e: Expr, st: Stage)
   case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
   case EBNLam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
@@ -69,7 +101,7 @@ extension (e: Expr)
   def isPure: Boolean =
     e match
       case EUnit | ENum(_) | EBool(_) | EVar(_) => true
-      case ESLam(_, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
+      case ESLam(_, _, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
       case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
       case ESApp(_, _) | EApp(_, _, _) => false
       case ELift(t, _) => false
@@ -86,7 +118,7 @@ extension (e: Expr)
     e match
       case EUnit | ENum(_) | EBool(_) => Set()
       case EVar(x) => Set(x)
-      case ESLam(x, body) => body.freeVar
+      case ESLam(s, body, _) => body.freeVar
       case ESApp(e, _) => e.freeVar
       case ELam(x, _, body, _) => body.freeVar - x
       case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
@@ -110,7 +142,7 @@ extension (e: Expr)
     e match
       case EUnit | ENum(_) | EBool(_) => e
       case EVar(x) => if x == from then to else e
-      case ESLam(x, body) => ESLam(x, body.subst(from, to))
+      case ESLam(s, body, cs) => ESLam(s, body.subst(from, to), cs)
       case ESApp(e, st) => ESApp(e.subst(from, to), st)
       case ELam(x, argTy, body, retTy) =>
         ELam(x, argTy, body.subst(from, to), retTy)

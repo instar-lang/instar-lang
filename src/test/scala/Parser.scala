@@ -9,7 +9,6 @@ import Stage.*
 import Type.*
 
 class ParserTest extends FunSuite:
-
   test("function annotations preserve independent stages") {
     assertEquals(parseType("(Int@1 -> Int@1)@2"),
       TAt(TFun(TAt(TInt, Sta), TAt(TInt, Sta)), Dyn))
@@ -27,11 +26,15 @@ class ParserTest extends FunSuite:
       TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
     assertEquals(parseType("Code[Int@1 -> Int@2]"),
       TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+    assertEquals(parseType("Code[Int@s -> Int@(a | b)]"),
+      TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
     assertEquals(parseType("Code[Int]"), TInt.at(Dyn))
     assertEquals(parseType("Code[Bool@1]"), TBool.at(Dyn))
     assertEquals(parseType("Code[Unit@s]"), TUnit.at(Dyn))
     assertEquals(parseType("Code[(Int@1 -> Ref[Int@1])@1 -> Int@1]"),
       TFun(TFun(TInt.at(Dyn), TRef(TInt.at(Dyn)).at(Dyn)).at(Dyn), TInt.at(Dyn)).at(Dyn))
+    assertEquals(parseType("Code[forall[s: 1 <= s]. Int@s]"),
+      TForallSt("s", TInt.at(Dyn), List(StageConstraint(Sta, SVar("s")))).at(Dyn))
   }
 
   test("Code and explicit recursive stage annotations have the same parsed type") {
@@ -89,9 +92,65 @@ class ParserTest extends FunSuite:
     val parsed = parse(input)
 
     val lam = parsed.asInstanceOf[ESLam]
-    assertEquals(lam.x, "s")
+    assertEquals(lam.s, "s")
     assertEquals(lam.body, ELift(ENum(1), SVar("s")))
-    assertEquals(lam.ty, Some(TForallSt("s", TFun(TAt(TInt, SVar("s")), TInt))))
+    assertEquals(lam.ty, Some(TForallSt("s", TFun(TAt(TInt, SVar("s")), TInt)).at()))
+  }
+
+  test("parses constraints on stage abstractions and universal types") {
+    val constraints = List(StageConstraint(SVar("a"), SVar("b")), StageConstraint(SVar("b"), Dyn))
+    val src = "sfun[a, b: a <= b, b <= 2] => fun(x: Int@a) => lift[b](x)"
+    val parsed = parse(src).asInstanceOf[ESLam].body.asInstanceOf[ESLam]
+    assertEquals(parsed.s, "b")
+    assertEquals(parsed.constraints, constraints)
+    val ty = parseType("forall[a, b: a <= b, b <= 2]. Int@a -> Int@b")
+    assertEquals(ty, TForallSt("a", TForallSt("b",
+      TFun(TAt(TInt, SVar("a")), TAt(TInt, SVar("b"))), constraints)).at())
+  }
+
+  test("constrained function headers preserve constraints in their annotations") {
+    val header = "let f[a, b: a <= b](x: Int@a): Int@b = lift[b](x) in f[1, 2](3)"
+    val expanded = """
+      let f: forall[a]. forall[b: a <= b]. Int@a -> Int@b =
+        sfun[a] => sfun[b: a <= b] => fun(x: Int@a): Int@b => lift[b](x)
+      in f[1, 2](3)
+    """
+    assertEquals(parse(header), parse(expanded))
+  }
+
+  test("rejects malformed constraints and unsupported concrete stages") {
+    for src <- List("sfun[s: s < 2] => 1", "sfun[s: s <=] => 1", "lift[0](1)", "lift[3](1)") do
+      intercept[ParserException] { parse(src) }
+  }
+
+  test("parses stage joins in annotations, applications, lifts, and constraints") {
+    val joined = SJoin(SVar("a"), SJoin(SVar("b"), SVar("c")))
+    assertEquals(parse("lift[a | (b ⊔ c)](1)"), ELift(ENum(1), joined))
+    assertEquals(parse("f[a | (b | c)]"), ESApp(EVar("f"), joined))
+    assertEquals(parseType("Int@(a | (b | c))"), TAt(TInt, joined))
+    val lam = parse("sfun[a, b, c: a | b <= c] => 1")
+      .asInstanceOf[ESLam].body.asInstanceOf[ESLam].body.asInstanceOf[ESLam]
+    assertEquals(lam.constraints, List(StageConstraint(SJoin(SVar("a"), SVar("b")), SVar("c"))))
+    assertEquals(parse("x +@(a | b) y"),
+      EBinOp("+", EVar("x"), EVar("y"), Some(SJoin(SVar("a"), SVar("b")))))
+    for src <- List("lift[a |](1)", "lift[(a | b](1)", "lift[1 | 3](1)") do
+      intercept[ParserException] { parse(src) }
+  }
+
+  test("rejects unparenthesized stage joins after @") {
+    intercept[ParserException] { parse("lift[2](1) +@1 | 2 lift[2](2)") }
+    intercept[ParserException] { parse("x +@a | b y") }
+    intercept[ParserException] { parse("x +@a ⊔ b y") }
+    intercept[ParserException] { parse("fun@a | b(x: Int) => x") }
+    intercept[ParserException] { parse("f(x)@a | b") }
+    intercept[ParserException] { parseType("Int@a | b") }
+  }
+
+  test("accepts parenthesized joined stages after @") {
+    assertEquals(parse("lift[2](1) +@(1 | 2) lift[2](2)"),
+      EBinOp("+", ELift(ENum(1), Dyn), ELift(ENum(2), Dyn), Some(SJoin(Sta, Dyn))))
+    assertEquals(parse("f(x)@(a | b)"),
+      EApp(EVar("f"), EVar("x"), Some(SJoin(SVar("a"), SVar("b")))))
   }
 
   test("parses let annotation as rhs ascription") {
@@ -297,7 +356,7 @@ class ParserTest extends FunSuite:
 
   test("parses standalone types with constructors, staging, and arrows") {
     val ty = parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
-    assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TInt.at(Dyn))))
+    assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TInt.at(Dyn))).at())
   }
 
   test("skips line comments in programs") {

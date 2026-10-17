@@ -10,7 +10,7 @@ import Stage.*
 import Type.*
 
 private enum HeaderBinder:
-  case Stage(name: String)
+  case Stage(name: String, constraints: List[StageConstraint])
   case Term(name: String, ty: Option[Type])
 
 def expr(expr: Expr): String =
@@ -31,11 +31,12 @@ def value(value: Value): String =
 private def renderExpr(expr: Expr, parentPrec: Int): String =
   expr match
     case ELet(x, rhs, body) =>
-      extractHeader(rhs) match
+      val rendered = extractHeader(rhs) match
         case Some((binders, retTy, coreBody)) =>
           s"let $x${renderHeader(binders)}${renderReturn(retTy)} = ${renderExpr(coreBody, 0)} in ${renderExpr(body, 0)}"
         case None =>
           s"let $x = ${renderExpr(rhs, 0)} in ${renderExpr(body, 0)}"
+      maybeParens(rendered, parentPrec > 0)
 
     case ELetRec(f, rhs, body) =>
       extractHeader(rhs) match
@@ -64,17 +65,23 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
         parentPrec > 0,
       )
 
-    case ESLam(_, _) =>
+    case ESLam(_, _, _) =>
       val (base, stages) = collectStageLambdas(expr)
+      val rendered =
+        if stages.forall(_._2.isEmpty) then
+          s"sfun[${stages.map(_._1).mkString(", ")}] => ${renderExpr(base, 0)}"
+        else stages.foldRight(renderExpr(base, 0)) { case ((name, constraints), body) =>
+          s"sfun[$name${renderConstraints(constraints)}] => $body"
+        }
       maybeParens(
-        s"sfun[${stages.mkString(", ")}] => ${renderExpr(base, 0)}",
+        rendered,
         parentPrec > 0,
       )
 
     case ESApp(_, _) =>
       val (base, stages) = collectStageApps(expr)
       maybeParens(
-        s"${renderExpr(base, 9)}[${stages.map(renderStage).mkString(", ")}]",
+        s"${renderExpr(base, 9)}[${stages.map(renderStage(_)).mkString(", ")}]",
         parentPrec > 8,
       )
 
@@ -136,27 +143,32 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
     case EVar(name) => name
     case ELoc(l) => s"loc($l)"
 
-private def renderType(ty: Type, parentPrec: Int): String =
-  ty match
-    case TUnit => "Unit"
-    case TInt => "Int"
-    case TBool => "Bool"
-    case TRef(t) => s"Ref[${renderType(t, 0)}]"
-    case TForallSt(s, t) =>
-      maybeParens(s"forall[$s]. ${renderType(t, 0)}", parentPrec > 0)
-    case TFun(t1, t2) =>
-      maybeParens(s"${renderType(t1, 1)} -> ${renderType(t2, 0)}", parentPrec > 0)
-    case TAt(t, s) =>
-      maybeParens(s"${renderType(t, 2)} @ ${renderStage(s)}", parentPrec > 1)
+private def renderType(ty: Type, parentPrec: Int): String = ty match
+  case TUnit => "Unit"
+  case TInt => "Int"
+  case TBool => "Bool"
+  case TRef(inner) => s"Ref[${renderType(inner, 0)}]"
+  case TForallSt(s, body, constraints) =>
+    maybeParens(s"forall[$s${renderConstraints(constraints)}]. ${renderType(body, 0)}", parentPrec > 0)
+  case TFun(arg, ret) =>
+    maybeParens(s"${renderType(arg, 1)} -> ${renderType(ret, 0)}", parentPrec > 0)
+  case TAt(base, stage) =>
+    maybeParens(s"${renderType(base, 2)} @ ${renderStage(stage, 2)}", parentPrec > 1)
 
-private def renderStage(stage: Stage): String =
+private def renderStage(stage: Stage, parentPrec: Int = 0): String =
   stage match
     case SNum(n) => n.toString
     case SVar(x) => x
+    case SJoin(a, b) =>
+      maybeParens(s"${renderStage(a, 1)} | ${renderStage(b, 2)}", parentPrec > 1)
+
+private def renderConstraints(constraints: List[StageConstraint]): String =
+  if constraints.isEmpty then ""
+  else constraints.map(c => s"${renderStage(c.lower)} <= ${renderStage(c.upper)}").mkString(": ", ", ", "")
 
 private def renderStageValue(stage: Option[Stage]): String =
   stage match
-    case Some(st) => s"@${renderStage(st)}"
+    case Some(st) => s"@${renderStage(st, 2)}"
     case None => ""
 
 private def renderOp(op: String, stage: Option[Stage]): String =
@@ -168,9 +180,9 @@ private def renderReturn(retTy: Option[Type]): String =
     case None => ""
 
 private def renderLiftedFun(lam: ELam, stage: Stage, parentPrec: Int): String =
-  val arg = lam.argTy.map(renderType(_, 0)).getOrElse("_")
+  val arg = lam.argTy.map(t => s": ${renderType(t, 0)}").getOrElse("")
   maybeParens(
-    s"fun@${renderStage(stage)}(${lam.x}: $arg)${renderReturn(lam.retTy)} => ${renderExpr(lam.body, 0)}",
+    s"fun@${renderStage(stage, 2)}(${lam.x}$arg)${renderReturn(lam.retTy)} => ${renderExpr(lam.body, 0)}",
     parentPrec > 0,
   )
 
@@ -213,8 +225,8 @@ private def extractHeader(expr: Expr): Option[(List[HeaderBinder], Option[Type],
 
   while keepGoing do
     current match
-      case ESLam(s, body) =>
-        binders += HeaderBinder.Stage(s)
+      case ESLam(s, body, constraints) =>
+        binders += HeaderBinder.Stage(s, constraints)
         current = body
       case ELam(x, argTy, body, lamRetTy) =>
         binders += HeaderBinder.Term(x, argTy)
@@ -232,14 +244,17 @@ private def renderHeader(binders: List[HeaderBinder]): String =
 
   while rest.nonEmpty do
     rest match
-      case HeaderBinder.Stage(_) :: _ =>
+      case HeaderBinder.Stage(_, _) :: _ =>
         val stages = ArrayBuffer.empty[String]
-        while rest.nonEmpty && rest.head.isInstanceOf[HeaderBinder.Stage] do
+        var constraints: List[StageConstraint] = Nil
+        while rest.nonEmpty && rest.head.isInstanceOf[HeaderBinder.Stage] && constraints.isEmpty do
           rest.head match
-            case HeaderBinder.Stage(name) => stages += name
+            case HeaderBinder.Stage(name, cs) =>
+              stages += name
+              constraints = cs
             case _ => ()
           rest = rest.tail
-        out.append(s"[${stages.mkString(", ")}]")
+        out.append(s"[${stages.mkString(", ")}${renderConstraints(constraints)}]")
       case HeaderBinder.Term(name, Some(ty)) :: tail =>
         out.append(s" ($name: ${renderType(ty, 0)})")
         rest = tail
@@ -249,14 +264,14 @@ private def renderHeader(binders: List[HeaderBinder]): String =
 
   out.result()
 
-private def collectStageLambdas(expr: Expr): (Expr, List[String]) =
-  val stages = ArrayBuffer.empty[String]
+private def collectStageLambdas(expr: Expr): (Expr, List[(String, List[StageConstraint])]) =
+  val stages = ArrayBuffer.empty[(String, List[StageConstraint])]
   var current = expr
   var keepGoing = true
   while keepGoing do
     current match
-      case ESLam(s, body) =>
-        stages += s
+      case ESLam(s, body, constraints) =>
+        stages += ((s, constraints))
         current = body
       case _ =>
         keepGoing = false

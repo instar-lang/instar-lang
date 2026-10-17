@@ -26,6 +26,7 @@ object Lexer:
     case Minus
     case Star
     case Slash
+    case StageJoin
     case LessEq
     case GreaterEq
     case Less
@@ -160,6 +161,9 @@ object Lexer:
         case '+' => advance(); add(Kind.Plus, "+", startLine, startCol)
         case '*' => advance(); add(Kind.Star, "*", startLine, startCol)
         case '/' => advance(); add(Kind.Slash, "/", startLine, startCol)
+        case '|' | '⊔' =>
+          val operator = advance().toString
+          add(Kind.StageJoin, operator, startLine, startCol)
         case '-' =>
           advance()
           if !atEnd() && current() == '>' then
@@ -220,7 +224,7 @@ def parseType(input: String): Type =
 
 private case class Parser(tokens: Vector[Token]):
   private enum HeaderBinder:
-    case Stage(name: String)
+    case Stage(name: String, constraints: List[StageConstraint])
     case Term(name: String, ty: Type)
 
   private var pos = 0
@@ -343,12 +347,12 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseSFun(): Expr =
     expect(Kind.SFun, "`sfun`")
-    expect(Kind.LBracket, "`[`")
-    val st = parseIdentifier("stage variable")
-    expect(Kind.RBracket, "`]`")
+    val binders = parseStageBinders()
     val ann = parseOptionalTypeAnnotation()
     expect(Kind.FatArrow, "`=>`")
-    val lam = ESLam(st, parseExpr())
+    val lam = binders.foldRight(parseExpr()) { case ((st, constraints), body) =>
+      ESLam(st, body, constraints)
+    }
     ann.foreach(lam.withType)
     lam
 
@@ -523,27 +527,25 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.Forall =>
         advance()
-        expect(Kind.LBracket, "`[`")
-        val st = parseIdentifier("stage variable")
-        expect(Kind.RBracket, "`]`")
+        val binders = parseStageBinders()
         expect(Kind.Dot, "`.`")
-        TForallSt(st, parseTypeExpr())
-      case _ =>
-        parseArrowType()
+        binders.foldRight(parseTypeExpr()) { case ((st, constraints), body) =>
+          TForallSt(st, body, constraints).at()
+        }
+      case _ => parseArrowType()
 
   private def parseArrowType(): Type =
     val lhs = parseAtType()
     if at(Kind.Arrow) then
       advance()
-      TFun(lhs, parseArrowType())
-    else
-      lhs
+      TFun(lhs, parseArrowType()).at()
+    else lhs
 
   private def parseAtType(): Type =
     val base = parseAtomicType()
     if at(Kind.At) then
       advance()
-      TAt(base.base, parseStage())
+      TAt(base.base, parseStageAnnotation())
     else base
 
   private def parseAtomicType(): Type =
@@ -577,7 +579,7 @@ private case class Parser(tokens: Vector[Token]):
     val base = ty.base match
       case TFun(arg, ret) => TFun(normalizeType(arg), normalizeType(ret))
       case TRef(inner) => TRef(normalizeType(inner))
-      case TForallSt(s, body) => TForallSt(s, normalizeType(body))
+      case TForallSt(s, body, constraints) => TForallSt(s, normalizeType(body), constraints)
       case other => other
     base.at(Dyn)
 
@@ -594,14 +596,9 @@ private case class Parser(tokens: Vector[Token]):
     while keepGoing do
       current.kind match
         case Kind.LBracket =>
-          advance()
-          val stageNames = ArrayBuffer.empty[String]
-          stageNames += parseIdentifier("stage variable")
-          while at(Kind.Comma) do
-            advance()
-            stageNames += parseIdentifier("stage variable")
-          expect(Kind.RBracket, "`]`")
-          stageNames.foreach(name => out += HeaderBinder.Stage(name))
+          parseStageBinders().foreach { case (name, constraints) =>
+            out += HeaderBinder.Stage(name, constraints)
+          }
         case Kind.LParen =>
           advance()
           val arg = parseIdentifier("parameter name")
@@ -616,8 +613,8 @@ private case class Parser(tokens: Vector[Token]):
   private def buildHeaderRhs(binders: List[HeaderBinder], retTy: Option[Type], body: Expr): Expr =
     var pendingRet = retTy
     binders.foldRight(body) {
-      case (HeaderBinder.Stage(name), acc) =>
-        ESLam(name, acc)
+      case (HeaderBinder.Stage(name, constraints), acc) =>
+        ESLam(name, acc, constraints)
       case (HeaderBinder.Term(name, ty), acc) =>
         val lam = ELam(name, Some(ty), acc, pendingRet)
         pendingRet = None
@@ -626,25 +623,63 @@ private case class Parser(tokens: Vector[Token]):
 
   private def buildHeaderType(binders: List[HeaderBinder], retTy: Type): Type =
     binders.foldRight(retTy) {
-      case (HeaderBinder.Stage(name), acc) => TForallSt(name, acc)
+      case (HeaderBinder.Stage(name, constraints), acc) => TForallSt(name, acc, constraints)
       case (HeaderBinder.Term(_, ty), acc) => TFun(ty, acc)
     }
 
   private def parseStage(): Stage =
+    var stage = parseStageAtom()
+    while at(Kind.StageJoin) do
+      advance()
+      stage = SJoin(stage, parseStageAtom())
+    stage
+
+  private def parseStageAtom(): Stage =
     current.kind match
       case Kind.IntLit =>
         val n = advance().lexeme.toInt
-        if n < 0 then fail("Stage indices must be non-negative")
+        if n != 1 && n != 2 then fail("Stage indices must be 1 or 2")
         SNum(n)
       case Kind.Identifier =>
         SVar(advance().lexeme)
+      case Kind.LParen =>
+        advance()
+        val stage = parseStage()
+        expect(Kind.RParen, "`)` after stage expression")
+        stage
       case _ =>
         fail("Expected a stage")
+
+  private def parseStageAnnotation(): Stage =
+    val stage = parseStageAtom()
+    if at(Kind.StageJoin) then
+      fail("Stage joins after `@` require parentheses, for example `@(1 | 2)`")
+    stage
+
+  private def parseStageBinders(): List[(String, List[StageConstraint])] =
+    expect(Kind.LBracket, "`[`")
+    val names = ArrayBuffer(parseIdentifier("stage variable"))
+    while at(Kind.Comma) do
+      advance()
+      names += parseIdentifier("stage variable")
+    val constraints = ArrayBuffer.empty[StageConstraint]
+    if at(Kind.Colon) then
+      advance()
+      def constraint(): StageConstraint =
+        val lower = parseStage()
+        expect(Kind.LessEq, "`<=` in a stage constraint")
+        StageConstraint(lower, parseStage())
+      constraints += constraint()
+      while at(Kind.Comma) do
+        advance()
+        constraints += constraint()
+    expect(Kind.RBracket, "`]`")
+    names.toList.init.map(_ -> Nil) :+ (names.last -> constraints.toList)
 
   private def parseOptionalStageValue(): Option[Stage] =
     if at(Kind.At) then
       advance()
-      Some(parseStage())
+      Some(parseStageAnnotation())
     else
       None
 
