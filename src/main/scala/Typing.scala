@@ -38,9 +38,6 @@ private object WF:
       case SNum(n) => fail(s"unsupported stage $n; expected 1 or 2")
       case SVar(s) =>
         assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
-      case SJoin(a, b) =>
-        check(ctx, a)
-        check(ctx, b)
 
   def check(ctx: Ctx, ty: Type): Unit =
     val base = ty.base
@@ -208,14 +205,21 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       val elseTy = typedElse.ty.get
       assert(ctx.constraints.implyTyEq(thenTy.at(Sta), elseTy.at(Sta)),
         s"conditional branches have different base types: $thenTy and $elseTy")
-      val resultTy = thenTy.at(condStage | thenTy.stage | elseTy.stage)
+      val stages = List(condStage, thenTy.stage, elseTy.stage)
+      val resultStage = stages.find(candidate =>
+        stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
+        .getOrElse(fail(s"cannot infer a maximum stage for ${stages.mkString(", ")}"))
+      val resultTy = thenTy.at(resultStage)
       ECond(typedCond, coerce(ctx, typedThen, resultTy),
         coerce(ctx, typedElse, resultTy), Some(condStage)).withType(resultTy)
 
     case EBinOp(op, e1, e2, None) =>
       val typedL = infer(ctx, e1)
       val typedR = infer(ctx, e2)
-      val st = typedL.ty.get.stage | typedR.ty.get.stage
+      val stages = List(typedL.ty.get.stage, typedR.ty.get.stage)
+      val st = stages.find(candidate =>
+        stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
+        .getOrElse(fail(s"cannot infer a maximum stage for ${stages.mkString(", ")}"))
       val (argTy, resTy) = inferBinOp(op, st)
       EBinOp(op, coerce(ctx, typedL, argTy),
         coerce(ctx, typedR, argTy), Some(st)).withType(resTy)

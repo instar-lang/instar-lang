@@ -58,5 +58,4 @@ private[typing] object StageConstraints:
     case Stage.SNum(1) => 1
     case Stage.SNum(2) => 2
     case Stage.SVar(name) => assignment(name)
-    case Stage.SJoin(a, b) => math.max(evaluate(a, assignment), evaluate(b, assignment))
     case other => throw TypeException(s"unsupported stage $other; expected 1 or 2")

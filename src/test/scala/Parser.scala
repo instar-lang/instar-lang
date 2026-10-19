@@ -26,7 +26,7 @@ class ParserTest extends FunSuite:
       TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
     assertEquals(parseType("Code[Int@1 -> Int@2]"),
       TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
-    assertEquals(parseType("Code[Int@s -> Int@(a | b)]"),
+    assertEquals(parseType("Code[Int@s -> Int@a]"),
       TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
     assertEquals(parseType("Code[Int]"), TInt.at(Dyn))
     assertEquals(parseType("Code[Bool@1]"), TBool.at(Dyn))
@@ -123,34 +123,32 @@ class ParserTest extends FunSuite:
       intercept[ParserException] { parse(src) }
   }
 
-  test("parses stage joins in annotations, applications, lifts, and constraints") {
-    val joined = SJoin(SVar("a"), SJoin(SVar("b"), SVar("c")))
-    assertEquals(parse("lift[a | (b ⊔ c)](1)"), ELift(ENum(1), joined))
-    assertEquals(parse("f[a | (b | c)]"), ESApp(EVar("f"), joined))
-    assertEquals(parseType("Int@(a | (b | c))"), TAt(TInt, joined))
-    val lam = parse("sfun[a, b, c: a | b <= c] => 1")
-      .asInstanceOf[ESLam].body.asInstanceOf[ESLam].body.asInstanceOf[ESLam]
-    assertEquals(lam.constraints, List(StageConstraint(SJoin(SVar("a"), SVar("b")), SVar("c"))))
-    assertEquals(parse("x +@(a | b) y"),
-      EBinOp("+", EVar("x"), EVar("y"), Some(SJoin(SVar("a"), SVar("b")))))
-    for src <- List("lift[a |](1)", "lift[(a | b](1)", "lift[1 | 3](1)") do
-      intercept[ParserException] { parse(src) }
+  test("rejects stage join syntax") {
+    intercept[Lexer.LexerException] { parse("lift[a | b](1)") }
+    intercept[Lexer.LexerException] { parse("lift[a ⊔ b](1)") }
+    intercept[Lexer.LexerException] { parse("f[a | b]") }
+    intercept[Lexer.LexerException] { parse("f[a ⊔ b]") }
+    intercept[Lexer.LexerException] { parseType("Int@(a | b)") }
+    intercept[Lexer.LexerException] { parseType("Int@(a ⊔ b)") }
+    intercept[Lexer.LexerException] { parse("sfun[a, b, c: a | b <= c] => 1") }
+    intercept[Lexer.LexerException] { parse("sfun[a, b, c: a ⊔ b <= c] => 1") }
+    intercept[Lexer.LexerException] { parse("x +@(a | b) y") }
+    intercept[Lexer.LexerException] { parse("x +@(a ⊔ b) y") }
   }
 
   test("rejects unparenthesized stage joins after @") {
-    intercept[ParserException] { parse("lift[2](1) +@1 | 2 lift[2](2)") }
-    intercept[ParserException] { parse("x +@a | b y") }
-    intercept[ParserException] { parse("x +@a ⊔ b y") }
-    intercept[ParserException] { parse("fun@a | b(x: Int) => x") }
-    intercept[ParserException] { parse("f(x)@a | b") }
-    intercept[ParserException] { parseType("Int@a | b") }
+    intercept[Lexer.LexerException] { parse("lift[2](1) +@1 | 2 lift[2](2)") }
+    intercept[Lexer.LexerException] { parse("x +@a | b y") }
+    intercept[Lexer.LexerException] { parse("x +@a ⊔ b y") }
+    intercept[Lexer.LexerException] { parse("fun@a | b(x: Int) => x") }
+    intercept[Lexer.LexerException] { parse("f(x)@a | b") }
+    intercept[Lexer.LexerException] { parseType("Int@a | b") }
   }
 
-  test("accepts parenthesized joined stages after @") {
-    assertEquals(parse("lift[2](1) +@(1 | 2) lift[2](2)"),
-      EBinOp("+", ELift(ENum(1), Dyn), ELift(ENum(2), Dyn), Some(SJoin(Sta, Dyn))))
-    assertEquals(parse("f(x)@(a | b)"),
-      EApp(EVar("f"), EVar("x"), Some(SJoin(SVar("a"), SVar("b")))))
+  test("accepts parenthesized atomic stages after @") {
+    assertEquals(parse("lift[2](1) +@(2) lift[2](2)"),
+      EBinOp("+", ELift(ENum(1), Dyn), ELift(ENum(2), Dyn), Some(Dyn)))
+    assertEquals(parse("f(x)@(a)"), EApp(EVar("f"), EVar("x"), Some(SVar("a"))))
   }
 
   test("parses let annotation as rhs ascription") {

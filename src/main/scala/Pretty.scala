@@ -154,14 +154,12 @@ private def renderType(ty: Type, parentPrec: Int): String = ty match
   case TFun(arg, ret) =>
     maybeParens(s"${renderType(arg, 1)} -> ${renderType(ret, 0)}", parentPrec > 0)
   case TAt(base, stage) =>
-    maybeParens(s"${renderType(base, 2)} @ ${renderStage(stage, 2)}", parentPrec > 1)
+    maybeParens(s"${renderType(base, 2)} @ ${renderStage(stage)}", parentPrec > 1)
 
-private def renderStage(stage: Stage, parentPrec: Int = 0): String =
+private def renderStage(stage: Stage): String =
   stage match
     case SNum(n) => n.toString
     case SVar(x) => x
-    case SJoin(a, b) =>
-      maybeParens(s"${renderStage(a, 1)} | ${renderStage(b, 2)}", parentPrec > 1)
 
 private def renderConstraints(constraints: List[StageConstraint]): String =
   if constraints.isEmpty then ""
@@ -169,7 +167,7 @@ private def renderConstraints(constraints: List[StageConstraint]): String =
 
 private def renderStageValue(stage: Option[Stage]): String =
   stage match
-    case Some(st) => s"@${renderStage(st, 2)}"
+    case Some(st) => s"@${renderStage(st)}"
     case None => ""
 
 private def renderOp(op: String, stage: Option[Stage]): String =
@@ -183,7 +181,7 @@ private def renderReturn(retTy: Option[Type]): String =
 private def renderLiftedFun(lam: ELam, stage: Stage, parentPrec: Int): String =
   val arg = lam.argTy.map(t => s": ${renderType(t, 0)}").getOrElse("")
   maybeParens(
-    s"fun@${renderStage(stage, 2)}(${lam.x}$arg)${renderReturn(lam.retTy)} => ${renderExpr(lam.body, 0)}",
+    s"fun@${renderStage(stage)}(${lam.x}$arg)${renderReturn(lam.retTy)} => ${renderExpr(lam.body, 0)}",
     parentPrec > 0,
   )
 

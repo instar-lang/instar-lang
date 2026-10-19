@@ -26,7 +26,6 @@ object Lexer:
     case Minus
     case Star
     case Slash
-    case StageJoin
     case LessEq
     case GreaterEq
     case Less
@@ -161,9 +160,6 @@ object Lexer:
         case '+' => advance(); add(Kind.Plus, "+", startLine, startCol)
         case '*' => advance(); add(Kind.Star, "*", startLine, startCol)
         case '/' => advance(); add(Kind.Slash, "/", startLine, startCol)
-        case '|' | '⊔' =>
-          val operator = advance().toString
-          add(Kind.StageJoin, operator, startLine, startCol)
         case '-' =>
           advance()
           if !atEnd() && current() == '>' then
@@ -551,7 +547,7 @@ private case class Parser(tokens: Vector[Token]):
     val base = parseAtomicType()
     if at(Kind.At) then
       advance()
-      TAt(base.base, parseStageAnnotation())
+      TAt(base.base, parseStage())
     else base
 
   private def parseAtomicType(): Type =
@@ -634,13 +630,6 @@ private case class Parser(tokens: Vector[Token]):
     }
 
   private def parseStage(): Stage =
-    var stage = parseStageAtom()
-    while at(Kind.StageJoin) do
-      advance()
-      stage = SJoin(stage, parseStageAtom())
-    stage
-
-  private def parseStageAtom(): Stage =
     current.kind match
       case Kind.IntLit =>
         val n = advance().lexeme.toInt
@@ -655,12 +644,6 @@ private case class Parser(tokens: Vector[Token]):
         stage
       case _ =>
         fail("Expected a stage")
-
-  private def parseStageAnnotation(): Stage =
-    val stage = parseStageAtom()
-    if at(Kind.StageJoin) then
-      fail("Stage joins after `@` require parentheses, for example `@(1 | 2)`")
-    stage
 
   private def parseStageBinders(): List[(String, List[StageConstraint])] =
     expect(Kind.LBracket, "`[`")
@@ -685,7 +668,7 @@ private case class Parser(tokens: Vector[Token]):
   private def parseOptionalStageValue(): Option[Stage] =
     if at(Kind.At) then
       advance()
-      Some(parseStageAnnotation())
+      Some(parseStage())
     else
       None
 
