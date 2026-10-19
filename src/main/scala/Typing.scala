@@ -161,10 +161,10 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
 
     case ELet(x, rhs, body) =>
       val typedRhs = infer(ctx, rhs)
-      WF.check(ctx, typedRhs.ty.get)
-      val typedBody = infer(ctx + (x -> typedRhs.ty.get), body)
+      val bodyCtx = ctx + (x -> typedRhs.ty.get)
+      val typedBody = infer(bodyCtx, body)
       val resultTy = typedBody.ty.get.at(typedRhs.ty.get.stage)
-      ELet(x, typedRhs, coerce(ctx, typedBody, resultTy)).withType(resultTy)
+      ELet(x, typedRhs, coerce(bodyCtx, typedBody, resultTy)).withType(resultTy)
 
     case ELetRec(f, EAscribe(rhs, ty), body, explicitStage) =>
       WF.check(ctx, ty)
@@ -314,34 +314,25 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case EBNLam(_, None, _, _) =>
       fail("cannot infer a by-name lambda without a parameter type")
 
-private def subtype(ctx: Ctx, from: Type, to: Type): Expr =
-  ctx.constraints.assertStLeq(from.stage, to.stage)
-  val coercionTy = TFun(from, to).at()
-  (from.base, to.base) match
+private def coerce(ctx: Ctx, expr: Expr, expected: Type): Expr =
+  val from = expr.ty.get
+  ctx.constraints.assertStLeq(from.stage, expected.stage)
+  (from.base, expected.base) match
     case (TInt, TInt) | (TBool, TBool) | (TUnit, TUnit) =>
-      val x = Counter.fresh
-      val body = ELift(EVar(x).withType(from), to.stage).withType(to)
-      ELam(x, None, body, None).withType(coercionTy)
+      ELift(expr, expected.stage).withType(expected)
     case (TFun(fromArg, fromRet), TFun(toArg, toRet)) =>
-      val argCoercion = subtype(ctx, toArg, fromArg)
-      val retCoercion = subtype(ctx, fromRet, toRet)
-      ctx.constraints.assertStLeq(to.stage, toArg.stage)
-      ctx.constraints.assertStLeq(to.stage, toRet.stage)
+      ctx.constraints.assertStLeq(expected.stage, toArg.stage)
+      ctx.constraints.assertStLeq(expected.stage, toRet.stage)
       val f = Counter.fresh
       val x = Counter.fresh
-      val arg = EApp(argCoercion, EVar(x).withType(toArg), Some(Sta)).withType(fromArg)
+      val arg = coerce(ctx + (x -> toArg), EVar(x).withType(toArg), fromArg)
       val call = EApp(EVar(f).withType(from), arg, Some(from.stage)).withType(fromRet)
-      val body = EApp(retCoercion, call, Some(Sta)).withType(toRet)
+      val body = coerce(ctx + (f -> from) + (x -> toArg), call, toRet)
       val lam = ELam(x, None, body, None).withType(TFun(toArg, toRet))
-      val lifted = ELift(lam, to.stage).withType(to)
-      ELam(f, None, lifted, None).withType(coercionTy)
-    case _ if ctx.constraints.implyTyEq(from, to) =>
-      val x = Counter.fresh
-      ELam(x, None, EVar(x).withType(to), None).withType(coercionTy)
-    case _ => fail(s"cannot coerce type $from to $to")
-
-private def coerce(ctx: Ctx, expr: Expr, expected: Type): Expr =
-  EApp(subtype(ctx, expr.ty.get, expected), expr, Some(Sta)).withType(expected)
+      val lifted = ELift(lam, expected.stage).withType(expected)
+      ELet(f, expr, lifted).withType(expected)
+    case _ if ctx.constraints.implyTyEq(from, expected) => expr.withType(expected)
+    case _ => fail(s"cannot coerce type $from to $expected")
 
 private def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
   coerce(ctx, infer(ctx, expr), expected)
