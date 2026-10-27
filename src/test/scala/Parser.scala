@@ -95,6 +95,12 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
+  test("parses unary minus with an explicit stage") {
+    val parsed = parse("-@s x")
+
+    assertEquals(parsed, EUnaryOp("-", EVar("x"), SVar("s")))
+  }
+
   test("parses letrec with explicit function type") {
     val input = "letrec id: Int -> Int = fun(x: Int): Int => x in id(3)"
     val parsed = parse(input)
@@ -249,6 +255,19 @@ class ParserTest extends FunSuite:
         "loop",
         ELam("x", Some(TInt), EVar("x"), Some(TInt)),
         SNum(2),
+      )
+
+    assertEquals(parsed, expected)
+  }
+
+  test("parses fix with a stage variable") {
+    val parsed = parse("fix@s loop. fun(x: Int): Int => x")
+
+    val expected =
+      EFix(
+        "loop",
+        ELam("x", Some(TInt), EVar("x"), Some(TInt)),
+        SVar("s"),
       )
 
     assertEquals(parsed, expected)
