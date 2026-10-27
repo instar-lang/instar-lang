@@ -84,6 +84,10 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       val TForallSt(s, bodyTy) = typedFun.ty.get
       ESApp(typedFun, st).withType(substStage(bodyTy, s, st))
 
+    // Stopgap: type polymorphism is implemented in the parser and the interpreter only.
+    case ETLam(_, _) | ETApp(_, _) =>
+      fail("type polymorphism (`tfun[t]` / `e[T]`) is not implemented in the type checker yet")
+
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))
 
     case EApp(e1, e2, Some(st)) =>

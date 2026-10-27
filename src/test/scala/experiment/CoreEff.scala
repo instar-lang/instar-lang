@@ -77,7 +77,7 @@ class CoreEffTest extends munit.FunSuite {
   )
 
   /*
-    def impPower[s](b: Intˢ, n: Int, result: Ref[Int]ˢ): Intˢ =
+    def impPower{s}(b: Intˢ, n: Int, result: Ref[Int]ˢ): Intˢ =
       if n == 0 then
         !ˢresult
       else

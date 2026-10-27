@@ -36,7 +36,7 @@ class MainTest extends FunSuite:
       deleteIfExists(exeFile)
 
       val out = captureStdout {
-        main(Array("--emit-c", "--program", "lift[2](1) +@2 lift[2](2)"))
+        main(Array("--emit-c", "--program", "lift{2}(1) +@2 lift{2}(2)"))
       }
 
       assert(Files.exists(cFile))
@@ -58,7 +58,7 @@ class MainTest extends FunSuite:
       deleteIfExists(exeFile)
 
       val out = captureStdout {
-        main(Array("--program", "lift[2](2) +@2 lift[2](3)", "--emit-c"))
+        main(Array("--program", "lift{2}(2) +@2 lift{2}(3)", "--emit-c"))
       }
 
       assert(Files.exists(cFile))

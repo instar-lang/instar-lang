@@ -31,6 +31,7 @@ enum Value:
   case VBool(b: Boolean)
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
+  case VTClo(body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VBNClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
@@ -328,6 +329,12 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       }, γ)
     case ELam(x, argTy, e, retTy) =>
       k(VClo(x, argTy, e, retTy, ρ, ς), σ, γ)
+    case ETLam(_, body) =>
+      k(VTClo(body, ρ, ς), σ, γ)
+    case ETApp(e, _) =>
+      eval(e, ρ, ς, σ, { case (VTClo(body, ρf, ςf), σ1, γ1) =>
+        eval(body, ρf, ςf, σ1, k, γ1)
+      }, γ)
     case EBNLam(x, argTy, e, retTy) =>
       k(VBNClo(x, argTy, e, retTy, ρ, ς), σ, γ)
     case EApp(e1, e2, s) if evalExprStage(s, ς) == Sta =>
@@ -372,6 +379,11 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val l = σ1.size
           val ρf1 = ρf + (f -> l)
           val v = VSClo(x, body, ρf1, ςf)
+          eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
+        case (VTClo(body, ρf, ςf), σ1, γ1) =>
+          val l = σ1.size
+          val ρf1 = ρf + (f -> l)
+          val v = VTClo(body, ρf1, ςf)
           eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
       }, γ)
     case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Sta =>

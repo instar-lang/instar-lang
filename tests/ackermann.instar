@@ -1,9 +1,9 @@
 letrec ack (m: Int): Code[Int -> Int] =
   fun@2 (n: Code[Int]) =>
-    if m == 0 then n +@2 lift[2](1)
+    if m == 0 then n +@2 lift{2}(1)
     else
-      if@2 n == 0 then ack(m-1)(lift[2](1))
-      else ack(m-1)(ack(m)(n -@2 lift[2](1)))
+      if@2 n == 0 then ack(m-1)(lift{2}(1))
+      else ack(m-1)(ack(m)(n -@2 lift{2}(1)))
 in
 let ack2 = fun@2 (n: Code[Int]) => ack(2)(n) in
 ack2

@@ -1,4 +1,4 @@
 let mkAdd = 
-  lift[2](fun(x: Int @ 2) => lift[2](fun(y: Int @ 2) => x +@2 y)) in
-let add40 = mkAdd(lift[2](40))@2 in
-add40(lift[2](2))@2
+  lift{2}(fun(x: Int @ 2) => lift{2}(fun(y: Int @ 2) => x +@2 y)) in
+let add40 = mkAdd(lift{2}(40))@2 in
+add40(lift{2}(2))@2

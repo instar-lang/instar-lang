@@ -11,8 +11,10 @@ enum Type:
   case TFun(t1: Type, t2: Type)
   case TRef(t: Type)
   case TForallSt(s: String, t: Type)
+  case TForallTy(x: String, t: Type)
   case TAt(t: Type, s: Stage)
   case TCode(t: Type)
+  case TVar(x: String)
 
 type Loc = Int
 
@@ -25,6 +27,8 @@ enum Expr:
   case EVar(name: String)
   case ESLam(x: String, body: Expr)
   case ESApp(e: Expr, st: Stage)
+  case ETLam(x: String, body: Expr)
+  case ETApp(e: Expr, argTy: Type)
   case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
   case EBNLam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
   case EApp(e1: Expr, e2: Expr, st: Option[Stage])
@@ -54,8 +58,10 @@ extension (e: Expr)
     e match
       case EUnit | ENum(_) | EBool(_) | EVar(_) => true
       case ESLam(_, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
+      case ETLam(_, _) => true
       case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
       case ESApp(_, _) | EApp(_, _, _) => false
+      case ETApp(e, _) => e.isPure
       case ELift(t, _) => false
       case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
       case ERun(t) => t.isPure
@@ -72,6 +78,8 @@ extension (e: Expr)
       case EVar(x) => Set(x)
       case ESLam(x, body) => body.freeVar
       case ESApp(e, _) => e.freeVar
+      case ETLam(_, body) => body.freeVar
+      case ETApp(e, _) => e.freeVar
       case ELam(x, _, body, _) => body.freeVar - x
       case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case ECBNApp(e1, e2) => e1.freeVar ++ e2.freeVar
@@ -87,6 +95,7 @@ extension (e: Expr)
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EAscribe(e, _) => e.freeVar
       case EFix(f, e, _) => e.freeVar - f
+      case EIsApp(e) => e.freeVar
 
   // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
   // and all variables after reflect are distinct, so we do not need to consider variable capture here.
@@ -96,6 +105,11 @@ extension (e: Expr)
       case EVar(x) => if x == from then to else e
       case ESLam(x, body) => ESLam(x, body.subst(from, to))
       case ESApp(e, st) => ESApp(e.subst(from, to), st)
+      case ETLam(x, body) => ETLam(x, body.subst(from, to))
+      case ETApp(e, argTy) => ETApp(e.subst(from, to), argTy)
+      case EIsApp(e) => EIsApp(e.subst(from, to))
+      case ECBNApp(e1, e2) => ECBNApp(e1.subst(from, to), e2.subst(from, to))
+      case ELoc(_) => e
       case ELam(x, argTy, body, retTy) =>
         ELam(x, argTy, body.subst(from, to), retTy)
       case EApp(e1, e2, st) => EApp(e1.subst(from, to), e2.subst(from, to), st)

@@ -58,8 +58,8 @@ trait SurfaceBase extends munit.FunSuite {
 class Inspection extends SurfaceBase {
   test("is-app-1") {
     val src = """
-    let app = lift[2](fun(x: Int @ 2) => x)(lift[2](42))@2 in
-    if isApp(app) then lift[2](true) else lift[2](false)
+    let app = lift{2}(fun(x: Int @ 2) => x)(lift{2}(42))@2 in
+    if isApp(app) then lift{2}(true) else lift{2}(false)
     """
     testEvalSurface(src,
       VCode(
@@ -68,11 +68,11 @@ class Inspection extends SurfaceBase {
   }
 
   test("is-app-2") {
-    testEvalSurface("isApp(lift[2](42))", VBool(false))
+    testEvalSurface("isApp(lift{2}(42))", VBool(false))
   }
 
   test("is-app-conflict") {
-    val src = "lift[2](isApp(lift[2](fun(x: Int @ 2) => x)(lift[2](42))@2))"
+    val src = "lift{2}(isApp(lift{2}(fun(x: Int @ 2) => x)(lift{2}(42))@2))"
     testEvalSurface(src,
       VCode(
         ELet("x1", ELam("x0", None, EVar("x0"), None),
@@ -83,15 +83,15 @@ class Inspection extends SurfaceBase {
 }
 
 class Core extends SurfaceBase {
-  private val lamAddSrc = "lift[2](fun(x: Int @ 2) => x +@2 lift[2](1))"
-  private val lamMulSrc = "lift[2](fun(y: Int @ 2) => y *@2 lift[2](42))"
+  private val lamAddSrc = "lift{2}(fun(x: Int @ 2) => x +@2 lift{2}(1))"
+  private val lamMulSrc = "lift{2}(fun(y: Int @ 2) => y *@2 lift{2}(42))"
   private val lamAddBody = ELet("x1", EBinOp("+", EVar("x0"), ENum(1), Sta), EVar("x1"))
   private val lamAddCode = ELet("x2", ELam("x0", None, lamAddBody, None), EVar("x2"))
   private val lamMulBody = ELet("x5", EBinOp("*", EVar("x4"), ENum(42), Sta), EVar("x5"))
   private val lamMulCode = ELet("x6", ELam("x4", None, lamMulBody, None), EVar("x6"))
 
   test("lam-app") {
-    testEvalSurface(s"$lamAddSrc(lift[2](41))@2",
+    testEvalSurface(s"$lamAddSrc(lift{2}(41))@2",
       VCode(ELet("x2", ELam("x0", None, lamAddBody, None),
         ELet("x3", EApp(EVar("x2"), ENum(41), Sta), EVar("x3")))))
     testEvalSurface(lamAddSrc,
@@ -99,12 +99,12 @@ class Core extends SurfaceBase {
   }
 
   test("fun-stage-sugar") {
-    val src = "fun@2(x: Int @ 2) => x +@2 lift[2](1)"
+    val src = "fun@2(x: Int @ 2) => x +@2 lift{2}(1)"
     testEvalSurface(src, VCode(lamAddCode))
   }
 
   test("cond") {
-    val src = s"if@2 lift[2](true) then $lamAddSrc(lift[2](10))@2 else $lamMulSrc(lift[2](20))@2"
+    val src = s"if@2 lift{2}(true) then $lamAddSrc(lift{2}(10))@2 else $lamMulSrc(lift{2}(20))@2"
     testEvalSurface(src,
       VCode(
         ELet("x8",
@@ -119,24 +119,24 @@ class Core extends SurfaceBase {
   }
 
   test("stage-poly") {
-    testEvalSurface("(sfun[s] => lift[s](fun(x: Int @ s) => x +@s lift[s](1))(lift[s](5))@s)[1]", VNum(6))
-    testEvalSurface("(sfun[s] => lift[s](fun(x: Int @ s) => x +@s lift[s](1))(lift[s](5))@s)[2]",
+    testEvalSurface("(sfun{s} => lift{s}(fun(x: Int @ s) => x +@s lift{s}(1))(lift{s}(5))@s){1}", VNum(6))
+    testEvalSurface("(sfun{s} => lift{s}(fun(x: Int @ s) => x +@s lift{s}(1))(lift{s}(5))@s){2}",
       VCode(ELet("x2", ELam("x0", None, lamAddBody, None),
         ELet("x3", EApp(EVar("x2"), ENum(5), Sta), EVar("x3")))))
   }
 
   test("let-header-sugar") {
-    val src = "let add[s] (x: Int @ s) (y: Int @ s) = x +@s y in add[1](2)(3)"
+    val src = "let add{s} (x: Int @ s) (y: Int @ s) = x +@s y in add{1}(2)(3)"
     testEvalSurface(src, VNum(5))
   }
 
   test("comma-separated let stage binders") {
-    val src = "let f[s1, s2] = fun@s1(x: Int @ s2) => x in f[1][1](2)"
+    val src = "let f{s1, s2} = fun@s1(x: Int @ s2) => x in f{1}{1}(2)"
     testEvalSurface(src, VNum(2))
   }
 
   test("comma-separated stage application") {
-    val src = "let f[s1, s2] = fun@s1(x: Int @ s2) => x in f[1, 1](2)"
+    val src = "let f{s1, s2} = fun@s1(x: Int @ s2) => x in f{1, 1}(2)"
     testEvalSurface(src, VNum(2))
   }
 
@@ -151,17 +151,17 @@ class Core extends SurfaceBase {
 
   test("rec-stage-poly") {
     val runtimeSrc = """
-      letrec power: forall[s]. Int @ s -> Int -> Int @ s =
-        sfun[s] => fun(x: Int @ s) => fun(n: Int): Int @ s =>
-          if n == 0 then lift[s](1) else x *@s power[s](x)(n - 1)
-      in power[1](2)(3)
+      letrec power: forall{s}. Int @ s -> Int -> Int @ s =
+        sfun{s} => fun(x: Int @ s) => fun(n: Int): Int @ s =>
+          if n == 0 then lift{s}(1) else x *@s power{s}(x)(n - 1)
+      in power{1}(2)(3)
     """
 
     val codeSrc = """
-      letrec power: forall[s]. Int @ s -> Int -> Int @ s =
-        sfun[s] => fun(x: Int @ s) => fun(n: Int): Int @ s =>
-          if n == 0 then lift[s](1) else x *@s power[s](x)(n - 1)
-      in lift[2](fun(x: Code[Int]): Code[Int] => power[2](x)(3))
+      letrec power: forall{s}. Int @ s -> Int -> Int @ s =
+        sfun{s} => fun(x: Int @ s) => fun(n: Int): Int @ s =>
+          if n == 0 then lift{s}(1) else x *@s power{s}(x)(n - 1)
+      in lift{2}(fun(x: Code[Int]): Code[Int] => power{2}(x)(3))
     """
 
     testEvalSurface(runtimeSrc, VNum(8))
@@ -178,16 +178,16 @@ class Core extends SurfaceBase {
 
   test("rec-imp-stage-poly") {
     val runtimeSrc = """
-      letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int @ s =
-        sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int]@s): Int @ s =>
-          if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower[s](b)(n - 1)(result)
-      in impPower[1](2)(3)(ref(1))
+      letrec impPower: forall{s}. Int @ s -> Int -> Ref[Int]@s -> Int @ s =
+        sfun{s} => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int]@s): Int @ s =>
+          if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower{s}(b)(n - 1)(result)
+      in impPower{1}(2)(3)(ref(1))
     """
     val codeSrc = """
-      letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int @ s =
-        sfun[s] => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int]@s): Int @ s =>
-          if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower[s](b)(n - 1)(result)
-      in lift[2](fun(x: Code[Int]): Code[Int] => impPower[2](x)(3)(ref@2(lift[2](1))))
+      letrec impPower: forall{s}. Int @ s -> Int -> Ref[Int]@s -> Int @ s =
+        sfun{s} => fun(b: Int @ s) => fun(n: Int) => fun(result: Ref[Int]@s): Int @ s =>
+          if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower{s}(b)(n - 1)(result)
+      in lift{2}(fun(x: Code[Int]): Code[Int] => impPower{2}(x)(3)(ref@2(lift{2}(1))))
     """
 
     testEvalSurface(runtimeSrc, VNum(8))
@@ -212,9 +212,9 @@ class Core extends SurfaceBase {
 
   test("rec-imp-stage-poly letrec-header-sugar") {
     val runtimeSrc = """
-      letrec impPower[s] (b: Int @ s) (n: Int) (result: Ref[Int]@s): Int @ s =
-        if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower[s](b)(n - 1)(result)
-      in impPower[1](2)(3)(ref(1))
+      letrec impPower{s} (b: Int @ s) (n: Int) (result: Ref[Int]@s): Int @ s =
+        if n == 0 then !@s result else let _ = result :=@s b *@s !@s result in impPower{s}(b)(n - 1)(result)
+      in impPower{1}(2)(3)(ref(1))
     """
 
     testEvalSurface(runtimeSrc, VNum(8))
@@ -222,7 +222,7 @@ class Core extends SurfaceBase {
 
   test("stuck") {
     intercept[RuntimeException] {
-      eval(parse("let x = ref@2(lift[2](0)) in 10"))
+      eval(parse("let x = ref@2(lift{2}(0)) in 10"))
     }
   }
 
@@ -243,9 +243,9 @@ class Core extends SurfaceBase {
 
   test("fix-second-stage") {
     val src = """
-      let fib = fix@2 fib. lift[2](fun(n: Code[Int]): Code[Int] =>
-        if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
-      in fib(lift[2](5))@2
+      let fib = fix@2 fib. lift{2}(fun(n: Code[Int]): Code[Int] =>
+        if@2 n <=@2 lift{2}(1) then lift{2}(1) else n *@2 fib(n -@2 lift{2}(1))@2)
+      in fib(lift{2}(5))@2
     """
 
     testEvalSurface(src,
@@ -269,11 +269,11 @@ class Core extends SurfaceBase {
   }
 
   test("lift-loc") {
-    testEvalSurface("lift[2](ref@1(42))", VCode(ELet("x0", ELoc(0), EVar("x0"))))
+    testEvalSurface("lift{2}(ref@1(42))", VCode(ELet("x0", ELoc(0), EVar("x0"))))
   }
 
   test("lift-curry-lam") {
-    val src = "lift[2](fun(x: Int @ 2) => lift[2](fun(y: Int @ 2) => x +@2 y))"
+    val src = "lift{2}(fun(x: Int @ 2) => lift{2}(fun(y: Int @ 2) => x +@2 y))"
     testEvalSurface(src,
       VCode(
         ELet("x4",
@@ -289,31 +289,31 @@ class Core extends SurfaceBase {
 
   test("run") {
     testEvalSurface("1", VNum(1))
-    testEvalSurface("run(lift[2](1))", VNum(1))
+    testEvalSurface("run(lift{2}(1))", VNum(1))
     testEvalSurface(lamAddSrc, VCode(lamAddCode))
     testEvalSurface(s"run($lamAddSrc)", VClo("x0", None, lamAddBody, None, Map(), Map()))
 
-    val appSrc = s"let y = $lamAddSrc in y(lift[2](1))@2"
+    val appSrc = s"let y = $lamAddSrc in y(lift{2}(1))@2"
     testEvalSurface(appSrc,
       VCode(ELet("x2", ELam("x0", None, lamAddBody, None),
         ELet("x3", EApp(EVar("x2"), ENum(1), Sta), EVar("x3")))))
 
-    testEvalSurface("!(run(lift[2](ref@1(1))))", VNum(1))
+    testEvalSurface("!(run(lift{2}(ref@1(1))))", VNum(1))
   }
 }
 
 class CoreOpt extends SurfaceBase {
   private def vcode(e: Expr): Value = VCode(e)
 
-  private val add2LamSrc = "lift[2](fun(y: Int @ 2) => y +@2 lift[2](2))"
+  private val add2LamSrc = "lift{2}(fun(y: Int @ 2) => y +@2 lift{2}(2))"
 
   test("opt-rewriting-1") {
-    val src = "let x = lift[2](1) +@2 lift[2](2) in let y = lift[2](1) +@2 lift[2](2) in x *@2 y"
+    val src = "let x = lift{2}(1) +@2 lift{2}(2) in let y = lift{2}(1) +@2 lift{2}(2) in x *@2 y"
     testEvalSurface(src, vcode(ENum(9)), Set("rewriting"))
   }
 
   test("opt-rewriting-2") {
-    val src = "lift[2](fun(z: Int @ 2) => let x = z +@2 lift[2](2) in let y = lift[2](1) +@2 lift[2](2) in x *@2 y)"
+    val src = "lift{2}(fun(z: Int @ 2) => let x = z +@2 lift{2}(2) in let y = lift{2}(1) +@2 lift{2}(2) in x *@2 y)"
     testEvalSurface(src,
       vcode(
         ELet("x3",
@@ -326,14 +326,14 @@ class CoreOpt extends SurfaceBase {
   }
 
   test("opt-dce") {
-    val src = "lift[2](fun(y: Int @ 2) => let z = y +@2 lift[2](2) in y)"
+    val src = "lift{2}(fun(y: Int @ 2) => let z = y +@2 lift{2}(2) in y)"
     testEvalSurface(src,
       vcode(ELet("x2", ELam("x0", None, EVar("x0"), None), EVar("x2"))),
       Set("dce"))
   }
 
   test("opt-no-let-lam") {
-    val src = s"$add2LamSrc(lift[2](3))@2"
+    val src = s"$add2LamSrc(lift{2}(3))@2"
     testEvalSurface(src,
       vcode(
         ELet("x2",
@@ -343,21 +343,21 @@ class CoreOpt extends SurfaceBase {
   }
 
   test("opt-app-inline-1") {
-    val src = s"$add2LamSrc(lift[2](3))@2"
+    val src = s"$add2LamSrc(lift{2}(3))@2"
     testEvalSurface(src,
       vcode(ELet("x2", EBinOp("+", ENum(3), ENum(2), Sta), EVar("x2"))),
       Set("fun-inline", "no-let-lam"))
   }
 
   test("opt-app-inline-2") {
-    val src = s"$add2LamSrc(lift[2](3))@2"
+    val src = s"$add2LamSrc(lift{2}(3))@2"
     testEvalSurface(src,
       vcode(ELet("x3", EBinOp("+", ENum(3), ENum(2), Sta), EVar("x3"))),
       Set("fun-inline", "dce"))
   }
 
   test("opt-app-inline-3") {
-    val src = "lift[2](fun(z: Code[Int -> Int]) => z(lift[2](3))@2)"
+    val src = "lift{2}(fun(z: Code[Int -> Int]) => z(lift{2}(3))@2)"
     testEvalSurface(src,
       vcode(
         ELet("x2",
@@ -370,11 +370,11 @@ class CoreOpt extends SurfaceBase {
 
   test("opt-app-inline-4") {
     val src = """
-      let a = lift[2](42) +@2 lift[2](42) in
-      lift[2](fun(z: Int @ 2) =>
-        let f = lift[2](fun(z: Int @ 2) =>
+      let a = lift{2}(42) +@2 lift{2}(42) in
+      lift{2}(fun(z: Int @ 2) =>
+        let f = lift{2}(fun(z: Int @ 2) =>
           let x = z +@2 a in
-          let y = lift[2](1) +@2 lift[2](2) in
+          let y = lift{2}(1) +@2 lift{2}(2) in
           x *@2 y)
         in f(z)@2)
     """
@@ -399,9 +399,9 @@ class CoreOpt extends SurfaceBase {
 
   test("opt-app-inline-nested-1") {
     val src = """
-      let f1 = lift[2](fun(y: Int @ 2) => y +@2 lift[2](2)) in
-      let f2 = lift[2](fun(z: Int @ 2) => f1(z)@2) in
-      f2(lift[2](3))@2
+      let f1 = lift{2}(fun(y: Int @ 2) => y +@2 lift{2}(2)) in
+      let f2 = lift{2}(fun(z: Int @ 2) => f1(z)@2) in
+      f2(lift{2}(3))@2
     """
     testEvalSurface(src,
       vcode(ELet("x6", EBinOp("+", ENum(3), ENum(2), Sta), EVar("x6"))),
@@ -410,10 +410,10 @@ class CoreOpt extends SurfaceBase {
 
   test("opt-app-inline-cse") {
     val src = """
-      let f1 = lift[2](fun(y: Int @ 2) =>
-        (lift[2](42) *@2 lift[2](100)) +@2 (y +@2 lift[2](2))) in
-      let r = f1(lift[2](3))@2 in
-      let a = lift[2](42) *@2 lift[2](100) in
+      let f1 = lift{2}(fun(y: Int @ 2) =>
+        (lift{2}(42) *@2 lift{2}(100)) +@2 (y +@2 lift{2}(2))) in
+      let r = f1(lift{2}(3))@2 in
+      let a = lift{2}(42) *@2 lift{2}(100) in
       r /@2 a
     """
 
@@ -481,7 +481,7 @@ class CoreOpt extends SurfaceBase {
   }
 
   test("cse-1") {
-    val src = "(lift[2](2) *@2 lift[2](3)) +@2 (lift[2](2) *@2 lift[2](3))"
+    val src = "(lift{2}(2) *@2 lift{2}(3)) +@2 (lift{2}(2) *@2 lift{2}(3))"
     testEvalSurface(src,
       vcode(ELet("x0", EBinOp("*", ENum(2), ENum(3), Sta),
         ELet("x1", EBinOp("+", EVar("x0"), EVar("x0"), Sta), EVar("x1")))),
@@ -489,7 +489,7 @@ class CoreOpt extends SurfaceBase {
   }
 
   test("cse-2") {
-    val src = "((lift[2](2) *@2 lift[2](3)) +@2 (lift[2](2) *@2 lift[2](3))) /@2 ((lift[2](2) *@2 lift[2](3)) +@2 (lift[2](2) *@2 lift[2](3)))"
+    val src = "((lift{2}(2) *@2 lift{2}(3)) +@2 (lift{2}(2) *@2 lift{2}(3))) /@2 ((lift{2}(2) *@2 lift{2}(3)) +@2 (lift{2}(2) *@2 lift{2}(3)))"
     testEvalSurface(src,
       vcode(
         ELet("x0", EBinOp("*", ENum(2), ENum(3), Sta),
@@ -500,12 +500,12 @@ class CoreOpt extends SurfaceBase {
 
   test("cse-lam-1") {
     val src = """
-      let f = lift[2](fun(y: Int @ 2) =>
-        let z1 = lift[2](2) *@2 lift[2](3) in
-        let z2 = lift[2](2) *@2 lift[2](3) in
+      let f = lift{2}(fun(y: Int @ 2) =>
+        let z1 = lift{2}(2) *@2 lift{2}(3) in
+        let z2 = lift{2}(2) *@2 lift{2}(3) in
         y +@2 z2) in
-      let x1 = lift[2](2) *@2 lift[2](3) in
-      f(lift[2](3))@2
+      let x1 = lift{2}(2) *@2 lift{2}(3) in
+      f(lift{2}(3))@2
     """
     testEvalSurface(src,
       vcode(
@@ -521,12 +521,12 @@ class CoreOpt extends SurfaceBase {
 
   test("cse-lam-2") {
     val src = """
-      let x1 = lift[2](2) *@2 lift[2](3) in
-      let f = lift[2](fun(y: Int @ 2) =>
-        let z1 = lift[2](2) *@2 lift[2](3) in
-        let z2 = lift[2](2) *@2 lift[2](3) in
+      let x1 = lift{2}(2) *@2 lift{2}(3) in
+      let f = lift{2}(fun(y: Int @ 2) =>
+        let z1 = lift{2}(2) *@2 lift{2}(3) in
+        let z2 = lift{2}(2) *@2 lift{2}(3) in
         y +@2 z2) in
-      f(lift[2](3))@2
+      f(lift{2}(3))@2
     """
     testEvalSurface(src,
       vcode(
@@ -540,7 +540,7 @@ class CoreOpt extends SurfaceBase {
   }
 
   test("cse-cond-1") {
-    val src = "if@2 lift[2](1) ==@2 lift[2](2) then lift[2](2) *@2 lift[2](3) else lift[2](2) *@2 lift[2](3)"
+    val src = "if@2 lift{2}(1) ==@2 lift{2}(2) then lift{2}(2) *@2 lift{2}(3) else lift{2}(2) *@2 lift{2}(3)"
     testEvalSurface(src,
       vcode(
         ELet("x0", EBinOp("==", ENum(1), ENum(2), Sta),
@@ -554,7 +554,7 @@ class CoreOpt extends SurfaceBase {
   }
 
   test("cse-cond-2") {
-    val src = "let x0 = lift[2](2) *@2 lift[2](3) in if@2 lift[2](1) ==@2 lift[2](2) then lift[2](2) *@2 lift[2](3) else lift[2](2) *@2 lift[2](3)"
+    val src = "let x0 = lift{2}(2) *@2 lift{2}(3) in if@2 lift{2}(1) ==@2 lift{2}(2) then lift{2}(2) *@2 lift{2}(3) else lift{2}(2) *@2 lift{2}(3)"
     testEvalSurface(src,
       vcode(
         ELet("x0", EBinOp("*", ENum(2), ENum(3), Sta),
@@ -564,26 +564,26 @@ class CoreOpt extends SurfaceBase {
   }
 
   test("cond-simp-1") {
-    val src1 = "if@2 lift[2](1) ==@2 lift[2](2) then lift[2](3) *@2 lift[2](4) else lift[2](4) *@2 lift[2](5)"
-    val src2 = "if@2 lift[2](2) ==@2 lift[2](2) then lift[2](3) *@2 lift[2](4) else lift[2](4) *@2 lift[2](5)"
+    val src1 = "if@2 lift{2}(1) ==@2 lift{2}(2) then lift{2}(3) *@2 lift{2}(4) else lift{2}(4) *@2 lift{2}(5)"
+    val src2 = "if@2 lift{2}(2) ==@2 lift{2}(2) then lift{2}(3) *@2 lift{2}(4) else lift{2}(4) *@2 lift{2}(5)"
     testEvalSurface(src1, vcode(ENum(20)), Set("rewriting", "simp-cond"))
     testEvalSurface(src2, vcode(ENum(12)), Set("rewriting", "simp-cond"))
   }
 
   test("cond-simp-2") {
     val src1 = """
-      lift[2](fun(y: Int @ 2) =>
-        let z1 = lift[2](2) *@2 lift[2](3) in
-        if@2 z1 ==@2 lift[2](6)
-        then y *@2 lift[2](4)
-        else y *@2 (y +@2 lift[2](4)))
+      lift{2}(fun(y: Int @ 2) =>
+        let z1 = lift{2}(2) *@2 lift{2}(3) in
+        if@2 z1 ==@2 lift{2}(6)
+        then y *@2 lift{2}(4)
+        else y *@2 (y +@2 lift{2}(4)))
     """
     val src2 = """
-      lift[2](fun(y: Int @ 2) =>
-        let z1 = lift[2](2) *@2 lift[2](3) in
-        if@2 z1 ==@2 lift[2](7)
-        then y *@2 lift[2](4)
-        else y *@2 (y +@2 lift[2](4)))
+      lift{2}(fun(y: Int @ 2) =>
+        let z1 = lift{2}(2) *@2 lift{2}(3) in
+        if@2 z1 ==@2 lift{2}(7)
+        then y *@2 lift{2}(4)
+        else y *@2 (y +@2 lift{2}(4)))
     """
 
     testEvalSurface(src1,

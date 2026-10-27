@@ -572,7 +572,7 @@ class CoreEffOpt extends Base {
       None))
     testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
 
-    // λf. λx. let y = 1 + x in let z = x + 1 in f @[2] y + f @[2] z
+    // λf. λx. let y = 1 + x in let z = x + 1 in f @{2} y + f @{2} z
     val e1_5 = ELift2(ELam("x", None,
       ELift2(ELam("f", None,
         ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
@@ -775,7 +775,7 @@ class CoreEffTest extends Base {
   )
 
   /*
-    def impPower[s](b: Intˢ, n: Int, result: Ref[Int]ˢ): Intˢ =
+    def impPower{s}(b: Intˢ, n: Int, result: Ref[Int]ˢ): Intˢ =
       if n == 0 then
         !ˢresult
       else
