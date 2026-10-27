@@ -843,6 +843,24 @@ class CoreEffTest extends Base {
     testEval(e, "VNum(6)")
   }
 
+  test("type-poly") {
+    // tfun[t] => fun(x: t) => x
+    val id = ETLam("t", ELam("x", Some(TVar("t")), EVar("x"), None))
+
+    testEval(EApp1(ETApp(id, TInt), ENum(42)), "VNum(42)")
+    testEval(EApp1(ETApp(id, TBool), EBool(true)), "VBool(true)")
+    testEval(EApp1(ETApp(id, TCode(TInt)), ENum(5)), "VNum(5)")
+
+    val id2 = ETLam("t", ETLam("u", ELam("x", Some(TVar("t")), EVar("x"), None)))
+    testEval(EApp1(ETApp(ETApp(id2, TInt), TBool), ENum(5)), "VNum(5)")
+
+    // tfun[t] => sfun{s} => lift{s}(1)
+    val mixed = ETLam("t", ESLam("s", ELift(ENum(1), SVar("s"))))
+    testEval(ESApp(ETApp(mixed, TInt), SNum(2)), "VCode(ENum(1))")
+
+    testEval(ELetRec("id", id, EApp1(ETApp(EVar("id"), TInt), ENum(7))), "VNum(7)")
+  }
+
   test("rec") {
     testEval(e6, "VNum(120)")
     testEval(e7, "VNum(1024)")
