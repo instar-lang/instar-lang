@@ -16,16 +16,16 @@ class Fixme extends FunSuite:
   test("multiple stage vars") {
     {
       val str = """
-        let f{s1, s2} = fun@s1(x: Int @ s2) => x in
-        f{2, 2}
+        let f[s1, s2] = fun@s1(x: Int @ s2) => x in
+        f[2, 2]
       """
       val checked = infer(parse(str))
       assert(checked.ty == Some(TCode(TFun(TInt, TInt))))
     }
     {
       val str = """
-        let f{s1} {s2} = fun@s1(x: Int @ s2) => x in
-        f{1}{1}
+        let f[s1] [s2] = fun@s1(x: Int @ s2) => x in
+        f[1][1]
       """
       val checked = infer(parse(str))
       assertEquals(checked.ty, Some(TFun(TInt, TInt)))
@@ -33,10 +33,10 @@ class Fixme extends FunSuite:
   }
 
   test("elaboration - stage var") {
-    val expr = """let add{s} (x: Int@s) (y: Int) = x + y in add"""
+    val expr = """let add[s] (x: Int@s) (y: Int) = x + y in add"""
     val inferred = infer(parse(expr))
     // Currently it fails to infer/elab.
-    // Possible result 1: x +@s lift{s}(y)
+    // Possible result 1: x +@s lift[s](y)
     // Possible result 2: add[s, s=1] (x: Int@s) (y: Int) = x +@1 y
     // Which one is better? The former is more general, and does not
     // restrict the instantiation of `s`.
@@ -48,17 +48,17 @@ class TypingTest extends FunSuite:
 
   test("stage-poly function") {
     val str1 = """
-      let f{s} = fun@s(x: Int @ s) => x in
-      let g{s} = f{s} in
-      g{2}
+      let f[s] = fun@s(x: Int @ s) => x in
+      let g[s] = f[s] in
+      g[2]
     """
     val checked1 = infer(parse(str1))
     assertEquals(checked1.ty, Some(TCode(TFun(TInt, TInt))))
 
     val str2 = """
-      let f{s} = fun@s(x: Int @ s) => x in
-      let g{s} = f{s} in
-      g{1}
+      let f[s] = fun@s(x: Int @ s) => x in
+      let g[s] = f[s] in
+      g[1]
     """
     val checked2 = infer(parse(str2))
     assertEquals(checked2.ty, Some(TFun(TInt, TInt)))
@@ -92,7 +92,7 @@ class TypingTest extends FunSuite:
   }
 
   test("infer instantiates stage-polymorphic expressions") {
-    val typed = infer(parse("(sfun{s} => lift{s}(fun(x: Int @ s): Int @ s => x)){2}"))
+    val typed = infer(parse("(sfun[s] => lift[s](fun(x: Int @ s): Int @ s => x))[2]"))
     assertEquals(typed.ty, Some(TCode(TFun(TInt, TInt))))
     val inst = typed.asInstanceOf[ESApp]
     assertEquals(inst.st, SNum(2))
@@ -139,7 +139,7 @@ class TypingTest extends FunSuite:
 
   test("check treats forall stage binders up to alpha-renaming") {
     val expr =
-      parse("fun(x: forall{a}. Int @ a): forall{a}. Int @ a => x")
+      parse("fun(x: forall[a]. Int @ a): forall[a]. Int @ a => x")
     val expected =
       TFun(
         TForallSt("b", TAt(TInt, SVar("b"))),
@@ -152,13 +152,13 @@ class TypingTest extends FunSuite:
   }
 
   test("stage poly add") {
-    val expr = "let add{s} (x: Int@s) (y: Int@s) = x +@s y in add{2}(lift{2}(2))(lift{2}(3))"
+    val expr = "let add[s] (x: Int@s) (y: Int@s) = x +@s y in add[2](lift[2](2))(lift[2](3))"
     val inferred = infer(parse(expr))
     assert(inferred.ty.get == TCode(TInt))
   }
 
   test("lift2-lift2") {
-    val expr = parse("lift{2}(lift{2}(1))")
+    val expr = parse("lift[2](lift[2](1))")
     intercept[TypeException] {
       infer(expr)
     }
@@ -168,14 +168,14 @@ class TypingTest extends FunSuite:
     intercept[TypeException]:
       Config.elab = false
       val str = """
-        if lift{2}(true) then 1 else 2
+        if lift[2](true) then 1 else 2
       """
       val checked = check(parse(str), TInt)
 
     intercept[TypeException]:
       Config.elab = true
       val str = """
-        if lift{2}(true) then 1 else 2
+        if lift[2](true) then 1 else 2
       """
       val checked = check(parse(str), TInt)
   }
@@ -185,13 +185,13 @@ class ElabTest extends FunSuite:
 
   test("branches") {
     val str = """
-      if lift{2}(true) then 1 else 2
+      if lift[2](true) then 1 else 2
     """
     val checked = check(parse(str), TCode(TInt))
   }
 
   test("stage var") {
-    val expr = """let add{s} (x: Int@s) (y: Int@s) = x + y in add{2}(2)(3)"""
+    val expr = """let add[s] (x: Int@s) (y: Int@s) = x + y in add[2](2)(3)"""
     val inferred = infer(parse(expr))
     assert(inferred.asInstanceOf[ELet].rhs.asInstanceOf[ESLam].body.asInstanceOf[ELam].body.asInstanceOf[ELam].body ==
       EBinOp("+",EVar("x"),EVar("y"),Some(SVar("s"))))
@@ -223,7 +223,7 @@ class ElabTest extends FunSuite:
       assertEquals(inferred, ELam("x",Some(TInt),ELift(EVar("x"),SNum(2)),Some(TCode(TInt))))
     }
     {
-      val expr = parse("sfun{s} => fun(x: Int): Int@s => x")
+      val expr = parse("sfun[s] => fun(x: Int): Int@s => x")
       val inferred = infer(expr)
       assertEquals(inferred, ESLam("s",ELam("x",Some(TInt),ELift(EVar("x"),SVar("s")),Some(TAt(TInt,SVar("s"))))))
     }

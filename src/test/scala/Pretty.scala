@@ -8,7 +8,7 @@ import instar.pretty
 
 class PrettyTest extends FunSuite:
   test("parse then pretty-print preserves canonical program text") {
-    val src = "let f{s1, s2} = fun@s1(x: Int @ s2) => x in f{1, 1} 2"
+    val src = "let f[s1, s2] = fun@s1(x: Int @ s2) => x in f[1, 1] 2"
     val parsed = parse(src)
     val printed = pretty.expr(parsed)
 
@@ -24,7 +24,7 @@ class PrettyTest extends FunSuite:
   }
 
   test("pretty prints VCode as exact canonical syntax") {
-    val (value, _) = eval(parse("lift{2}(1)"))
+    val (value, _) = eval(parse("lift[2](1)"))
     val VCode(code) = value
     val printed = pretty.value(value)
 
@@ -34,12 +34,13 @@ class PrettyTest extends FunSuite:
 
   test("pretty prints type and stage polymorphism syntax") {
     val srcs = List(
-      "sfun{s} => lift{s}(1)",
-      "tfun[t] => fun(x: t) => x",
+      "sfun[s] => lift[s](1)",
+      "tfun[T] => fun(x: T) => x",
       "f[Int]",
-      "lift{2}(1)",
-      "fun(x: forall[t]. t) => x",
-      "fun(x: forall{s}. Int @ s) => x",
+      "lift[2](1)",
+      "fun(x: forall[T]. T) => x",
+      "fun(x: forall[s]. Int @ s) => x",
+      "f[s, T]",
     )
 
     srcs.foreach { src =>

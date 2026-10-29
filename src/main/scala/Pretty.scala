@@ -69,23 +69,19 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
     case ESLam(_, _) =>
       val (base, stages) = collectStageLambdas(expr)
       maybeParens(
-        s"sfun{${stages.mkString(", ")}} => ${renderExpr(base, 0)}",
+        s"sfun[${stages.mkString(", ")}] => ${renderExpr(base, 0)}",
         parentPrec > 0,
       )
 
-    case ESApp(_, _) =>
-      val (base, stages) = collectStageApps(expr)
-      maybeParens(
-        s"${renderExpr(base, 9)}{${stages.map(renderStage).mkString(", ")}}",
-        parentPrec > 8,
-      )
-
-    case ETApp(_, _) =>
-      val (base, tys) = collectTypeApps(expr)
-      maybeParens(
-        s"${renderExpr(base, 9)}[${tys.map(renderType(_, 0)).mkString(", ")}]",
-        parentPrec > 8,
-      )
+    case ESApp(_, _) | ETApp(_, _) =>
+      val (base, args) = collectBracketApps(expr)
+      val rendered = args
+        .map {
+          case Left(st) => renderStage(st)
+          case Right(ty) => renderType(ty, 0)
+        }
+        .mkString(", ")
+      maybeParens(s"${renderExpr(base, 9)}[$rendered]", parentPrec > 8)
 
     case ETLam(_, _) =>
       val (base, tyVars) = collectTypeLambdas(expr)
@@ -99,7 +95,7 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
 
     case ELift(e, st) =>
       maybeParens(
-        s"lift{${renderStage(st)}}(${renderExpr(e, 0)})",
+        s"lift[${renderStage(st)}](${renderExpr(e, 0)})",
         parentPrec > 7,
       )
 
@@ -160,7 +156,7 @@ private def renderType(ty: Type, parentPrec: Int): String =
     case TRef(t) => s"Ref[${renderType(t, 0)}]"
     case TCode(t) => s"Code[${renderType(t, 0)}]"
     case TForallSt(s, t) =>
-      maybeParens(s"forall{$s}. ${renderType(t, 0)}", parentPrec > 0)
+      maybeParens(s"forall[$s]. ${renderType(t, 0)}", parentPrec > 0)
     case TForallTy(x, t) =>
       maybeParens(s"forall[$x]. ${renderType(t, 0)}", parentPrec > 0)
     case TVar(x) => x
@@ -262,7 +258,7 @@ private def renderHeader(binders: List[HeaderBinder]): String =
             case HeaderBinder.Stage(name) => stages += name
             case _ => ()
           rest = rest.tail
-        out.append(s"{${stages.mkString(", ")}}")
+        out.append(s"[${stages.mkString(", ")}]")
       case HeaderBinder.TypeParam(_) :: _ =>
         val tyVars = ArrayBuffer.empty[String]
         while rest.nonEmpty && rest.head.isInstanceOf[HeaderBinder.TypeParam] do
@@ -293,18 +289,15 @@ private def collectStageLambdas(expr: Expr): (Expr, List[String]) =
         keepGoing = false
   (current, stages.toList)
 
-private def collectStageApps(expr: Expr): (Expr, List[Stage]) =
-  val stages = ArrayBuffer.empty[Stage]
-  var current = expr
-  var keepGoing = true
-  while keepGoing do
-    current match
-      case ESApp(e, st) =>
-        stages.prepend(st)
-        current = e
-      case _ =>
-        keepGoing = false
-  (current, stages.toList)
+private def collectBracketApps(expr: Expr): (Expr, List[Either[Stage, Type]]) =
+  expr match
+    case ESApp(e, st) =>
+      val (base, args) = collectBracketApps(e)
+      (base, args :+ Left(st))
+    case ETApp(e, argTy) =>
+      val (base, args) = collectBracketApps(e)
+      (base, args :+ Right(argTy))
+    case _ => (expr, Nil)
 
 private def collectTypeLambdas(expr: Expr): (Expr, List[String]) =
   val tyVars = ArrayBuffer.empty[String]
@@ -319,15 +312,3 @@ private def collectTypeLambdas(expr: Expr): (Expr, List[String]) =
         keepGoing = false
   (current, tyVars.toList)
 
-private def collectTypeApps(expr: Expr): (Expr, List[Type]) =
-  val tys = ArrayBuffer.empty[Type]
-  var current = expr
-  var keepGoing = true
-  while keepGoing do
-    current match
-      case ETApp(e, argTy) =>
-        tys.prepend(argTy)
-        current = e
-      case _ =>
-        keepGoing = false
-  (current, tys.toList)

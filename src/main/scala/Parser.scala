@@ -15,8 +15,6 @@ object Lexer:
     case RParen
     case LBracket
     case RBracket
-    case LBrace
-    case RBrace
     case Colon
     case At
     case Comma
@@ -151,8 +149,6 @@ object Lexer:
         case ')' => advance(); add(Kind.RParen, ")", startLine, startCol)
         case '[' => advance(); add(Kind.LBracket, "[", startLine, startCol)
         case ']' => advance(); add(Kind.RBracket, "]", startLine, startCol)
-        case '{' => advance(); add(Kind.LBrace, "{", startLine, startCol)
-        case '}' => advance(); add(Kind.RBrace, "}", startLine, startCol)
         case ':' =>
           advance()
           if !atEnd() && current() == '=' then
@@ -351,9 +347,10 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseSFun(): Expr =
     expect(Kind.SFun, "`sfun`")
-    expect(Kind.LBrace, "`{`")
+    expect(Kind.LBracket, "`[`")
     val st = parseIdentifier("stage variable")
-    expect(Kind.RBrace, "`}`")
+    if !isLowerName(st) then fail(s"Stage variables must be lowercase; found `$st`")
+    expect(Kind.RBracket, "`]`")
     val ann = parseOptionalTypeAnnotation()
     expect(Kind.FatArrow, "`=>`")
     val lam = ESLam(st, parseExpr())
@@ -362,13 +359,10 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseTFun(): Expr =
     expect(Kind.TFun, "`tfun`")
-    expect(Kind.LBracket, "`[`")
-    val names = ArrayBuffer.empty[String]
-    names += parseIdentifier("type variable")
-    while at(Kind.Comma) do
-      advance()
-      names += parseIdentifier("type variable")
-    expect(Kind.RBracket, "`]`")
+    val names = parseBracketNames("type variable").map { name =>
+      if isUpperName(name) then name
+      else fail(s"Type variables must be uppercase; found `$name`")
+    }
     expect(Kind.FatArrow, "`=>`")
     names.foldRight(parseExpr())((name, acc) => ETLam(name, acc))
 
@@ -439,9 +433,10 @@ private case class Parser(tokens: Vector[Token]):
     while keepGoing do
       current.kind match
         case Kind.LBracket =>
-          parseBracketedTypes().foreach(ty => expr = ETApp(expr, ty))
-        case Kind.LBrace =>
-          parseBracedStages().foreach(stage => expr = ESApp(expr, stage))
+          parseBracketArgs().foreach {
+            case Left(st) => expr = ESApp(expr, st)
+            case Right(ty) => expr = ETApp(expr, ty)
+          }
         case Kind.LParen =>
           advance()
           val arg = parseExpr()
@@ -457,8 +452,11 @@ private case class Parser(tokens: Vector[Token]):
   private def parseAtomicPostfix(): Expr =
     def loop(expr: Expr): Expr =
       current.kind match
-        case Kind.LBracket => loop(parseBracketedTypes().foldLeft(expr)(ETApp.apply))
-        case Kind.LBrace => loop(parseBracedStages().foldLeft(expr)(ESApp.apply))
+        case Kind.LBracket =>
+          loop(parseBracketArgs().foldLeft(expr) {
+            case (e, Left(st)) => ESApp(e, st)
+            case (e, Right(ty)) => ETApp(e, ty)
+          })
         case _ => expr
     loop(parsePrimary())
 
@@ -497,7 +495,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseLift(): Expr =
     expect(Kind.Lift, "`lift`")
-    val stage = parseBracedStage()
+    val stage = parseBracketStage()
     expect(Kind.LParen, "`(`")
     val expr = parseExpr()
     expect(Kind.RParen, "`)`")
@@ -545,29 +543,11 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.Forall =>
         advance()
-        current.kind match
-          case Kind.LBrace =>
-            advance()
-            val names = ArrayBuffer.empty[String]
-            names += parseIdentifier("stage variable")
-            while at(Kind.Comma) do
-              advance()
-              names += parseIdentifier("stage variable")
-            expect(Kind.RBrace, "`}`")
-            expect(Kind.Dot, "`.`")
-            names.foldRight(parseTypeExpr())((name, acc) => TForallSt(name, acc))
-          case Kind.LBracket =>
-            advance()
-            val names = ArrayBuffer.empty[String]
-            names += parseIdentifier("type variable")
-            while at(Kind.Comma) do
-              advance()
-              names += parseIdentifier("type variable")
-            expect(Kind.RBracket, "`]`")
-            expect(Kind.Dot, "`.`")
-            names.foldRight(parseTypeExpr())((name, acc) => TForallTy(name, acc))
-          case _ =>
-            fail("Expected `{` (stage quantification) or `[` (type quantification) after `forall`")
+        val names = parseBracketNames("stage or type variable")
+        expect(Kind.Dot, "`.`")
+        names.foldRight(parseTypeExpr()) { (name, acc) =>
+          if isLowerName(name) then TForallSt(name, acc) else TForallTy(name, acc)
+        }
       case _ =>
         parseArrowType()
 
@@ -616,7 +596,9 @@ private case class Parser(tokens: Vector[Token]):
         fail("`Code` takes exactly one type argument: `Code[T]`")
       case ("Ref", _) =>
         fail("`Ref` takes exactly one type argument: `Ref[T]`")
-      case (v, Nil) => TVar(v)
+      case (v, Nil) if isUpperName(v) => TVar(v)
+      case (v, Nil) =>
+        fail(s"Type variables must be uppercase; found `$v`")
       case (v, _) =>
         fail(s"Unsupported type constructor `$v`")
 
@@ -632,20 +614,10 @@ private case class Parser(tokens: Vector[Token]):
     var keepGoing = true
     while keepGoing do
       current.kind match
-        case Kind.LBrace =>
-          advance()
-          out += HeaderBinder.Stage(parseIdentifier("stage variable"))
-          while at(Kind.Comma) do
-            advance()
-            out += HeaderBinder.Stage(parseIdentifier("stage variable"))
-          expect(Kind.RBrace, "`}`")
         case Kind.LBracket =>
-          advance()
-          out += HeaderBinder.TypeParam(parseIdentifier("type variable"))
-          while at(Kind.Comma) do
-            advance()
-            out += HeaderBinder.TypeParam(parseIdentifier("type variable"))
-          expect(Kind.RBracket, "`]`")
+          parseBracketNames("stage or type variable").foreach { name =>
+            out += (if isLowerName(name) then HeaderBinder.Stage(name) else HeaderBinder.TypeParam(name))
+          }
         case Kind.LParen =>
           advance()
           val arg = parseIdentifier("parameter name")
@@ -684,7 +656,9 @@ private case class Parser(tokens: Vector[Token]):
         if n < 0 then fail("Stage indices must be non-negative")
         SNum(n)
       case Kind.Identifier =>
-        SVar(parseIdentifier("stage variable"))
+        val name = parseIdentifier("stage variable")
+        if isLowerName(name) then SVar(name)
+        else fail(s"Stage variables must be lowercase; found `$name`")
       case _ =>
         fail("Expected a stage")
 
@@ -705,21 +679,51 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.RBracket, "`]`")
     types.toList
 
-  private def parseBracedStage(): Stage =
-    expect(Kind.LBrace, "`{`")
+  private def parseBracketStage(): Stage =
+    expect(Kind.LBracket, "`[`")
     val st = parseStage()
-    expect(Kind.RBrace, "`}`")
+    expect(Kind.RBracket, "`]`")
     st
 
-  private def parseBracedStages(): List[Stage] =
-    expect(Kind.LBrace, "`{`")
-    val stages = ArrayBuffer.empty[Stage]
-    stages += parseStage()
+  private def parseBracketNames(expected: String): List[String] =
+    expect(Kind.LBracket, "`[`")
+    val names = ArrayBuffer.empty[String]
+    names += parseBinderName(expected)
     while at(Kind.Comma) do
       advance()
-      stages += parseStage()
-    expect(Kind.RBrace, "`}`")
-    stages.toList
+      names += parseBinderName(expected)
+    expect(Kind.RBracket, "`]`")
+    names.toList
+
+  private def parseBinderName(expected: String): String =
+    val name = parseIdentifier(expected)
+    if isLowerName(name) || isUpperName(name) then name
+    else fail(s"Expected a lowercase stage variable or an uppercase type variable but found `$name`")
+
+  private def parseBracketArgs(): List[Either[Stage, Type]] =
+    expect(Kind.LBracket, "`[`")
+    val args = ArrayBuffer.empty[Either[Stage, Type]]
+    args += parseBracketArg()
+    while at(Kind.Comma) do
+      advance()
+      args += parseBracketArg()
+    expect(Kind.RBracket, "`]`")
+    args.toList
+
+  private def parseBracketArg(): Either[Stage, Type] =
+    current.kind match
+      case Kind.IntLit => Left(parseStage())
+      case Kind.Identifier if isLowerName(current.lexeme) => Left(parseStage())
+      case Kind.Identifier if isUpperName(current.lexeme) => Right(parseTypeExpr())
+      case Kind.LParen => Right(parseTypeExpr())
+      case _ =>
+        fail(s"Expected a stage variable (lowercase) or a type (uppercase) but found `${current.lexeme}`")
+
+  private def isLowerName(name: String): Boolean =
+    name.headOption.exists(_.isLower)
+
+  private def isUpperName(name: String): Boolean =
+    name.headOption.exists(_.isUpper)
 
   private def parseIdentifier(expected: String): String =
     if at(Kind.Identifier) then advance().lexeme

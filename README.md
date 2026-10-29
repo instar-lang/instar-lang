@@ -8,13 +8,13 @@ For example, we can write the stage-polymorphic `power` function
 with the stage parameter `s`, which can be instantiated as either stage 1 and stage 2.
 
 ```instar
-letrec power{s}(x: Int@s)(n: Int): Int@s =
+letrec power[s](x: Int@s)(n: Int): Int@s =
   if n == 0
   then 1
-  else x * power{s}(x)(n - 1) in
+  else x * power[s](x)(n - 1) in
 // to specialize power given n is 3:
 let power3 =
-  fun@2(x: Code[Int]) => power{2}(x)(3) in
+  fun@2(x: Code[Int]) => power[2](x)(3) in
 power3(4)
 ```
 

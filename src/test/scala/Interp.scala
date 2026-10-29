@@ -572,7 +572,7 @@ class CoreEffOpt extends Base {
       None))
     testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
 
-    // λf. λx. let y = 1 + x in let z = x + 1 in f @{2} y + f @{2} z
+    // λf. λx. let y = 1 + x in let z = x + 1 in f[2] y + f[2] z
     val e1_5 = ELift2(ELam("x", None,
       ELift2(ELam("f", None,
         ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
@@ -775,7 +775,7 @@ class CoreEffTest extends Base {
   )
 
   /*
-    def impPower{s}(b: Intˢ, n: Int, result: Ref[Int]ˢ): Intˢ =
+    def impPower[s](b: Intˢ, n: Int, result: Ref[Int]ˢ): Intˢ =
       if n == 0 then
         !ˢresult
       else
@@ -844,18 +844,18 @@ class CoreEffTest extends Base {
   }
 
   test("type-poly") {
-    // tfun[t] => fun(x: t) => x
-    val id = ETLam("t", ELam("x", Some(TVar("t")), EVar("x"), None))
+    // tfun[T] => fun(x: T) => x
+    val id = ETLam("T", ELam("x", Some(TVar("T")), EVar("x"), None))
 
     testEval(EApp1(ETApp(id, TInt), ENum(42)), "VNum(42)")
     testEval(EApp1(ETApp(id, TBool), EBool(true)), "VBool(true)")
     testEval(EApp1(ETApp(id, TCode(TInt)), ENum(5)), "VNum(5)")
 
-    val id2 = ETLam("t", ETLam("u", ELam("x", Some(TVar("t")), EVar("x"), None)))
+    val id2 = ETLam("T", ETLam("U", ELam("x", Some(TVar("T")), EVar("x"), None)))
     testEval(EApp1(ETApp(ETApp(id2, TInt), TBool), ENum(5)), "VNum(5)")
 
-    // tfun[t] => sfun{s} => lift{s}(1)
-    val mixed = ETLam("t", ESLam("s", ELift(ENum(1), SVar("s"))))
+    // tfun[T] => sfun[s] => lift[s](1)
+    val mixed = ETLam("T", ESLam("s", ELift(ENum(1), SVar("s"))))
     testEval(ESApp(ETApp(mixed, TInt), SNum(2)), "VCode(ENum(1))")
 
     testEval(ELetRec("id", id, EApp1(ETApp(EVar("id"), TInt), ENum(7))), "VNum(7)")

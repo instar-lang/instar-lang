@@ -86,7 +86,7 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
 
     // Stopgap: type polymorphism is implemented in the parser and the interpreter only.
     case ETLam(_, _) | ETApp(_, _) =>
-      fail("type polymorphism (`tfun[t]` / `e[T]`) is not implemented in the type checker yet")
+      fail("type polymorphism (`tfun[T]` / `e[T]`) is not implemented in the type checker yet")
 
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))
 

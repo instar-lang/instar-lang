@@ -47,15 +47,15 @@ class CBackendTest extends FunSuite:
       Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
 
   test("compiled simple staged code returns the right value") {
-    val out = parseEvalCompile("lift{2}(1) +@2 lift{2}(2)")
+    val out = parseEvalCompile("lift[2](1) +@2 lift[2](2)")
     assertEquals(out, "3")
   }
 
   test("compiled closure-converted code preserves captured variables") {
     val src = """
-      let mkAdd = lift{2}(fun(x: Int @ 2) => lift{2}(fun(y: Int @ 2) => x +@2 y)) in
-      let add40 = mkAdd(lift{2}(40))@2 in
-      add40(lift{2}(2))@2
+      let mkAdd = lift[2](fun(x: Int @ 2) => lift[2](fun(y: Int @ 2) => x +@2 y)) in
+      let add40 = mkAdd(lift[2](40))@2 in
+      add40(lift[2](2))@2
     """
     val out = parseEvalCompile(src)
     assertEquals(out, "42")
@@ -64,8 +64,8 @@ class CBackendTest extends FunSuite:
   test("next-stage function with fun2 syntax") {
     val src = """
       let mkAdd = fun@2(x: Int @ 2) => fun@2(y: Int @ 2) => x +@2 y in
-      let add40 = mkAdd(lift{2}(40))@2 in
-      add40(lift{2}(2))@2
+      let add40 = mkAdd(lift[2](40))@2 in
+      add40(lift[2](2))@2
     """
     val out = parseEvalCompile(src)
     assertEquals(out, "42")
@@ -73,9 +73,9 @@ class CBackendTest extends FunSuite:
 
   test("compiled recursive closures preserve recursion") {
     val src = """
-      let fib = fix@2 fib. lift{2}(fun(n: Code[Int]): Code[Int] =>
-        if@2 n <=@2 lift{2}(1) then lift{2}(1) else n *@2 fib(n -@2 lift{2}(1))@2)
-      in fib(lift{2}(5))@2
+      let fib = fix@2 fib. lift[2](fun(n: Code[Int]): Code[Int] =>
+        if@2 n <=@2 lift[2](1) then lift[2](1) else n *@2 fib(n -@2 lift[2](1))@2)
+      in fib(lift[2](5))@2
     """
     val out = parseEvalCompile(src)
     assertEquals(out, "120")
@@ -93,16 +93,16 @@ class CBackendTest extends FunSuite:
 
   test("stage-poly imperative power") {
     val src = """
-    letrec impPower: forall{s}. Int @ s -> Int -> Ref[Int]@s -> Int@s =
-      sfun{s} => fun(b: Int@s) => fun(n: Int) => fun(result: Ref[Int]@s): Int@s =>
+    letrec impPower: forall[s]. Int @ s -> Int -> Ref[Int]@s -> Int@s =
+      sfun[s] => fun(b: Int@s) => fun(n: Int) => fun(result: Ref[Int]@s): Int@s =>
         if n == 0
         then !@s result
         else
           let _ = result :=@s b *@s !@s result in
-          impPower{s}(b)(n - 1)(result)
+          impPower[s](b)(n - 1)(result)
     in
-    let pow3 = lift{2}(fun(x: Code[Int]): Code[Int] => impPower{2}(x)(3)(ref@2(lift{2}(1)))) in
-    pow3(lift{2}(4))@2
+    let pow3 = lift[2](fun(x: Code[Int]): Code[Int] => impPower[2](x)(3)(ref@2(lift[2](1)))) in
+    pow3(lift[2](4))@2
     """
     val out = parseEvalCompile(src)
     assertEquals(out, "64")
@@ -110,15 +110,15 @@ class CBackendTest extends FunSuite:
 
   test("stage-poly imperative power with letrec-header sugar") {
     val src = """
-    letrec impPower{s} (b: Int@s) (n: Int) (result: Ref[Int]@s): Int@s =
+    letrec impPower[s] (b: Int@s) (n: Int) (result: Ref[Int]@s): Int@s =
       if n == 0
       then !@s result
       else
         let _ = result :=@s b *@s !@s result in
-        impPower{s}(b)(n - 1)(result)
+        impPower[s](b)(n - 1)(result)
     in
-    let pow3 = fun@2(x: Code[Int]): Code[Int] => impPower{2}(x)(3)(ref@2(lift{2}(1))) in
-    pow3(lift{2}(4))@2
+    let pow3 = fun@2(x: Code[Int]): Code[Int] => impPower[2](x)(3)(ref@2(lift[2](1))) in
+    pow3(lift[2](4))@2
     """
     val out = parseEvalCompile(src)
     assertEquals(out, "64")
@@ -126,8 +126,8 @@ class CBackendTest extends FunSuite:
 
   test("let-binding-sugar") {
     val src = """
-    |let add{s} (x: Int@s) (y: Int@s) = x +@s y in
-    |add{2}(lift{2}(2))(lift{2}(3))
+    |let add[s] (x: Int@s) (y: Int@s) = x +@s y in
+    |add[2](lift[2](2))(lift[2](3))
     """.stripMargin
     val out = parseEvalCompile(src)
     assertEquals(out, "5")
