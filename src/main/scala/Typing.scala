@@ -88,6 +88,10 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
     case ETLam(_, _) | ETApp(_, _) =>
       fail("type polymorphism (`tfun[T]` / `e[T]`) is not implemented in the type checker yet")
 
+    // Stopgap: ADTs are implemented in the interpreter only.
+    case ETypeDecl(_, _, _, _) | ECon(_, _) | EMatch(_, _) =>
+      fail("ADTs are not implemented in the type checker yet")
+
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))
 
     case EApp(e1, e2, Some(st)) =>

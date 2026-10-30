@@ -16,6 +16,7 @@ object CBackend:
   def compile(value: Value, store: Store = Map.empty): String =
     value match
       case VCode(expr) => CCompiler(store).compileProgram(expr)
+      case VCon(tag, _) => throw CompileException(s"ADTs are not supported in the C backend (`$tag`)")
       case other => throw CompileException(s"Expected VCode, found $other")
 
   def compileResult(result: (Value, Store)): String =
@@ -244,6 +245,9 @@ object CBackend:
 
         case ELam(_, _, _, _) | EFix(_, _, _) | ECond(_, _, _, _) | ELet(_, _, _) =>
           throw CompileException(s"Expected a simple ANF expression, found $expr")
+
+        case ETypeDecl(_, _, _, _) | ECon(_, _) | EMatch(_, _) =>
+          throw CompileException("ADTs are not supported in the C backend")
 
         case unsupported =>
           throw CompileException(s"Unsupported code form in C backend: $unsupported")

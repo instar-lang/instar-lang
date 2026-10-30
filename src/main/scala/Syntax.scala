@@ -15,6 +15,8 @@ enum Type:
   case TAt(t: Type, s: Stage)
   case TCode(t: Type)
   case TVar(x: String)
+  // ADT type constructor; arguments are stages or types, told apart by their kind
+  case TCon(name: String, args: List[Stage | Type])
 
 type Loc = Int
 
@@ -49,6 +51,13 @@ enum Expr:
   // Extend the language to allow programmers to inspect code values
   case EIsApp(e: Expr)
   case ECBNApp(e1: Expr, e2: Expr)
+  // ADTs, first stage only
+  case ETypeDecl(name: String, params: List[String], ctors: List[Constructor], body: Expr)
+  case ECon(name: String, args: List[Expr])
+  case EMatch(scrutinee: Expr, cases: List[MatchCase])
+
+case class Constructor(name: String, fields: List[Type])
+case class MatchCase(con: String, binders: List[String], body: Expr)
 
 val Sta = Stage.SNum(1)
 val Dyn = Stage.SNum(2)
@@ -70,6 +79,9 @@ extension (e: Expr)
       case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
       case EAscribe(e, _) => e.isPure
       case EFix(_, e, _) => e.isPure
+      case ECon(_, args) => args.forall(_.isPure)
+      case EMatch(scrutinee, cases) => scrutinee.isPure && cases.forall(_.body.isPure)
+      case ETypeDecl(_, _, _, body) => body.isPure
       case _ => false
 
   def freeVar: Set[String] =
@@ -96,6 +108,10 @@ extension (e: Expr)
       case EAscribe(e, _) => e.freeVar
       case EFix(f, e, _) => e.freeVar - f
       case EIsApp(e) => e.freeVar
+      case ECon(_, args) => args.foldLeft(Set[String]())((acc, a) => acc ++ a.freeVar)
+      case EMatch(scrutinee, cases) =>
+        cases.foldLeft(scrutinee.freeVar)((acc, c) => acc ++ (c.body.freeVar -- c.binders))
+      case ETypeDecl(_, _, _, body) => body.freeVar
 
   // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
   // and all variables after reflect are distinct, so we do not need to consider variable capture here.
@@ -129,6 +145,18 @@ extension (e: Expr)
       case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
       case EFix(f, e, s) =>
         EFix(f, e.subst(from, to), s)
+      case ECon(name, args) =>
+        ECon(name, args.map(_.subst(from, to)))
+      case EMatch(scrutinee, cases) =>
+        EMatch(
+          scrutinee.subst(from, to),
+          cases.map { c =>
+            if c.binders.contains(from) then c
+            else MatchCase(c.con, c.binders, c.body.subst(from, to))
+          },
+        )
+      case ETypeDecl(name, params, ctors, body) =>
+        ETypeDecl(name, params, ctors, body.subst(from, to))
 
 given Conversion[Stage, Option[Stage]] = Some(_)
 

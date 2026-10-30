@@ -77,8 +77,8 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
       val (base, args) = collectBracketApps(expr)
       val rendered = args
         .map {
-          case Left(st) => renderStage(st)
-          case Right(ty) => renderType(ty, 0)
+          case st: Stage => renderStage(st)
+          case ty: Type => renderType(ty, 0)
         }
         .mkString(", ")
       maybeParens(s"${renderExpr(base, 9)}[$rendered]", parentPrec > 8)
@@ -289,14 +289,14 @@ private def collectStageLambdas(expr: Expr): (Expr, List[String]) =
         keepGoing = false
   (current, stages.toList)
 
-private def collectBracketApps(expr: Expr): (Expr, List[Either[Stage, Type]]) =
+private def collectBracketApps(expr: Expr): (Expr, List[Stage | Type]) =
   expr match
     case ESApp(e, st) =>
       val (base, args) = collectBracketApps(e)
-      (base, args :+ Left(st))
+      (base, args :+ st)
     case ETApp(e, argTy) =>
       val (base, args) = collectBracketApps(e)
-      (base, args :+ Right(argTy))
+      (base, args :+ argTy)
     case _ => (expr, Nil)
 
 private def collectTypeLambdas(expr: Expr): (Expr, List[String]) =

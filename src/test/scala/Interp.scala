@@ -967,3 +967,38 @@ class CoreEffTest extends Base {
     )
   }
 }
+
+class ADTSuite extends Base {
+  private val nil = ECon("Nil", Nil)
+
+  private def cons(x: Int, xs: Expr): Expr = ECon("Cons", List(ENum(x), xs))
+
+  test("construct, match and recurse on a list ADT") {
+    val lengthFn = ELetRec(
+      "length",
+      ELam(
+        "xs",
+        None,
+        EMatch(
+          EVar("xs"),
+          List(
+            MatchCase("Nil", Nil, ENum(0)),
+            MatchCase("Cons", List("_", "ys"), EBinOp1("+", ENum(1), EApp1(EVar("length"), EVar("ys")))),
+          ),
+        ),
+        None,
+      ),
+      EApp1(EVar("length"), cons(1, cons(2, cons(3, nil)))),
+    )
+
+    testEval(
+      ETypeDecl(
+        "List",
+        List("A"),
+        List(Constructor("Nil", Nil), Constructor("Cons", List(TVar("A"), TCon("List", List(TVar("A")))))),
+        lengthFn,
+      ),
+      "VNum(3)",
+    )
+  }
+}

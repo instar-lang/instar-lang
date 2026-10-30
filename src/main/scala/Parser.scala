@@ -433,9 +433,9 @@ private case class Parser(tokens: Vector[Token]):
     while keepGoing do
       current.kind match
         case Kind.LBracket =>
-          parseBracketArgs().foreach {
-            case Left(st) => expr = ESApp(expr, st)
-            case Right(ty) => expr = ETApp(expr, ty)
+          expr = parseBracketArgs().foldLeft(expr) {
+            case (e, st: Stage) => ESApp(e, st)
+            case (e, ty: Type) => ETApp(e, ty)
           }
         case Kind.LParen =>
           advance()
@@ -454,8 +454,8 @@ private case class Parser(tokens: Vector[Token]):
       current.kind match
         case Kind.LBracket =>
           loop(parseBracketArgs().foldLeft(expr) {
-            case (e, Left(st)) => ESApp(e, st)
-            case (e, Right(ty)) => ETApp(e, ty)
+            case (e, st: Stage) => ESApp(e, st)
+            case (e, ty: Type) => ETApp(e, ty)
           })
         case _ => expr
     loop(parsePrimary())
@@ -700,9 +700,9 @@ private case class Parser(tokens: Vector[Token]):
     if isLowerName(name) || isUpperName(name) then name
     else fail(s"Expected a lowercase stage variable or an uppercase type variable but found `$name`")
 
-  private def parseBracketArgs(): List[Either[Stage, Type]] =
+  private def parseBracketArgs(): List[Stage | Type] =
     expect(Kind.LBracket, "`[`")
-    val args = ArrayBuffer.empty[Either[Stage, Type]]
+    val args = ArrayBuffer.empty[Stage | Type]
     args += parseBracketArg()
     while at(Kind.Comma) do
       advance()
@@ -710,12 +710,12 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.RBracket, "`]`")
     args.toList
 
-  private def parseBracketArg(): Either[Stage, Type] =
+  private def parseBracketArg(): Stage | Type =
     current.kind match
-      case Kind.IntLit => Left(parseStage())
-      case Kind.Identifier if isLowerName(current.lexeme) => Left(parseStage())
-      case Kind.Identifier if isUpperName(current.lexeme) => Right(parseTypeExpr())
-      case Kind.LParen => Right(parseTypeExpr())
+      case Kind.IntLit => parseStage()
+      case Kind.Identifier if isLowerName(current.lexeme) => parseStage()
+      case Kind.Identifier if isUpperName(current.lexeme) => parseTypeExpr()
+      case Kind.LParen => parseTypeExpr()
       case _ =>
         fail(s"Expected a stage variable (lowercase) or a type (uppercase) but found `${current.lexeme}`")
 
