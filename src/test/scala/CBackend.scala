@@ -14,7 +14,7 @@ import instar.interp.Value.*
 import instar.parser.parse
 import instar.syntax.*
 import instar.syntax.given
-import instar.typing.infer
+import instar.typing.Elaboration.infer
 import Expr.*
 
 class CBackendTest extends FunSuite:

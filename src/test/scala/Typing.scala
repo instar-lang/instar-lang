@@ -6,6 +6,7 @@ import munit.FunSuite
 import instar.interp.Value
 import instar.parser.parse
 import instar.pretty
+import Elaboration.infer
 import instar.syntax.*
 import instar.syntax.given
 import Expr.*
@@ -153,7 +154,7 @@ class TypingTest extends FunSuite:
 
 class ElabTest extends FunSuite:
   private def run(src: String): Value =
-    instar.interp.eval(infer(parse(src)))._1
+    instar.interp.eval(new CoreTyping().infer(infer(parse(src))))._1
 
   test("application uses the parsed expansion of Code") {
     val src = "fun(f: Code[Int@1 -> Int@2]) => f(1)"
@@ -1096,4 +1097,169 @@ class ElabNegativeTest extends FunSuite:
   test("shadowed stage binders retain their inner constraints") {
     val src = "sfun[s] => sfun[s: 2 <= s] => fun(x: Int@s) => x + 1"
     intercept[TypeException] { infer(parse(s"($src)[2, 1](1)")) }
+  }
+
+class CoreTypingTest extends FunSuite:
+  private val core: Typing = new CoreTyping
+
+  test("arithmetic keeps explicit stages and lifts") {
+    {
+      val typed = core.infer(parse("1 +@1 2"))
+      assertEquals(typed.ty, Some(TInt))
+      assertEquals(pretty.expr(typed), "1 +@1 2")
+    }
+    {
+      val typed = core.infer(parse("lift[2](1) +@2 lift[2](2)"))
+      assertEquals(typed.ty, Some(TInt.at(Dyn)))
+      assertEquals(pretty.expr(typed), "lift[2](1) +@2 lift[2](2)")
+    }
+    {
+      val typed = core.infer(parse("sfun[s] => fun(x: Int@s) => x +@s lift[s](1)"))
+      assert(Nil.implyTyEq(typed.ty.get,
+        TForallSt("s", TFun(TInt.at(Stage.SVar("s")), TInt.at(Stage.SVar("s"))))))
+      assertEquals(pretty.expr(typed), "sfun[s] => fun(x: Int @ s) => x +@s lift[s](1)")
+    }
+    {
+      val typed = core.infer(parse("let x = lift[2](1) in -@2 x"))
+      assertEquals(typed.ty, Some(TInt.at(Dyn)))
+      assertEquals(pretty.expr(typed), "let x = lift[2](1) in -@2 x")
+    }
+  }
+
+  test("conditionals preserve their branch type") {
+    {
+      val typed = core.infer(parse("if@1 true then lift[2](1) else lift[2](2)"))
+      assertEquals(typed.ty, Some(TInt.at(Dyn)))
+      assertEquals(pretty.expr(typed), "if@1 true then lift[2](1) else lift[2](2)")
+    }
+    {
+      val typed = core.infer(parse("if@2 lift[2](true) then lift[2](1) else lift[2](2)"))
+      assertEquals(typed.ty, Some(TInt.at(Dyn)))
+      assertEquals(pretty.expr(typed), "if@2 lift[2](true) then lift[2](1) else lift[2](2)")
+    }
+  }
+
+  test("application checks its argument without coercing it") {
+    val typed = core.infer(parse("(fun(x: Int@2) => x)(lift[2](1))@1"))
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+    assertEquals(pretty.expr(typed), "(fun(x: Int @ 2) => x) (lift[2](1))@1")
+  }
+
+  test("let keeps the body's stage independently of the binding") {
+    val typed = core.infer(parse("let x = 1 in lift[2](x)"))
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+    assertEquals(pretty.expr(typed), "let x = 1 in lift[2](x)")
+  }
+
+  test("stage application checks constraints and substitutes its result type") {
+    val typed = core.infer(parse("(sfun[s: 2 <= s] => lift[s](1))[2]"))
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+    assertEquals(pretty.expr(typed), "(sfun[s: 2 <= s] => lift[s](1))[2]")
+  }
+
+  test("shadowed stage binders remain independent") {
+    val typed = core.infer(parse("(sfun[s] => sfun[s: 2 <= s] => lift[s](1))[1, 2]"))
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+  }
+
+  test("ascription checks an unannotated core lambda") {
+    val typed = core.infer(EAscribe(ELam("x", None, EVar("x"), None), TFun(TInt, TInt)))
+    assertEquals(typed.ty, Some(TFun(TInt, TInt)))
+    assertEquals(pretty.expr(typed), "(fun(x) => x : Int -> Int)")
+  }
+
+  test("recursive bindings keep their body without adding delay wrappers") {
+    val typed = core.infer(parse(
+      "letrec@1 f: Int -> Int = fun(x: Int): Int => f(x)@1 in f(1)@1"))
+    assertEquals(typed.ty, Some(TInt))
+    assertEquals(pretty.expr(typed),
+      "letrec@1 f = (fun(x: Int): Int => f x@1 : Int -> Int) in f 1@1")
+  }
+
+  test("references retain their element stages") {
+    val typed = core.infer(parse("let r = ref@1(lift[2](1)) in let u = r :=@1 lift[2](2) in !@1 r"))
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+    assertEquals(pretty.expr(typed),
+      "let r = ref@1(lift[2](1)) in let u = r :=@1 lift[2](2) in !@1 r")
+  }
+
+  test("run checks closed code and erases its result type") {
+    val typed = core.infer(parse("run(lift[2](1) +@2 lift[2](2))"))
+    assertEquals(typed.ty, Some(TInt))
+    assertEquals(pretty.expr(typed), "run(lift[2](1) +@2 lift[2](2))")
+  }
+
+  test("elaborated function coercions pass core typing unchanged") {
+    val elaborated = Elaboration.infer(parse("(fun(x: Int@2) => x : Int -> Int@2)"))
+    assertEquals(pretty.expr(elaborated),
+      "let $s0 (x: Int @ 2): Int @ 2 = x in lift[1](fun($s1) => lift[2]($s0 (lift[2]($s1))@1))")
+    val typed = core.infer(elaborated)
+    assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt.at(Dyn))))
+    assertEquals(pretty.expr(typed),
+      "let $s0 (x: Int @ 2): Int @ 2 = x in lift[1](fun($s1) => lift[2]($s0 (lift[2]($s1))@1))")
+  }
+
+class CoreTypingNegativeTest extends FunSuite:
+  private val core: Typing = new CoreTyping
+
+  test("arithmetic requires an explicit stage and matching operand types") {
+    intercept[TypeException] { core.infer(parse("1 + 2")) }
+    intercept[TypeException] { core.infer(parse("1 +@2 lift[2](2)")) }
+    intercept[TypeException] { core.infer(parse("lift[2](1) +@2 2")) }
+    intercept[TypeException] { core.infer(parse("true +@1 2")) }
+    intercept[TypeException] { core.infer(parse("let x = 1 in -x")) }
+    intercept[TypeException] { core.infer(parse("let x = 1 in -@2 x")) }
+  }
+
+  test("conditionals require an explicit stage and matching branches") {
+    intercept[TypeException] { core.infer(parse("if true then 1 else 2")) }
+    intercept[TypeException] { core.infer(parse("if@1 true then 1 else lift[2](2)")) }
+    intercept[TypeException] { core.infer(parse("if@2 lift[2](true) then 1 else 2")) }
+    intercept[TypeException] { core.infer(parse("if@1 true then 1 else false")) }
+  }
+
+  test("application requires its stage and exact domain type") {
+    intercept[TypeException] { core.infer(parse("(fun(x: Int) => x)(1)")) }
+    intercept[TypeException] { core.infer(parse("(fun(x: Int) => x)(1)@2")) }
+    intercept[TypeException] { core.infer(parse("(fun(x: Int@2) => x)(1)@1")) }
+    intercept[TypeException] {
+      core.infer(parse("(fun(f: Int -> Int@2) => 1)(fun(x: Int@2) => x)@1"))
+    }
+  }
+
+  test("ascriptions and lambda result annotations cannot insert lifts") {
+    intercept[TypeException] { core.infer(parse("(1: Int@2)")) }
+    intercept[TypeException] { core.infer(parse("fun(x: Int): Int@2 => x")) }
+    intercept[TypeException] {
+      core.infer(EAscribe(ELam("x", None, EVar("x"), None), TFun(TInt, TInt.at(Dyn))))
+    }
+  }
+
+  test("stage applications reject unsatisfied constraints") {
+    intercept[TypeException] { core.infer(parse("(sfun[s: 2 <= s] => lift[s](1))[1]")) }
+    intercept[TypeException] { core.infer(parse("sfun[a, b] => fun(x: Int@a) => lift[b](x)")) }
+  }
+
+  test("recursive bindings require a stage and a compatible recursive type") {
+    intercept[TypeException] { core.infer(parse("letrec f: Int -> Int = fun(x: Int) => x in f")) }
+    intercept[TypeException] { core.infer(parse("letrec@2 f: Int -> Int = fun(x: Int) => x in f")) }
+    intercept[TypeException] { core.infer(parse("letrec@1 f: Int -> Int = fun(x: Int) => false in f")) }
+  }
+
+  test("reference operations require stages and exact element types") {
+    intercept[TypeException] { core.infer(parse("ref(1)")) }
+    intercept[TypeException] { core.infer(parse("let r = ref@1(1) in !r")) }
+    intercept[TypeException] { core.infer(parse("let r = ref@1(1) in r := 2")) }
+    intercept[TypeException] { core.infer(parse("let r = ref@1(lift[2](1)) in r :=@1 2")) }
+  }
+
+  test("run rejects code that depends on an outer binding") {
+    intercept[TypeException] { core.infer(parse("let x = lift[2](1) in run(x)")) }
+  }
+
+  test("stored type annotations cannot bypass core typing") {
+    intercept[TypeException] { core.infer(EVar("missing").withType(TInt)) }
+    intercept[TypeException] {
+      core.infer(ELam("x", None, ENum(1), None).withType(TFun(TInt, TInt.at(Dyn))))
+    }
   }
