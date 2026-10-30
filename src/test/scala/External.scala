@@ -13,7 +13,7 @@ import munit.FunSuite
 import instar.codegen.CBackend
 import instar.interp.eval
 import instar.parser.parse
-import instar.typing.infer
+import instar.typing.Elaboration.infer
 
 class ExternalTest extends FunSuite:
   private val testsDir = Path.of("tests")

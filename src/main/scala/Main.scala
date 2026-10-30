@@ -37,7 +37,8 @@ private def runSource(source: String): (Value, Store) =
   val prog = parse(source)
   println(s"========Parsed Program=========")
   println(s"$prog")
-  val tyProg = infer(prog)
+  val elaborated = Elaboration.infer(prog)
+  val tyProg = new CoreTyping().check(elaborated, elaborated.ty.get)
   println(s"========Elaborated Program=========")
   println(s"$tyProg")
   println(s"========Type Checking Result=========")
@@ -91,9 +92,6 @@ private def parseArgs(args: List[String]): Unit =
   def loop(rest: List[String]): Unit =
     rest match
       case Nil => ()
-      case "--no-elab" :: tail =>
-        Config.elab = false
-        loop(tail)
       case "--emit-c" :: tail =>
         Config.emitC = true
         loop(tail)

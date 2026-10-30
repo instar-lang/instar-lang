@@ -6,13 +6,40 @@ enum Stage:
   case SNum(n: Int)
   case SVar(x: String)
 
+object Stage:
+  def variables(stage: Stage): Set[String] = stage match
+    case SNum(_) => Set.empty
+    case SVar(name) => Set(name)
+
+  def substitute(stage: Stage, from: String, to: Stage): Stage = stage match
+    case SVar(name) if name == from => to
+    case other => other
+
+case class StageConstraint(lower: Stage, upper: Stage)
+
 enum Type:
   case TUnit, TInt, TBool
   case TFun(t1: Type, t2: Type)
   case TRef(t: Type)
-  case TForallSt(s: String, t: Type)
+  case TForallSt(s: String, t: Type, constraints: List[StageConstraint] = Nil)
   case TAt(t: Type, s: Stage)
-  case TCode(t: Type)
+
+  def stage: Stage = this match
+    case TAt(_, s) => s
+    case _ => Sta
+
+  def base: Type = this match
+    case TAt(t, _) => t.base
+    case t => t
+
+  def at(target: Stage = stage): Type =
+    val t = base
+    if target == t.stage then t else TAt(t, target)
+
+  def erase: Type = base match
+    case TFun(arg, ret) => TFun(arg.erase, ret.erase)
+    case TRef(inner) => TRef(inner.erase)
+    case t => t
 
 type Loc = Int
 
@@ -23,7 +50,7 @@ enum Expr:
   case ENum(i: Int)
   case EBool(b: Boolean)
   case EVar(name: String)
-  case ESLam(x: String, body: Expr)
+  case ESLam(s: String, body: Expr, constraints: List[StageConstraint] = Nil)
   case ESApp(e: Expr, st: Stage)
   case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
   case EBNLam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
@@ -31,7 +58,7 @@ enum Expr:
   case ELift(t: Expr, to: Stage)
   case ERun(t: Expr)
   case ELet(x: String, rhs: Expr, body: Expr)
-  case ELetRec(f: String, rhs: Expr, body: Expr)
+  case ELetRec(f: String, rhs: Expr, body: Expr, st: Option[Stage] = None)
   case ECond(e1: Expr, e2: Expr, e3: Expr, st: Option[Stage])
   case EBinOp(op: String, e1: Expr, e2: Expr, st: Option[Stage])
   case EUnaryOp(op: String, e: Expr, st: Option[Stage])
@@ -39,7 +66,6 @@ enum Expr:
   case EDeref(e: Expr, st: Option[Stage])
   case EAssign(e1: Expr, e2: Expr, st: Option[Stage])
   case EAscribe(e: Expr, asTy: Type)
-  case EFix(f: String, e: Expr, st: Option[Stage])
   // Experimental:
   case ELoc(l: Loc)
   // Extend the language to allow programmers to inspect code values
@@ -53,32 +79,32 @@ extension (e: Expr)
   def isPure: Boolean =
     e match
       case EUnit | ENum(_) | EBool(_) | EVar(_) => true
-      case ESLam(_, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
+      case ESLam(_, _, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
       case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
       case ESApp(_, _) | EApp(_, _, _) => false
       case ELift(t, _) => false
       case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
       case ERun(t) => t.isPure
       case ELet(_, rhs, body) => rhs.isPure && body.isPure
-      case ELetRec(_, rhs, body) => rhs.isPure && body.isPure
+      case ELetRec(_, rhs, body, _) => rhs.isPure && body.isPure
       case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
       case EAscribe(e, _) => e.isPure
-      case EFix(_, e, _) => e.isPure
       case _ => false
 
   def freeVar: Set[String] =
     e match
-      case EUnit | ENum(_) | EBool(_) => Set()
+      case EUnit | ENum(_) | EBool(_) | ELoc(_) => Set()
       case EVar(x) => Set(x)
-      case ESLam(x, body) => body.freeVar
+      case ESLam(s, body, _) => body.freeVar
       case ESApp(e, _) => e.freeVar
       case ELam(x, _, body, _) => body.freeVar - x
+      case EBNLam(x, _, body, _) => body.freeVar - x
       case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case ECBNApp(e1, e2) => e1.freeVar ++ e2.freeVar
       case ELift(t, _) => t.freeVar
       case ERun(t) => t.freeVar
       case ELet(x, rhs, body) => rhs.freeVar ++ (body.freeVar - x)
-      case ELetRec(f, rhs, body) => (rhs.freeVar - f) ++ (body.freeVar - f)
+      case ELetRec(f, rhs, body, _) => (rhs.freeVar - f) ++ (body.freeVar - f)
       case ECond(e1, e2, e3, _) => e1.freeVar ++ e2.freeVar ++ e3.freeVar
       case EBinOp(_, e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EUnaryOp(_, e, _) => e.freeVar
@@ -86,7 +112,7 @@ extension (e: Expr)
       case EDeref(e, _) => e.freeVar
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EAscribe(e, _) => e.freeVar
-      case EFix(f, e, _) => e.freeVar - f
+      case EIsApp(e) => e.freeVar
 
   // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
   // and all variables after reflect are distinct, so we do not need to consider variable capture here.
@@ -94,7 +120,7 @@ extension (e: Expr)
     e match
       case EUnit | ENum(_) | EBool(_) => e
       case EVar(x) => if x == from then to else e
-      case ESLam(x, body) => ESLam(x, body.subst(from, to))
+      case ESLam(s, body, constraints) => ESLam(s, body.subst(from, to), constraints)
       case ESApp(e, st) => ESApp(e.subst(from, to), st)
       case ELam(x, argTy, body, retTy) =>
         ELam(x, argTy, body.subst(from, to), retTy)
@@ -103,8 +129,8 @@ extension (e: Expr)
       case ERun(t) => ERun(t.subst(from, to))
       case ELet(x, rhs, body) =>
         ELet(x, rhs.subst(from, to), body.subst(from, to))
-      case ELetRec(f, rhs, body) =>
-        ELetRec(f, rhs.subst(from, to), body.subst(from, to))
+      case ELetRec(f, rhs, body, st) =>
+        ELetRec(f, rhs.subst(from, to), body.subst(from, to), st)
       case ECond(e1, e2, e3, s) =>
         ECond(e1.subst(from, to), e2.subst(from, to), e3.subst(from, to), s)
       case EBinOp(op, e1, e2, s) => EBinOp(op, e1.subst(from, to), e2.subst(from, to), s)
@@ -113,8 +139,6 @@ extension (e: Expr)
       case EDeref(e, s) => EDeref(e.subst(from, to), s)
       case EAssign(e1, e2, s) => EAssign(e1.subst(from, to), e2.subst(from, to), s)
       case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
-      case EFix(f, e, s) =>
-        EFix(f, e.subst(from, to), s)
 
 given Conversion[Stage, Option[Stage]] = Some(_)
 

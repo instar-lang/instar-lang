@@ -220,7 +220,7 @@ def parseType(input: String): Type =
 
 private case class Parser(tokens: Vector[Token]):
   private enum HeaderBinder:
-    case Stage(name: String)
+    case Stage(name: String, constraints: List[StageConstraint])
     case Term(name: String, ty: Type)
 
   private var pos = 0
@@ -300,6 +300,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseLetRec(): Expr =
     expect(Kind.LetRec, "`letrec`")
+    val stage = parseOptionalStageValue()
     val name = parseIdentifier("recursive binding name")
     val binders = parseHeaderBinders()
 
@@ -315,7 +316,7 @@ private case class Parser(tokens: Vector[Token]):
         retTy match
           case Some(ty) => EAscribe(rhs, buildHeaderType(binders, ty))
           case None => rhs // Note: this is the case letrec defines a function without explicitly annotating the result type.
-      ELetRec(name, rhsWithAnn, body)
+      ELetRec(name, rhsWithAnn, body, stage)
     else
       val ann = parseOptionalTypeAnnotation()
       expect(Kind.Equal, "`=`")
@@ -323,8 +324,8 @@ private case class Parser(tokens: Vector[Token]):
       expect(Kind.In, "`in`")
       val body = parseExpr()
       ann match
-        case Some(ty) => ELetRec(name, EAscribe(rhs, ty), body)
-        case None => ELetRec(name, rhs, body)
+        case Some(ty) => ELetRec(name, EAscribe(rhs, ty), body, stage)
+        case None => ELetRec(name, rhs, body, stage)
 
   private def parseFun(): Expr =
     expect(Kind.Fun, "`fun`")
@@ -343,12 +344,12 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseSFun(): Expr =
     expect(Kind.SFun, "`sfun`")
-    expect(Kind.LBracket, "`[`")
-    val st = parseIdentifier("stage variable")
-    expect(Kind.RBracket, "`]`")
+    val binders = parseStageBinders()
     val ann = parseOptionalTypeAnnotation()
     expect(Kind.FatArrow, "`=>`")
-    val lam = ESLam(st, parseExpr())
+    val lam = binders.foldRight(parseExpr()) { case ((st, constraints), body) =>
+      ESLam(st, body, constraints)
+    }
     ann.foreach(lam.withType)
     lam
 
@@ -356,8 +357,13 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Fix, "`fix`")
     val stage = parseOptionalStageValue()
     val name = parseIdentifier("fixpoint name")
+    val ann = parseOptionalTypeAnnotation()
     expect(Kind.Dot, "`.`")
-    EFix(name, parseExpr(), stage)
+    val body = parseExpr()
+    val rhs = ann match
+      case Some(ty) => EAscribe(body, ty)
+      case None => body
+    ELetRec(name, rhs, EVar(name), stage)
 
   private def parseIf(): Expr =
     expect(Kind.If, "`if`")
@@ -523,32 +529,26 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.Forall =>
         advance()
-        expect(Kind.LBracket, "`[`")
-        val st = parseIdentifier("stage variable")
-        expect(Kind.RBracket, "`]`")
+        val binders = parseStageBinders()
         expect(Kind.Dot, "`.`")
-        TForallSt(st, parseTypeExpr())
-      case _ =>
-        parseArrowType()
+        binders.foldRight(parseTypeExpr()) { case ((st, constraints), body) =>
+          TForallSt(st, body, constraints).at()
+        }
+      case _ => parseArrowType()
 
   private def parseArrowType(): Type =
     val lhs = parseAtType()
     if at(Kind.Arrow) then
       advance()
-      TFun(lhs, parseArrowType())
-    else
-      lhs
+      TFun(lhs, parseArrowType()).at()
+    else lhs
 
   private def parseAtType(): Type =
     val base = parseAtomicType()
     if at(Kind.At) then
       advance()
-      parseStage() match
-        case SNum(1) => base
-        case SNum(2) => TCode(base)
-        case st => TAt(base, st)
-    else
-      base
+      TAt(base.base, parseStage())
+    else base
 
   private def parseAtomicType(): Type =
     current.kind match
@@ -558,30 +558,32 @@ private case class Parser(tokens: Vector[Token]):
           advance()
           val arg = parseTypeExpr()
           expect(Kind.RBracket, "`]`")
-          applyTypeConstructor(name, Some(arg))
+          name match
+            case "Code" => normalizeType(arg)
+            case "Ref" => TRef(arg).at()
+            case _ => fail(s"Unsupported type constructor `$name`")
         else
-          applyTypeConstructor(name, None)
+          val base = name match
+            case "Unit" => TUnit
+            case "Int" => TInt
+            case "Bool" => TBool
+            case "Code" | "Ref" => fail(s"`$name` must be applied as `$name[T]`")
+            case _ => fail(s"Unsupported type constructor `$name`")
+          base.at()
       case Kind.LParen =>
         advance()
         val ty = parseTypeExpr()
         expect(Kind.RParen, "`)`")
         ty
-      case _ =>
-        fail("Expected a type")
+      case _ => fail("Expected a type")
 
-  private def applyTypeConstructor(name: String, arg: Option[Type]): Type =
-    (name, arg) match
-      case ("Unit", None) => TUnit
-      case ("Int", None) => TInt
-      case ("Bool", None) => TBool
-      case ("Ref", Some(t)) => TRef(t)
-      case ("Code", Some(t)) => TCode(t)
-      case ("Code", None) =>
-        fail("`Code` must be applied as `Code[T]`")
-      case ("Ref", None) =>
-        fail("`Ref` must be applied as `Ref[T]`")
-      case _ =>
-        fail(s"Unsupported type constructor `$name` for CoreEffOpt")
+  private def normalizeType(ty: Type): Type =
+    val base = ty.base match
+      case TFun(arg, ret) => TFun(normalizeType(arg), normalizeType(ret))
+      case TRef(inner) => TRef(normalizeType(inner))
+      case TForallSt(s, body, constraints) => TForallSt(s, normalizeType(body), constraints)
+      case other => other
+    base.at(Dyn)
 
   private def parseOptionalTypeAnnotation(): Option[Type] =
     if at(Kind.Colon) then
@@ -596,14 +598,9 @@ private case class Parser(tokens: Vector[Token]):
     while keepGoing do
       current.kind match
         case Kind.LBracket =>
-          advance()
-          val stageNames = ArrayBuffer.empty[String]
-          stageNames += parseIdentifier("stage variable")
-          while at(Kind.Comma) do
-            advance()
-            stageNames += parseIdentifier("stage variable")
-          expect(Kind.RBracket, "`]`")
-          stageNames.foreach(name => out += HeaderBinder.Stage(name))
+          parseStageBinders().foreach { case (name, constraints) =>
+            out += HeaderBinder.Stage(name, constraints)
+          }
         case Kind.LParen =>
           advance()
           val arg = parseIdentifier("parameter name")
@@ -618,8 +615,8 @@ private case class Parser(tokens: Vector[Token]):
   private def buildHeaderRhs(binders: List[HeaderBinder], retTy: Option[Type], body: Expr): Expr =
     var pendingRet = retTy
     binders.foldRight(body) {
-      case (HeaderBinder.Stage(name), acc) =>
-        ESLam(name, acc)
+      case (HeaderBinder.Stage(name, constraints), acc) =>
+        ESLam(name, acc, constraints)
       case (HeaderBinder.Term(name, ty), acc) =>
         val lam = ELam(name, Some(ty), acc, pendingRet)
         pendingRet = None
@@ -628,7 +625,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def buildHeaderType(binders: List[HeaderBinder], retTy: Type): Type =
     binders.foldRight(retTy) {
-      case (HeaderBinder.Stage(name), acc) => TForallSt(name, acc)
+      case (HeaderBinder.Stage(name, constraints), acc) => TForallSt(name, acc, constraints)
       case (HeaderBinder.Term(_, ty), acc) => TFun(ty, acc)
     }
 
@@ -636,12 +633,37 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.IntLit =>
         val n = advance().lexeme.toInt
-        if n < 0 then fail("Stage indices must be non-negative")
+        if n != 1 && n != 2 then fail("Stage indices must be 1 or 2")
         SNum(n)
       case Kind.Identifier =>
         SVar(advance().lexeme)
+      case Kind.LParen =>
+        advance()
+        val stage = parseStage()
+        expect(Kind.RParen, "`)` after stage expression")
+        stage
       case _ =>
         fail("Expected a stage")
+
+  private def parseStageBinders(): List[(String, List[StageConstraint])] =
+    expect(Kind.LBracket, "`[`")
+    val names = ArrayBuffer(parseIdentifier("stage variable"))
+    while at(Kind.Comma) do
+      advance()
+      names += parseIdentifier("stage variable")
+    val constraints = ArrayBuffer.empty[StageConstraint]
+    if at(Kind.Colon) then
+      advance()
+      def constraint(): StageConstraint =
+        val lower = parseStage()
+        expect(Kind.LessEq, "`<=` in a stage constraint")
+        StageConstraint(lower, parseStage())
+      constraints += constraint()
+      while at(Kind.Comma) do
+        advance()
+        constraints += constraint()
+    expect(Kind.RBracket, "`]`")
+    names.toList.init.map(_ -> Nil) :+ (names.last -> constraints.toList)
 
   private def parseOptionalStageValue(): Option[Stage] =
     if at(Kind.At) then
