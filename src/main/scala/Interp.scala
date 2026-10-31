@@ -31,10 +31,12 @@ enum Value:
   case VBool(b: Boolean)
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
+  case VTClo(body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VBNClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
   case VThunk(e: Expr, ρ: Env, ς: StEnv)
+  case VCon(tag: String, args: List[Value])
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -373,6 +375,11 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val ρf1 = ρf + (f -> l)
           val v = VSClo(x, body, ρf1, ςf)
           eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
+        case (VTClo(body, ρf, ςf), σ1, γ1) =>
+          val l = σ1.size
+          val ρf1 = ρf + (f -> l)
+          val v = VTClo(body, ρf1, ςf)
+          eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
       }, γ)
     case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (VBool(b), σ1, γ1) =>
@@ -463,6 +470,40 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
         val v2 = VThunk(e2, ρ, ς)
         val l = σ1.size
         eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
+      }, γ)
+    // Type polymorphism (`tfun[T]` / `e[T]`)
+    case ETLam(_, body) =>
+      k(VTClo(body, ρ, ς), σ, γ)
+    case ETApp(e, _) =>
+      eval(e, ρ, ς, σ, { case (VTClo(body, ρf, ςf), σ1, γ1) =>
+        eval(body, ρf, ςf, σ1, k, γ1)
+      }, γ)
+    // ADTs, first stage only
+    case ETypeDecl(_, _, _, body) => eval(body, ρ, ς, σ, k, γ)
+    case ECon(tag, args) =>
+      def loop(pending: List[Expr], vs: List[Value], σ1: Store, γ1: MCont): (Value, Store) =
+        pending match
+          case arg :: rest =>
+            eval(arg, ρ, ς, σ1, { case (v, σ2, γ2) =>
+              loop(rest, vs :+ v, σ2, γ2) }, γ1)
+          case Nil => k(VCon(tag, vs), σ1, γ1)
+      loop(args, Nil, σ, γ)
+    case EMatch(scrutinee, cases) =>
+      eval(scrutinee, ρ, ς, σ, { case (v, σ1, γ1) =>
+        v match
+          case VCon(tag, fields) =>
+            cases.find(_.con == tag) match
+              case Some(MatchCase(_, binders, body)) =>
+                def loop(xs: List[String], vs: List[Value], ρ1: Env, σ2: Store): (Env, Store) =
+                  (xs, vs) match
+                    case (x :: xs1, v :: vs1) =>
+                      val l = σ2.size
+                      loop(xs1, vs1, ρ1 + (x -> l), σ2 + (l -> v))
+                    case _ => (ρ1, σ2)
+                val (ρ1, σ2) = loop(binders, fields, ρ, σ1)
+                eval(body, ρ1, ς, σ2, k, γ1)
+              case None => throw new MatchError(s"no case for constructor `$tag`")
+          case other => throw new MatchError(s"cannot match on `$other`")
       }, γ)
 
 def eval(e: Expr): (Value, Store) =

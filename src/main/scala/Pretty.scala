@@ -11,6 +11,7 @@ import Type.*
 
 private enum HeaderBinder:
   case Stage(name: String)
+  case TypeParam(name: String)
   case Term(name: String, ty: Option[Type])
 
 def expr(expr: Expr): String =
@@ -24,6 +25,7 @@ def value(value: Value): String =
     case VBool(b) => b.toString
     case VLoc(loc) => s"loc($loc)"
     case VSClo(st, _, _, _) => s"<stage-closure:$st>"
+    case VTClo(_, _, _) => "<type-closure>"
     case VClo(x, _, _, _, _, _) => s"<closure:$x>"
     case VBNClo(x, _, _, _, _, _) => s"<cbn-closure:$x>"
     case VThunk(_, _, _) => "<thunk>"
@@ -71,11 +73,21 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
         parentPrec > 0,
       )
 
-    case ESApp(_, _) =>
-      val (base, stages) = collectStageApps(expr)
+    case ESApp(_, _) | ETApp(_, _) =>
+      val (base, args) = collectBracketApps(expr)
+      val rendered = args
+        .map {
+          case st: Stage => renderStage(st)
+          case ty: Type => renderType(ty, 0)
+        }
+        .mkString(", ")
+      maybeParens(s"${renderExpr(base, 9)}[$rendered]", parentPrec > 8)
+
+    case ETLam(_, _) =>
+      val (base, tyVars) = collectTypeLambdas(expr)
       maybeParens(
-        s"${renderExpr(base, 9)}[${stages.map(renderStage).mkString(", ")}]",
-        parentPrec > 8,
+        s"tfun[${tyVars.mkString(", ")}] => ${renderExpr(base, 0)}",
+        parentPrec > 0,
       )
 
     case ELift(lam @ ELam(_, _, _, _), st) if st != Sta =>
@@ -145,6 +157,9 @@ private def renderType(ty: Type, parentPrec: Int): String =
     case TCode(t) => s"Code[${renderType(t, 0)}]"
     case TForallSt(s, t) =>
       maybeParens(s"forall[$s]. ${renderType(t, 0)}", parentPrec > 0)
+    case TForallTy(x, t) =>
+      maybeParens(s"forall[$x]. ${renderType(t, 0)}", parentPrec > 0)
+    case TVar(x) => x
     case TFun(t1, t2) =>
       maybeParens(s"${renderType(t1, 1)} -> ${renderType(t2, 0)}", parentPrec > 0)
     case TAt(t, s) =>
@@ -217,6 +232,9 @@ private def extractHeader(expr: Expr): Option[(List[HeaderBinder], Option[Type],
       case ESLam(s, body) =>
         binders += HeaderBinder.Stage(s)
         current = body
+      case ETLam(t, body) =>
+        binders += HeaderBinder.TypeParam(t)
+        current = body
       case ELam(x, argTy, body, lamRetTy) =>
         binders += HeaderBinder.Term(x, argTy)
         retTy = retTy.orElse(lamRetTy)
@@ -241,6 +259,14 @@ private def renderHeader(binders: List[HeaderBinder]): String =
             case _ => ()
           rest = rest.tail
         out.append(s"[${stages.mkString(", ")}]")
+      case HeaderBinder.TypeParam(_) :: _ =>
+        val tyVars = ArrayBuffer.empty[String]
+        while rest.nonEmpty && rest.head.isInstanceOf[HeaderBinder.TypeParam] do
+          rest.head match
+            case HeaderBinder.TypeParam(name) => tyVars += name
+            case _ => ()
+          rest = rest.tail
+        out.append(s"[${tyVars.mkString(", ")}]")
       case HeaderBinder.Term(name, Some(ty)) :: tail =>
         out.append(s" ($name: ${renderType(ty, 0)})")
         rest = tail
@@ -263,15 +289,26 @@ private def collectStageLambdas(expr: Expr): (Expr, List[String]) =
         keepGoing = false
   (current, stages.toList)
 
-private def collectStageApps(expr: Expr): (Expr, List[Stage]) =
-  val stages = ArrayBuffer.empty[Stage]
+private def collectBracketApps(expr: Expr): (Expr, List[Stage | Type]) =
+  expr match
+    case ESApp(e, st) =>
+      val (base, args) = collectBracketApps(e)
+      (base, args :+ st)
+    case ETApp(e, argTy) =>
+      val (base, args) = collectBracketApps(e)
+      (base, args :+ argTy)
+    case _ => (expr, Nil)
+
+private def collectTypeLambdas(expr: Expr): (Expr, List[String]) =
+  val tyVars = ArrayBuffer.empty[String]
   var current = expr
   var keepGoing = true
   while keepGoing do
     current match
-      case ESApp(e, st) =>
-        stages.prepend(st)
-        current = e
+      case ETLam(t, body) =>
+        tyVars += t
+        current = body
       case _ =>
         keepGoing = false
-  (current, stages.toList)
+  (current, tyVars.toList)
+

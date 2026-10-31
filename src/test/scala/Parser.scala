@@ -95,6 +95,12 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
+  test("parses unary minus with an explicit stage") {
+    val parsed = parse("-@s x")
+
+    assertEquals(parsed, EUnaryOp("-", EVar("x"), SVar("s")))
+  }
+
   test("parses letrec with explicit function type") {
     val input = "letrec id: Int -> Int = fun(x: Int): Int => x in id(3)"
     val parsed = parse(input)
@@ -168,7 +174,7 @@ class ParserTest extends FunSuite:
     assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
-  test("desugars comma-separated letrec stage binders to repeated brackets") {
+  test("desugars comma-separated letrec stage binders to repeated stage abstractions") {
     val oldSyntax =
       """letrec f[s1][s2] (x: Int @ s2): Int @ s2 =
         |  x
@@ -184,7 +190,7 @@ class ParserTest extends FunSuite:
     assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
-  test("desugars comma-separated let stage binders to repeated brackets") {
+  test("desugars comma-separated let stage binders to repeated stage abstractions") {
     val oldSyntax =
       """let f[s1][s2][s3][s4] = fun@s1(x: Int @ s2) => x
         |in f[1][1][2][2](2)
@@ -198,7 +204,7 @@ class ParserTest extends FunSuite:
     assertEquals(parse(newSyntax), parse(oldSyntax))
   }
 
-  test("desugars comma-separated stage application to repeated brackets") {
+  test("desugars comma-separated stage application to repeated stage applications") {
     val oldSyntax =
       """let f = sfun[s1] => sfun[s2] => sfun[s3] => fun@s1(x: Int @ s2) => x
         |in f[1][1][2](2)
@@ -254,6 +260,19 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
+  test("parses fix with a stage variable") {
+    val parsed = parse("fix@s loop. fun(x: Int): Int => x")
+
+    val expected =
+      EFix(
+        "loop",
+        ELam("x", Some(TInt), EVar("x"), Some(TInt)),
+        SVar("s"),
+      )
+
+    assertEquals(parsed, expected)
+  }
+
   test("parses standalone types with constructors, staging, and arrows") {
     val ty = parseType("forall[s]. Ref[Int] @ s -> Code[Int]")
     assertEquals(ty, TForallSt("s", TFun(TAt(TRef(TInt), SVar("s")), TCode(TInt))))
@@ -294,4 +313,126 @@ class ParserTest extends FunSuite:
     intercept[ParserException] {
       parse("fun(x) => x")
     }
+  }
+
+  test("parses `tfun[T]` headers and explicit type abstractions") {
+    assertEquals(
+      parse("let id[T] (x: T) = x in id"),
+      ELet(
+        "id",
+        ETLam("T", ELam("x", Some(TVar("T")), EVar("x"), None)),
+        EVar("id"),
+      ),
+    )
+    assertEquals(parse("tfun[T] => 1"), ETLam("T", ENum(1)))
+    assertEquals(parse("tfun[T, U] => 1"), ETLam("T", ETLam("U", ENum(1))))
+  }
+
+  test("parses type application left-associatively, and applied to terms") {
+    assertEquals(parse("f[Int][Bool]"), ETApp(ETApp(EVar("f"), TInt), TBool))
+    assertEquals(
+      parse("id[Int](5)"),
+      EApp(ETApp(EVar("id"), TInt), ENum(5), None),
+    )
+    assertEquals(
+      parse("id[Code[Int]](5)"),
+      EApp(ETApp(EVar("id"), TCode(TInt)), ENum(5), None),
+    )
+  }
+
+  test("parses interleaved type and stage applications") {
+    assertEquals(
+      parse("h[Int][2](x)"),
+      EApp(ESApp(ETApp(EVar("h"), TInt), SNum(2)), EVar("x"), None),
+    )
+    assertEquals(
+      parse("h[2][Int](x)"),
+      EApp(ETApp(ESApp(EVar("h"), SNum(2)), TInt), EVar("x"), None),
+    )
+  }
+
+  test("`[...]` carries both type and stage arguments, told apart by case") {
+    assertEquals(parseType("Code[Int]"), TCode(TInt))
+    assertEquals(parseType("Ref[Int]"), TRef(TInt))
+    assertEquals(parseType("Code[Code[Int]]"), TCode(TCode(TInt)))
+
+    assertEquals(parse("f[2]"), ESApp(EVar("f"), SNum(2)))
+    assertEquals(parse("f[s]"), ESApp(EVar("f"), SVar("s")))
+    assertEquals(parse("f[T]"), ETApp(EVar("f"), TVar("T")))
+    assertEquals(parse("lift[2](1)"), ELift(ENum(1), SNum(2)))
+  }
+
+  test("`forall[T].` is a type forall, `forall[s].` a stage forall") {
+    assertEquals(
+      parseType("forall[T]. T -> T"),
+      TForallTy("T", TFun(TVar("T"), TVar("T"))),
+    )
+    assertEquals(
+      parseType("forall[s]. Int -> Int"),
+      TForallSt("s", TFun(TInt, TInt)),
+    )
+    assertEquals(
+      parseType("forall[T]. forall[U]. T -> U"),
+      TForallTy("T", TForallTy("U", TFun(TVar("T"), TVar("U")))),
+    )
+  }
+
+  test("`forall[s, T].` mixes stage and type binders in written order") {
+    assertEquals(
+      parseType("forall[s, T]. T @ s"),
+      TForallSt("s", TForallTy("T", TAt(TVar("T"), SVar("s")))),
+    )
+  }
+
+  test("`forall[s, u].` binds several stage variables") {
+    assertEquals(
+      parseType("forall[s, u]. Int@s"),
+      TForallSt("s", TForallSt("u", TAt(TInt, SVar("s")))),
+    )
+    assertEquals(
+      parseType("forall[s]. forall[u]. Int@s"),
+      TForallSt("s", TForallSt("u", TAt(TInt, SVar("s")))),
+    )
+  }
+
+  test("no type scope: an unknown uppercase name is a type variable wherever it appears") {
+    // No scope is tracked: `T` is a `TVar` here even though nothing binds it.
+    assertEquals(
+      parse("let id[T] (x: T) = x in (1: T)"),
+      ELet(
+        "id",
+        ETLam("T", ELam("x", Some(TVar("T")), EVar("x"), None)),
+        EAscribe(ENum(1), TVar("T")),
+      ),
+    )
+    assertEquals(parse("fun(x: T) => x"), ELam("x", Some(TVar("T")), EVar("x"), None))
+  }
+
+  test("type variables must be uppercase, stage variables lowercase") {
+    val ty = intercept[ParserException] { parse("fun(x: t) => x") }
+    assert(ty.getMessage.contains("Type variables must be uppercase"), clues(ty.getMessage))
+    val st = intercept[ParserException] { parse("sfun[S] => 1") }
+    assert(st.getMessage.contains("Stage variables must be lowercase"), clues(st.getMessage))
+  }
+
+  test("mixed `[s, T]` applies stage and type in written order") {
+    assertEquals(parse("f[s, T]"), ETApp(ESApp(EVar("f"), SVar("s")), TVar("T")))
+    assertEquals(parse("f[T, 2]"), ESApp(ETApp(EVar("f"), TVar("T")), SNum(2)))
+  }
+
+  test("a type variable cannot take type arguments") {
+    val e = intercept[ParserException] {
+      parseType("T[Int]")
+    }
+    assert(e.getMessage.contains("Unsupported type constructor `T`"), clues(e.getMessage))
+  }
+
+  test("innermost type binder shadows the outer one") {
+    assertEquals(
+      parse("tfun[T] => tfun[T] => fun(x: T) => x"),
+      ETLam(
+        "T",
+        ETLam("T", ELam("x", Some(TVar("T")), EVar("x"), None)),
+      ),
+    )
   }

@@ -572,7 +572,7 @@ class CoreEffOpt extends Base {
       None))
     testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
 
-    // λf. λx. let y = 1 + x in let z = x + 1 in f @[2] y + f @[2] z
+    // λf. λx. let y = 1 + x in let z = x + 1 in f[2] y + f[2] z
     val e1_5 = ELift2(ELam("x", None,
       ELift2(ELam("f", None,
         ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
@@ -843,6 +843,24 @@ class CoreEffTest extends Base {
     testEval(e, "VNum(6)")
   }
 
+  test("type-poly") {
+    // tfun[T] => fun(x: T) => x
+    val id = ETLam("T", ELam("x", Some(TVar("T")), EVar("x"), None))
+
+    testEval(EApp1(ETApp(id, TInt), ENum(42)), "VNum(42)")
+    testEval(EApp1(ETApp(id, TBool), EBool(true)), "VBool(true)")
+    testEval(EApp1(ETApp(id, TCode(TInt)), ENum(5)), "VNum(5)")
+
+    val id2 = ETLam("T", ETLam("U", ELam("x", Some(TVar("T")), EVar("x"), None)))
+    testEval(EApp1(ETApp(ETApp(id2, TInt), TBool), ENum(5)), "VNum(5)")
+
+    // tfun[T] => sfun[s] => lift[s](1)
+    val mixed = ETLam("T", ESLam("s", ELift(ENum(1), SVar("s"))))
+    testEval(ESApp(ETApp(mixed, TInt), SNum(2)), "VCode(ENum(1))")
+
+    testEval(ELetRec("id", id, EApp1(ETApp(EVar("id"), TInt), ENum(7))), "VNum(7)")
+  }
+
   test("rec") {
     testEval(e6, "VNum(120)")
     testEval(e7, "VNum(1024)")
@@ -946,6 +964,41 @@ class CoreEffTest extends Base {
     testEval(
       e3,
       "VNum(1)"
+    )
+  }
+}
+
+class ADTSuite extends Base {
+  private val nil = ECon("Nil", Nil)
+
+  private def cons(x: Int, xs: Expr): Expr = ECon("Cons", List(ENum(x), xs))
+
+  test("construct, match and recurse on a list ADT") {
+    val lengthFn = ELetRec(
+      "length",
+      ELam(
+        "xs",
+        None,
+        EMatch(
+          EVar("xs"),
+          List(
+            MatchCase("Nil", Nil, ENum(0)),
+            MatchCase("Cons", List("_", "ys"), EBinOp1("+", ENum(1), EApp1(EVar("length"), EVar("ys")))),
+          ),
+        ),
+        None,
+      ),
+      EApp1(EVar("length"), cons(1, cons(2, cons(3, nil)))),
+    )
+
+    testEval(
+      ETypeDecl(
+        "List",
+        List("A"),
+        List(Constructor("Nil", Nil), Constructor("Cons", List(TVar("A"), TCon("List", List(TVar("A")))))),
+        lengthFn,
+      ),
+      "VNum(3)",
     )
   }
 }

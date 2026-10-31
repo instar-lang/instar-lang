@@ -31,3 +31,21 @@ class PrettyTest extends FunSuite:
     assertEquals(printed, "1")
     assertEquals(parse(printed), code)
   }
+
+  test("pretty prints type and stage polymorphism syntax") {
+    val srcs = List(
+      "sfun[s] => lift[s](1)",
+      "tfun[T] => fun(x: T) => x",
+      "f[Int]",
+      "lift[2](1)",
+      "fun(x: forall[T]. T) => x",
+      "fun(x: forall[s]. Int @ s) => x",
+      "f[s, T]",
+    )
+
+    srcs.foreach { src =>
+      val parsed = parse(src)
+      assertEquals(pretty.expr(parsed), src, src)
+      assertEquals(parse(pretty.expr(parsed)), parsed, src)
+    }
+  }
