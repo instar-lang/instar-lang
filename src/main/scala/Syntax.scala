@@ -15,8 +15,8 @@ enum Type:
   case TAt(t: Type, s: Stage)
   case TCode(t: Type)
   case TVar(x: String)
-  // ADT type constructor; arguments are stages or types, told apart by their kind
-  case TCon(name: String, args: List[Stage | Type])
+  // ADT type constructor
+  case TCon(name: String, args: List[Type])
 
 type Loc = Int
 
