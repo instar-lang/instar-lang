@@ -1002,3 +1002,54 @@ class ADTSuite extends Base {
     )
   }
 }
+
+class ArraySuite extends Base {
+  test("allocate, read and write") {
+    val e = ELet(
+      "a",
+      EArrLit1(ENum(1), ENum(1), ENum(1)),
+      ELet(
+        "_",
+        EArrSet1(EVar("a"), ENum(1), ENum(4)),
+        EBinOp1(
+          "+",
+          EArrGet1(EVar("a"), ENum(0)),
+          EBinOp1("+", EArrGet1(EVar("a"), ENum(1)), EBinOp1("+", EArrGet1(EVar("a"), ENum(2)), EArrLen1(EVar("a")))),
+        ),
+      ),
+    )
+    testEval(e, "VNum(9)") // 1 + 4 + 1 + 3
+  }
+
+  test("writes stay out of the store") {
+    val e = ELet(
+      "a",
+      EArrLit1(ENum(0), ENum(0)),
+      ELet(
+        "x",
+        EArrSet1(EVar("a"), ENum(0), ENum(7)),
+        ELet(
+          "y",
+          EArrSet1(EVar("a"), ENum(1), ENum(8)),
+          EBinOp1("+", EArrGet1(EVar("a"), ENum(0)), EArrGet1(EVar("a"), ENum(1))),
+        ),
+      ),
+    )
+    val (v, σ) = eval(e)
+    assertEquals(v.toString, "VNum(15)")
+    assertEquals(σ.size, 3) // a, x, y; writes do not allocate
+  }
+
+  test("elements are evaluated independently") {
+    val e = ELet(
+      "a",
+      EArrLit1(EArrLit1(ENum(0)), EArrLit1(ENum(0))),
+      ELet(
+        "_",
+        EArrSet1(EArrGet1(EVar("a"), ENum(0)), ENum(0), ENum(9)),
+        EArrGet1(EArrGet1(EVar("a"), ENum(1)), ENum(0)),
+      ),
+    )
+    testEval(e, "VNum(0)")
+  }
+}

@@ -249,6 +249,9 @@ object CBackend:
         case ETypeDecl(_, _, _, _) | ECon(_, _) | EMatch(_, _) =>
           throw CompileException("ADTs are not supported in the C backend")
 
+        case EArrLit(_, _) | EArrGet(_, _, _) | EArrSet(_, _, _, _) | EArrLen(_, _) =>
+          throw CompileException("arrays are not supported in the C backend")
+
         case unsupported =>
           throw CompileException(s"Unsupported code form in C backend: $unsupported")
 

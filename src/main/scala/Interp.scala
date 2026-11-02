@@ -37,6 +37,7 @@ enum Value:
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
   case VThunk(e: Expr, ρ: Env, ς: StEnv)
   case VCon(tag: String, args: List[Value])
+  case VArr(elems: Array[Value])
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -279,6 +280,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
   case VNum(i) => reflect(ENum(i), σ, k, γ)
   case VBool(b) => reflect(EBool(b), σ, k, γ)
   case VLoc(l) => reflect(ELoc(l), σ, k, γ)
+  case VArr(_) => throw new MatchError("cannot lift array values")
   case VClo(x, argTy, body, retTy, ρf, ςf) =>
     val l = σ.size
     val y = fresh()
@@ -442,6 +444,61 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
         eval(e2, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
           reflect(EAssign1(x1, x2), σ2, k, γ2)
         }, γ1)
+      }, γ)
+    case EArrLit(elems, s) if evalExprStage(s, ς) == Sta =>
+      def loop(pending: List[Expr], vs: List[Value], σ1: Store, γ1: MCont): (Value, Store) =
+        pending match
+          case e :: rest =>
+            eval(e, ρ, ς, σ1, { case (v, σ2, γ2) =>
+              loop(rest, vs :+ v, σ2, γ2)
+            }, γ1)
+          case Nil => k(VArr(vs.toArray), σ1, γ1)
+      loop(elems, Nil, σ, γ)
+    case EArrLit(elems, s) if evalExprStage(s, ς) == Dyn =>
+      def loop(pending: List[Expr], vs: List[Expr], σ1: Store, γ1: MCont): (Value, Store) =
+        pending match
+          case e :: rest =>
+            eval(e, ρ, ς, σ1, { case (VCode(x), σ2, γ2) =>
+              loop(rest, vs :+ x, σ2, γ2)
+            }, γ1)
+          case Nil => reflect(EArrLit1(vs*), σ1, k, γ1)
+      loop(elems, Nil, σ, γ)
+    case EArrGet(a, i, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VNum(ix), σ2, γ2) =>
+          k(elems(ix), σ2, γ2)
+        }, γ1)
+      }, γ)
+    case EArrGet(a, i, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          reflect(EArrGet1(x1, x2), σ2, k, γ2)
+        }, γ1)
+      }, γ)
+    case EArrSet(a, i, e2, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VNum(ix), σ2, γ2) =>
+          eval(e2, ρ, ς, σ2, { case (v, σ3, γ3) =>
+            elems(ix) = v
+            k(VUnit, σ3, γ3)
+          }, γ2)
+        }, γ1)
+      }, γ)
+    case EArrSet(a, i, e2, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          eval(e2, ρ, ς, σ2, { case (VCode(x3), σ3, γ3) =>
+            reflect(EArrSet1(x1, x2, x3), σ3, k, γ3)
+          }, γ2)
+        }, γ1)
+      }, γ)
+    case EArrLen(a, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        k(VNum(elems.length), σ1, γ1)
+      }, γ)
+    case EArrLen(a, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
+        reflect(EArrLen1(x), σ1, k, γ1)
       }, γ)
     case EAscribe(e, _) => eval(e, ρ, ς, σ, k, γ)
     case EFix(f, e, s) if evalExprStage(s, ς) == Sta =>

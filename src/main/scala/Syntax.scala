@@ -44,6 +44,11 @@ enum Expr:
   case EAlloc(e: Expr, st: Option[Stage])
   case EDeref(e: Expr, st: Option[Stage])
   case EAssign(e1: Expr, e2: Expr, st: Option[Stage])
+  // First-stage arrays
+  case EArrLit(elems: List[Expr], st: Option[Stage])
+  case EArrGet(a: Expr, i: Expr, st: Option[Stage])
+  case EArrSet(a: Expr, i: Expr, v: Expr, st: Option[Stage])
+  case EArrLen(a: Expr, st: Option[Stage])
   case EAscribe(e: Expr, asTy: Type)
   case EFix(f: String, e: Expr, st: Option[Stage])
   // Experimental:
@@ -73,6 +78,7 @@ extension (e: Expr)
       case ETApp(e, _) => e.isPure
       case ELift(t, _) => false
       case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
+      case EArrLit(_, _) | EArrGet(_, _, _) | EArrSet(_, _, _, _) | EArrLen(_, _) => false
       case ERun(t) => t.isPure
       case ELet(_, rhs, body) => rhs.isPure && body.isPure
       case ELetRec(_, rhs, body) => rhs.isPure && body.isPure
@@ -105,6 +111,10 @@ extension (e: Expr)
       case EAlloc(e, _) => e.freeVar
       case EDeref(e, _) => e.freeVar
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
+      case EArrLit(elems, _) => elems.foldLeft(Set[String]())((acc, a) => acc ++ a.freeVar)
+      case EArrGet(a, i, _) => a.freeVar ++ i.freeVar
+      case EArrSet(a, i, v, _) => a.freeVar ++ i.freeVar ++ v.freeVar
+      case EArrLen(a, _) => a.freeVar
       case EAscribe(e, _) => e.freeVar
       case EFix(f, e, _) => e.freeVar - f
       case EIsApp(e) => e.freeVar
@@ -142,6 +152,10 @@ extension (e: Expr)
       case EAlloc(e, s) => EAlloc(e.subst(from, to), s)
       case EDeref(e, s) => EDeref(e.subst(from, to), s)
       case EAssign(e1, e2, s) => EAssign(e1.subst(from, to), e2.subst(from, to), s)
+      case EArrLit(elems, s) => EArrLit(elems.map(_.subst(from, to)), s)
+      case EArrGet(a, i, s) => EArrGet(a.subst(from, to), i.subst(from, to), s)
+      case EArrSet(a, i, v, s) => EArrSet(a.subst(from, to), i.subst(from, to), v.subst(from, to), s)
+      case EArrLen(a, s) => EArrLen(a.subst(from, to), s)
       case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
       case EFix(f, e, s) =>
         EFix(f, e.subst(from, to), s)
@@ -181,6 +195,14 @@ def EDeref1(e: Expr): Expr = EDeref(e, Some(Sta))
 def EDeref2(e: Expr): Expr = EDeref(e, Some(Dyn))
 def EAssign1(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Some(Sta))
 def EAssign2(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Some(Dyn))
+def EArrLit1(elems: Expr*): Expr = EArrLit(elems.toList, Some(Sta))
+def EArrLit2(elems: Expr*): Expr = EArrLit(elems.toList, Some(Dyn))
+def EArrGet1(a: Expr, i: Expr): Expr = EArrGet(a, i, Some(Sta))
+def EArrGet2(a: Expr, i: Expr): Expr = EArrGet(a, i, Some(Dyn))
+def EArrSet1(a: Expr, i: Expr, v: Expr): Expr = EArrSet(a, i, v, Some(Sta))
+def EArrSet2(a: Expr, i: Expr, v: Expr): Expr = EArrSet(a, i, v, Some(Dyn))
+def EArrLen1(a: Expr): Expr = EArrLen(a, Some(Sta))
+def EArrLen2(a: Expr): Expr = EArrLen(a, Some(Dyn))
 
 // Note: they lift term to stage 1/2, but lift itself can only be at stage 1
 def ELift1(e: Expr): Expr = ELift(e, Sta)
