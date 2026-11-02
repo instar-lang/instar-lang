@@ -51,6 +51,10 @@ object Lexer:
     case IsApp
     case Forall
     case Run
+    case Type
+    case Match
+    case With
+    case Bar
     case EOF
 
   case class Token(kind: Kind, lexeme: String, line: Int, col: Int)
@@ -75,6 +79,9 @@ object Lexer:
     "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
     "run" -> Kind.Run,
+    "type" -> Kind.Type,
+    "match" -> Kind.Match,
+    "with" -> Kind.With,
   )
 
   def lex(input: String): Vector[Token] =
@@ -186,6 +193,7 @@ object Lexer:
             add(Kind.BangEq, "!=", startLine, startCol)
           else
             add(Kind.Bang, "!", startLine, startCol)
+        case '|' => advance(); add(Kind.Bar, "|", startLine, startCol)
         case '<' =>
           advance()
           if !atEnd() && current() == '=' then
@@ -227,6 +235,9 @@ private case class Parser(tokens: Vector[Token]):
     case Term(name: String, ty: Type)
 
   private var pos = 0
+  private var typeScope: List[String] = Nil
+
+  private def isDataType(name: String): Boolean = typeScope.contains(name)
 
   private def current: Token = tokens(pos)
   private def peek(offset: Int): Token = tokens(math.min(pos + offset, tokens.length - 1))
@@ -262,6 +273,8 @@ private case class Parser(tokens: Vector[Token]):
       case Kind.SFun => parseSFun()
       case Kind.Fix => parseFix()
       case Kind.If => parseIf()
+      case Kind.Type => parseTypeDecl()
+      case Kind.Match => parseMatch()
       case _ => parseAssignment()
 
   private def parseAssignment(): Expr =
@@ -276,7 +289,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseLet(): Expr =
     expect(Kind.Let, "`let`")
-    val name = parseIdentifier("binding name")
+    val name = parseVarBinder("binding name")
     val binders = parseHeaderBinders()
 
     if binders.nonEmpty then
@@ -304,7 +317,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseLetRec(): Expr =
     expect(Kind.LetRec, "`letrec`")
-    val name = parseIdentifier("recursive binding name")
+    val name = parseVarBinder("recursive binding name")
     val binders = parseHeaderBinders()
 
     if binders.nonEmpty then
@@ -334,7 +347,7 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Fun, "`fun`")
     val stage = parseOptionalStageValue()
     expect(Kind.LParen, "`(`")
-    val arg = parseIdentifier("parameter name")
+    val arg = parseVarBinder("parameter name")
     expect(Kind.Colon, "`:` after function parameter")
     val argTy = parseTypeExpr()
     expect(Kind.RParen, "`)`")
@@ -369,7 +382,7 @@ private case class Parser(tokens: Vector[Token]):
   private def parseFix(): Expr =
     expect(Kind.Fix, "`fix`")
     val stage = parseOptionalStageValue()
-    val name = parseIdentifier("fixpoint name")
+    val name = parseVarBinder("fixpoint name")
     expect(Kind.Dot, "`.`")
     EFix(name, parseExpr(), stage)
 
@@ -382,6 +395,76 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Else, "`else`")
     val els = parseExpr()
     ECond(cond, thn, els, stage)
+
+  private def parseTypeDecl(): Expr =
+    expect(Kind.Type, "`type`")
+    val name = parseIdentifier("type name")
+    if !isUpperName(name) then fail(s"Type names must be uppercase; found `$name`")
+    val params =
+      if at(Kind.LBracket) then
+        val names = parseBracketNames("type variable")
+        names.foreach(n => if !isUpperName(n) then fail(s"Type parameters must be uppercase; found `$n`"))
+        names
+      else Nil
+    expect(Kind.Equal, "`=`")
+    typeScope = name :: typeScope // recursive: its own fields may mention it
+    val ctors = parseConstructors()
+    expect(Kind.In, "`in`")
+    val body = parseExpr()
+    typeScope = typeScope.tail
+    ETypeDecl(name, params, ctors, body)
+
+  private def parseConstructors(): List[Constructor] =
+    val ctors = ArrayBuffer.empty[Constructor]
+    ctors += parseConstructor()
+    while at(Kind.Bar) do
+      advance()
+      ctors += parseConstructor()
+    ctors.toList
+
+  private def parseConstructor(): Constructor =
+    val name = parseIdentifier("constructor name")
+    if !isUpperName(name) then fail(s"Constructor names must be uppercase; found `$name`")
+    if !at(Kind.LParen) then Constructor(name, Nil)
+    else
+      advance()
+      val fields = ArrayBuffer.empty[Type]
+      if !at(Kind.RParen) then
+        fields += parseTypeExpr()
+        while at(Kind.Comma) do
+          advance()
+          fields += parseTypeExpr()
+      expect(Kind.RParen, "`)`")
+      Constructor(name, fields.toList)
+
+  private def parseMatch(): Expr =
+    expect(Kind.Match, "`match`")
+    val scrutinee = parseExpr()
+    expect(Kind.With, "`with`")
+    val cases = ArrayBuffer.empty[MatchCase]
+    while at(Kind.Bar) do
+      advance()
+      cases += parseMatchCase()
+    if cases.isEmpty then fail("Expected at least one `|` case")
+    EMatch(scrutinee, cases.toList)
+
+  private def parseMatchCase(): MatchCase =
+    val con = parseIdentifier("constructor name in pattern")
+    if !isUpperName(con) then fail(s"Pattern heads must be constructors (uppercase); found `$con`")
+    val binders =
+      if at(Kind.LParen) then
+        advance()
+        val names = ArrayBuffer.empty[String]
+        if !at(Kind.RParen) then
+          names += parseVarBinder("pattern binder")
+          while at(Kind.Comma) do
+            advance()
+            names += parseVarBinder("pattern binder")
+        expect(Kind.RParen, "`)`")
+        names.toList
+      else Nil
+    expect(Kind.FatArrow, "`=>`")
+    MatchCase(con, binders, parseExpr())
 
   private def parseComparison(): Expr =
     var expr = parseAdditive()
@@ -479,7 +562,8 @@ private case class Parser(tokens: Vector[Token]):
         advance()
         EBool(false)
       case Kind.Identifier =>
-        EVar(advance().lexeme)
+        if isUpperName(current.lexeme) then parseConstructorApp()
+        else EVar(advance().lexeme)
       case Kind.Lift =>
         parseLift()
       case Kind.Ref =>
@@ -492,6 +576,20 @@ private case class Parser(tokens: Vector[Token]):
         parseParenExpr()
       case _ =>
         fail(s"Unexpected token `${current.lexeme}`")
+
+  private def parseConstructorApp(): Expr =
+    val name = advance().lexeme
+    if !at(Kind.LParen) then ECon(name, Nil)
+    else
+      advance()
+      val args = ArrayBuffer.empty[Expr]
+      if !at(Kind.RParen) then
+        args += parseExpr()
+        while at(Kind.Comma) do
+          advance()
+          args += parseExpr()
+      expect(Kind.RParen, "`)`")
+      ECon(name, args.toList)
 
   private def parseLift(): Expr =
     expect(Kind.Lift, "`lift`")
@@ -574,9 +672,8 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.Identifier =>
         val name = advance().lexeme
-        if at(Kind.LBracket)
-        then applyTypeConstructor(name, parseBracketedTypes())
-        else applyTypeConstructor(name, Nil)
+        val args = if at(Kind.LBracket) then parseBracketedTypes() else Nil
+        if isDataType(name) then TCon(name, args) else applyTypeConstructor(name, args)
       case Kind.LParen =>
         advance()
         val ty = parseTypeExpr()
@@ -620,7 +717,7 @@ private case class Parser(tokens: Vector[Token]):
           }
         case Kind.LParen =>
           advance()
-          val arg = parseIdentifier("parameter name")
+          val arg = parseVarBinder("parameter name")
           expect(Kind.Colon, "`:` after function parameter")
           val argTy = parseTypeExpr()
           expect(Kind.RParen, "`)`")
@@ -699,6 +796,11 @@ private case class Parser(tokens: Vector[Token]):
     val name = parseIdentifier(expected)
     if isLowerName(name) || isUpperName(name) then name
     else fail(s"Expected a lowercase stage variable or an uppercase type variable but found `$name`")
+
+  private def parseVarBinder(expected: String): String =
+    val name = parseIdentifier(expected)
+    if name == "_" || isLowerName(name) then name
+    else fail(s"Expected $expected (lowercase or `_`) but found `$name`")
 
   private def parseBracketArgs(): List[Stage | Type] =
     expect(Kind.LBracket, "`[`")

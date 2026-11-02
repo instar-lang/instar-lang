@@ -436,3 +436,27 @@ class ParserTest extends FunSuite:
       ),
     )
   }
+
+  test("parses ADTs with constructor applications and match") {
+    val parsed = parse(
+      """type List[A] = Nil | Cons(A, List[A]) in
+        match Cons(1, Nil) with
+        | Nil => 0
+        | Cons(x, xs) => x"""
+    )
+    assertEquals(
+      parsed,
+      ETypeDecl(
+        "List",
+        List("A"),
+        List(
+          Constructor("Nil", Nil),
+          Constructor("Cons", List(TVar("A"), TCon("List", List(TVar("A"))))),
+        ),
+        EMatch(
+          ECon("Cons", List(ENum(1), ECon("Nil", Nil))),
+          List(MatchCase("Nil", Nil, ENum(0)), MatchCase("Cons", List("x", "xs"), EVar("x"))),
+        ),
+      ),
+    )
+  }
