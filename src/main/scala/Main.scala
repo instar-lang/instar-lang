@@ -14,6 +14,7 @@ import instar.interp.Value
 import instar.interp.Value.*
 import instar.parser.parse
 import instar.typing.*
+import instar.typing.StageConstraints.*
 
 def main(args: Array[String]): Unit =
   parseArgs(args.toList)
@@ -39,6 +40,8 @@ private def runSource(source: String): (Value, Store) =
   println(s"$prog")
   val elaborated = Elaboration.infer(prog)
   val tyProg = new CoreTyping().check(elaborated, elaborated.ty.get)
+  assert(Nil.implyStEq(tyProg.effect, elaborated.effect),
+    "core typing disagrees with the elaborated effect")
   println(s"========Elaborated Program=========")
   println(s"$tyProg")
   println(s"========Type Checking Result=========")

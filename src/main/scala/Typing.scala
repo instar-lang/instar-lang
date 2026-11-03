@@ -299,7 +299,10 @@ class CoreTyping extends Typing:
 object Elaboration extends CoreTyping:
   override def infer(expr: Expr): Expr =
     Counter.reset()
-    super.infer(expr)
+    val typed = super.infer(expr)
+    assert(Nil.implyStLeq(typed.effect, typed.ty.get.stage),
+      "top-level result stage is incompatible with the inferred effect")
+    typed
 
   override def check(expr: Expr, expected: Type): Expr =
     Counter.reset()
@@ -336,14 +339,6 @@ object Elaboration extends CoreTyping:
     WF.check(ctx, expr.to)
     coerceStage(ctx, infer(ctx, expr.t), expr.to)
 
-  override protected def inferLet(ctx: Ctx, expr: ELet): Expr =
-    val rhs = infer(ctx, expr.rhs)
-    val bodyCtx = ctx + (expr.x -> rhs.ty.get)
-    val body = infer(bodyCtx, expr.body)
-    val resultTy = body.ty.get.at(rhs.ty.get.stage)
-    val converted = coerce(bodyCtx, body, resultTy)
-    ELet(expr.x, rhs, converted).withType(resultTy, rhs.effect | converted.effect)
-
   override protected def inferLetRec(ctx: Ctx, expr: ELetRec): Expr =
     expr.rhs match
       case EAscribe(rhs, ty) =>
@@ -354,6 +349,18 @@ object Elaboration extends CoreTyping:
           assert(ctx.constraints.implyStEq(s, st), s"letrec stage $s does not match recursive type $ty"))
         val recursive = ctx + (expr.f -> ty)
         val delayed = (rhs, ty.base) match
+          case (ELam(x, Some(argAnn), body, retAnn), TFun(arg, ret, effect))
+              if ctx.constraints.implyStEq(st, Sta) && ctx.constraints.implyTyEq(argAnn, arg) =>
+            WF.check(ctx, argAnn)
+            val bodyCtx = recursive + (x -> arg)
+            val typed = retAnn match
+              case Some(annotation) =>
+                WF.check(ctx, annotation)
+                coerce(bodyCtx, check(bodyCtx, body, annotation), ret)
+              case None => check(bodyCtx, body, ret)
+            ctx.constraints.assertStLeq(typed.effect, effect)
+            val cast = EEffCast(typed, effect).withType(ret, effect)
+            ELam(x, Some(arg), cast, Some(ret)).withType(ty)
           case (_, TFun(arg, ret, effect)) =>
             val typed = check(recursive, rhs, ty)
             val x = Counter.fresh
@@ -377,9 +384,7 @@ object Elaboration extends CoreTyping:
             ESLam(fresh, body, Subst.constraints(constraints, s, stage)).withType(ty)
           case _ => fail(s"letrec requires a function or stage-polymorphic type, found $ty")
         val body = infer(recursive, expr.body)
-        val resultTy = body.ty.get.at(st)
-        val converted = coerce(recursive, body, resultTy)
-        ELetRec(expr.f, delayed, converted, Some(st)).withType(resultTy, delayed.effect | converted.effect | st)
+        ELetRec(expr.f, delayed, body, Some(st)).withType(body.ty.get, delayed.effect | body.effect | st)
       case _ => fail(s"recursive `letrec` binding `${expr.f}` needs a type annotation or an annotated function header")
 
   override protected def inferCond(ctx: Ctx, expr: ECond): Expr =
@@ -391,15 +396,10 @@ object Elaboration extends CoreTyping:
     assert(cond.ty.get.base == TBool, s"expected a Boolean condition, found ${cond.ty.get}")
     val thn = infer(ctx, expr.e2)
     val els = infer(ctx, expr.e3)
-    assert(ctx.constraints.implyTyEq(thn.ty.get.at(Sta), els.ty.get.at(Sta)),
-      s"conditional branches have different base types: ${thn.ty.get} and ${els.ty.get}")
-    val stages = List(cond.ty.get.stage, thn.ty.get.stage, els.ty.get.stage)
-    val stage = stages.find(candidate => stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
-      .getOrElse(fail(s"cannot infer a maximum stage for ${stages.mkString(", ")}"))
-    val resultTy = thn.ty.get.at(stage)
-    val left = coerce(ctx, thn, resultTy)
-    val right = coerce(ctx, els, resultTy)
-    ECond(cond, left, right, Some(cond.ty.get.stage)).withType(resultTy,
+    val stage = cond.ty.get.stage | thn.ty.get.stage | els.ty.get.stage
+    val left = coerceStage(ctx, thn, stage)
+    val right = coerce(ctx, els, left.ty.get)
+    ECond(cond, left, right, Some(cond.ty.get.stage)).withType(left.ty.get,
       cond.effect | left.effect | right.effect | cond.ty.get.stage)
 
   override protected def inferBin(ctx: Ctx, expr: EBinOp): Expr =
@@ -408,12 +408,11 @@ object Elaboration extends CoreTyping:
       case None =>
         val left = infer(ctx, expr.e1)
         val right = infer(ctx, expr.e2)
-        val stages = List(left.ty.get.stage, right.ty.get.stage)
-        val st = stages.find(candidate => stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
-          .getOrElse(fail(s"cannot infer a maximum stage for ${stages.mkString(", ")}"))
-        val (arg, ret) = inferBinOp(expr.op, st)
-        val l = coerce(ctx, left, arg)
-        val r = coerce(ctx, right, arg)
+        assert(left.ty.get.base == TInt && right.ty.get.base == TInt, "binary operations require Int operands")
+        val st = left.ty.get.stage | right.ty.get.stage
+        val l = coerceStage(ctx, left, st)
+        val r = coerceStage(ctx, right, st)
+        val (_, ret) = inferBinOp(expr.op, l.ty.get.stage)
         EBinOp(expr.op, l, r, Some(st)).withType(ret, l.effect | r.effect | st)
 
   override protected def inferUnary(ctx: Ctx, expr: EUnaryOp): Expr =

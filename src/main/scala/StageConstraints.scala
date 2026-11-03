@@ -4,7 +4,7 @@ import instar.syntax.*
 import Stage.*
 import Type.*
 
-private[typing] object StageConstraints:
+private[instar] object StageConstraints:
   private type Assignment = Map[String, Int]
 
   extension (constraints: List[StageConstraint])

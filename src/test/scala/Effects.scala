@@ -56,6 +56,15 @@ class EffectElaborationTest extends FunSuite:
       Value.VNum(0))
   }
 
+  test("arithmetic joins independent symbolic operand stages") {
+    val typed = infer(parse("sfun[a, b] => fun(x: Int@a) => fun(y: Int@b) => x + y"))
+    assertEquals(pretty.expr(typed),
+      "sfun[a, b] => fun(x: Int @ a): Int @ b ->[(((1 | case((a | b), 1, case(a, 2, 1))) | (1 | case((a | b), 1, case(b, 2, 1)))) | (a | b))] Int @ (a | b) => fun(y: Int @ b): Int @ (a | b) => lift[(a | b)](x) +@(a | b) lift[(a | b)](y)")
+    val checked = new CoreTyping().infer(typed)
+    assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))
+    assert(Nil.implyStEq(checked.effect, typed.effect))
+  }
+
   test("function coercion widens the latent effect with a body cast") {
     val typed = infer(parse("(fun(x: Int) => x: Int ->[2] Int)"))
     assertEquals(pretty.expr(typed),
@@ -87,11 +96,10 @@ class EffectElaborationTest extends FunSuite:
   }
 
   test("ordinary function headers infer their latent effects") {
-    val typed = infer(parse("let f(x: Int): Int@2 = x in f"))
-    assertEquals(pretty.expr(typed),
-      "let f (x: Int): Int @ 2 = lift[2](x) in f")
-    assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt.at(Dyn), Dyn)))
-    assert(Nil.implyStEq(typed.effect, Sta))
+    val typed = infer(parse("let f(x: Int): Int@2 = x in f(1)"))
+    assertEquals(pretty.expr(typed), "let f (x: Int): Int @ 2 = lift[2](x) in f 1@1")
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+    assert(Nil.implyStEq(typed.effect, Dyn))
     val checked = new CoreTyping().infer(typed)
     assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))
     assert(Nil.implyStEq(checked.effect, typed.effect))
@@ -104,6 +112,13 @@ class EffectElaborationTest extends FunSuite:
     assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assert(Nil.implyStEq(typed.effect, Dyn))
     assertEquals(instar.interp.eval(ERun(typed))._1, Value.VNum(1))
+  }
+
+  test("let keeps a dynamic body after a static binding") {
+    val typed = infer(parse("let x = 1 in lift[2](x)"))
+    assertEquals(pretty.expr(typed), "let x = 1 in lift[2](x)")
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+    assert(Nil.implyStEq(typed.effect, Dyn))
   }
 
   test("forall coercion converts its result under the target contract") {
@@ -127,10 +142,21 @@ class EffectElaborationTest extends FunSuite:
     assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))
   }
 
+  test("conditionals coerce different function results to the first branch type") {
+    val typed = infer(parse("if true then fun(x: Int): Int@2 => x else fun(x: Int@2) => 1"))
+    assertEquals(pretty.expr(typed),
+      "if@1 true then fun(x: Int): Int @ 2 => lift[2](x) else let $s0 (x: Int @ 2): Int = 1 in lift[1](fun($s1:" +
+      " Int): Int @ 2 => lift[2]($s0 (lift[2]($s1))@1) |> (((((1 | case(2, 1, case(1, 2, 1))) | 1) | 1) | " +
+      "case(2, 1, case(1, 2, 1))) | (1 | case(2, 1, case(1, 2, 1)))))")
+    assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt.at(Dyn), Dyn)))
+    val checked = new CoreTyping().infer(typed)
+    assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))
+    assert(Nil.implyStEq(checked.effect, typed.effect))
+  }
+
   test("recursive signatures permit a larger body effect") {
     val typed = infer(parse("fix f: Int ->[2] Int@2. fun(x: Int) => lift[2](x)"))
-    assertEquals(pretty.expr(typed),
-      "letrec@1 f ($s0: Int): Int @ 2 = (fun(x: Int): Int @ 2 => lift[2](x)) $s0@1 |> (((1 | 2) | 1) | 2) in f")
+    assertEquals(pretty.expr(typed), "letrec@1 f (x: Int): Int @ 2 = lift[2](x) |> 2 in f")
     assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt.at(Dyn), Dyn)))
     val checked = new CoreTyping().infer(typed)
     assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))
@@ -141,6 +167,12 @@ class EffectNegativeTest extends FunSuite:
   test("effect casts cannot decrease an effect") {
     intercept[TypeException] { infer(parse("lift[2](1) |> 1")) }
     intercept[TypeException] { new CoreTyping().infer(parse("lift[2](1) |> 1")) }
+  }
+
+  test("program results must accommodate their effects") {
+    intercept[TypeException] { infer(parse("let x = lift[2](1) in 2")) }
+    intercept[TypeException] { infer(parse("(fun(x: Int@2) => 0)(1)")) }
+    intercept[TypeException] { infer(parse("1 |> 2")) }
   }
 
   test("function coercion cannot conceal a latent effect") {
