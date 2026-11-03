@@ -11,9 +11,14 @@ enum Stage:
   def |(other: Stage): Stage = Stage.join(this, other)
 
 object Stage:
-  def join(left: Stage, right: Stage): Stage = SJoin(left, right)
+  def join(left: Stage, right: Stage): Stage = (left, right) match
+    case (SNum(a), SNum(b)) => SNum(a.max(b))
+    case _ => SJoin(left, right)
 
-  def scase(cond: Stage, static: Stage, dynamic: Stage): Stage = SCase(cond, static, dynamic)
+  def scase(cond: Stage, static: Stage, dynamic: Stage): Stage = cond match
+    case SNum(1) => static
+    case SNum(2) => dynamic
+    case _ => SCase(cond, static, dynamic)
 
   def variables(stage: Stage): Set[String] = stage match
     case SNum(_) => Set.empty

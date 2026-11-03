@@ -46,7 +46,7 @@ class EffectElaborationTest extends FunSuite:
   test("function promotion recursively promotes a static result") {
     val typed = infer(parse("lift[2](fun(x: Int@2) => 0)"))
     assertEquals(pretty.expr(typed),
-      "let $s0 (x: Int @ 2): Int = 0 in fun@2($s1: Int @ 2): Int @ (2 | 1) => lift[(2 | 1)]($s0 $s1@1)")
+      "let $s0 (x: Int @ 2): Int = 0 in fun@2($s1: Int @ 2): Int @ 2 => lift[2]($s0 $s1@1)")
     assert(Nil.implyTyEq(typed.ty.get, TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn)))
     assert(Nil.implyStEq(typed.effect, Dyn))
     val checked = new CoreTyping().infer(typed)
@@ -68,7 +68,7 @@ class EffectElaborationTest extends FunSuite:
   test("function coercion widens the latent effect with a body cast") {
     val typed = infer(parse("(fun(x: Int) => x: Int ->[2] Int)"))
     assertEquals(pretty.expr(typed),
-      "let $s0 (x: Int): Int = x in lift[1](fun($s1: Int): Int => $s0 $s1@1 |> (((1 | 1) | 1) | 2))")
+      "let $s0 (x: Int): Int = x in lift[1](fun($s1: Int): Int => $s0 $s1@1 |> 2)")
     assertEquals(typed.ty, Some(TFun(TInt, TInt, Dyn)))
     assert(Nil.implyStEq(typed.effect, Sta))
     val checked = new CoreTyping().infer(typed)
@@ -108,7 +108,7 @@ class EffectElaborationTest extends FunSuite:
   test("stage cases select their branch during staging") {
     val typed = infer(parse("lift[case(1, 2, 1)](1)"))
     assertEquals(pretty.expr(typed),
-      "lift[case(1, 2, 1)](1)")
+      "lift[2](1)")
     assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assert(Nil.implyStEq(typed.effect, Dyn))
     assertEquals(instar.interp.eval(ERun(typed))._1, Value.VNum(1))
@@ -142,12 +142,21 @@ class EffectElaborationTest extends FunSuite:
     assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))
   }
 
+  test("stage substitution folds joins and effects after instantiation") {
+    val typed = infer(parse("(sfun[s] => lift[s | 2](1))[1]"))
+    assertEquals(pretty.expr(typed), "(sfun[s] => lift[(s | 2)](1))[1]")
+    assertEquals(typed.ty, Some(TInt.at(Dyn)))
+    assertEquals(typed.effect, Dyn)
+    val checked = new CoreTyping().infer(typed)
+    assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))
+    assert(Nil.implyStEq(checked.effect, typed.effect))
+  }
+
   test("conditionals coerce different function results to the first branch type") {
     val typed = infer(parse("if true then fun(x: Int): Int@2 => x else fun(x: Int@2) => 1"))
     assertEquals(pretty.expr(typed),
       "if@1 true then fun(x: Int): Int @ 2 => lift[2](x) else let $s0 (x: Int @ 2): Int = 1 in lift[1](fun($s1:" +
-      " Int): Int @ 2 => lift[2]($s0 (lift[2]($s1))@1) |> (((((1 | case(2, 1, case(1, 2, 1))) | 1) | 1) | " +
-      "case(2, 1, case(1, 2, 1))) | (1 | case(2, 1, case(1, 2, 1)))))")
+      " Int): Int @ 2 => lift[2]($s0 (lift[2]($s1))@1) |> 2)")
     assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt.at(Dyn), Dyn)))
     val checked = new CoreTyping().infer(typed)
     assert(Nil.implyTyEq(checked.ty.get, typed.ty.get))

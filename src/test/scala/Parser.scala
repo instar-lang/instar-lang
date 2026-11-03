@@ -132,6 +132,16 @@ class ParserTest extends FunSuite:
       ESLam("a", ESLam("b", ESLam("c", ENum(1), List(StageConstraint(SVar("a") | SVar("b"), SVar("c")))))))
   }
 
+  test("folds concrete stage joins and selects concrete stage cases") {
+    assertEquals(parseType("Int@(1 | 1)"), TAt(TInt, Sta))
+    assertEquals(parseType("Int@(1 | 2)"), TAt(TInt, Dyn))
+    assertEquals(parseType("Int@(2 | 1)"), TAt(TInt, Dyn))
+    assertEquals(parseType("Int@(2 | 2)"), TAt(TInt, Dyn))
+    assertEquals(parse("lift[case(1, a, b)](1)"), ELift(ENum(1), SVar("a")))
+    assertEquals(parse("lift[case(2, a, b)](1)"), ELift(ENum(1), SVar("b")))
+    assertEquals(parse("lift[case(1 | 2, 1, 1 | 2)](1)"), ELift(ENum(1), Dyn))
+  }
+
   test("effect casts do not conflict with stage joins") {
     assertEquals(parse("1 + 2 |> 1 | 2"),
       EEffCast(EBinOp("+", ENum(1), ENum(2), None), Sta | Dyn))

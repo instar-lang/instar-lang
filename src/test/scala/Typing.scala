@@ -80,7 +80,7 @@ class TypingTest extends FunSuite:
 
     assert(Nil.implyTyEq(typed.ty.get, TInt.at()))
     assertEquals(pretty.expr(typed),
-      "let inc (x: Int): Int = x +@(1 | 1) 1 in inc 41@1")
+      "let inc (x: Int): Int = x +@1 1 in inc 41@1")
   }
 
   test("ascription fills in the lambda result type") {
@@ -107,8 +107,7 @@ class TypingTest extends FunSuite:
     val typed = infer(parse(src))
     assert(Nil.implyTyEq(typed.ty.get, TInt.at()))
     assertEquals(pretty.expr(typed),
-      "letrec@1 fact (n: Int): Int = (if@1 n <=@(1 | 1) 1 then 1 else n *@(1 | 1) fact (n -@(1 | 1) 1)@1) |> 1 " +
-      "in fact 5@1")
+      "letrec@1 fact (n: Int): Int = (if@1 n <=@1 1 then 1 else n *@1 fact (n -@1 1)@1) |> 1 in fact 5@1")
   }
 
   test("infer handles fix with an explicitly annotated recursive binder") {
@@ -118,8 +117,7 @@ class TypingTest extends FunSuite:
     val typed = infer(parse(src))
     assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt).at()))
     assertEquals(pretty.expr(typed),
-      "letrec@1 fib (n: Int): Int = (if@1 n <=@(1 | 1) 1 then 1 else n *@(1 | 1) fib (n -@(1 | 1) 1)@1) |> 1 in" +
-      " fib")
+      "letrec@1 fib (n: Int): Int = (if@1 n <=@1 1 then 1 else n *@1 fib (n -@1 1)@1) |> 1 in fib")
   }
 
   test("ascription treats forall stage binders up to alpha-renaming") {
@@ -249,7 +247,7 @@ class ElabTest extends FunSuite:
     val typed = infer(parse(src))
     assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "if@2 lift[2](true) then lift[((2 | 1) | 1)](1) else lift[((2 | 1) | 1)](2)")
+      "if@2 lift[2](true) then lift[2](1) else lift[2](2)")
     assertEquals(run(s"run($src)"), Value.VNum(1))
   }
 
@@ -258,8 +256,8 @@ class ElabTest extends FunSuite:
     val typed = infer(parse(src))
     assert(Nil.implyTyEq(typed.ty.get, TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "if@1 true then let $s2 (x: Int @ 2): Int @ 2 = x in fun@((1 | 1) | 2)($s3: Int @ 2): Int @ 2 => $s2 " +
-      "$s3@1 else let $s0 (x: Int @ 2): Int @ 2 = x in fun@2($s1: Int @ 2): Int @ 2 => $s0 $s1@1")
+      "if@1 true then let $s2 (x: Int @ 2): Int @ 2 = x in fun@2($s3: Int @ 2): Int @ 2 => $s2 $s3@1 else let " +
+      "$s0 (x: Int @ 2): Int @ 2 = x in fun@2($s1: Int @ 2): Int @ 2 => $s0 $s1@1")
     assertEquals(run(s"run(($src)(3))"), Value.VNum(3))
   }
 
@@ -269,7 +267,7 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "lift[(1 | 2)](1) +@(1 | 2) lift[2](2)")
+      "lift[2](1) +@2 lift[2](2)")
       assertEquals(run(s"run($src)"), Value.VNum(3))
     }
 
@@ -278,7 +276,7 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "lift[2](1) +@(2 | 1) lift[(2 | 1)](2)")
+      "lift[2](1) +@2 lift[2](2)")
       assertEquals(run(s"run($src)"), Value.VNum(3))
     }
 
@@ -286,8 +284,8 @@ class ElabTest extends FunSuite:
       val src = "let add[s](x: Int@s)(y: Int) = x + y in add[1](2)(3)"
       val typed = infer(parse(src))
       assertEquals(pretty.expr(typed),
-        "let add[s] (x: Int @ s) (y: Int): Int ->[((1 | (1 | case((s | 1), 1, case(1, 2, 1)))) | (s | 1))] Int @ " +
-        "s = x +@(s | 1) lift[(s | 1)](y) in add[1] 2@1 3@1")
+        "let add[s] (x: Int @ s) (y: Int): Int ->[((1 | (1 | case((s | 1), 1, 2))) | (s | 1))] Int @ s = x +@(s |" +
+        " 1) lift[(s | 1)](y) in add[1] 2@1 3@1")
       assertEquals(run(src), Value.VNum(5))
     }
 
@@ -295,8 +293,8 @@ class ElabTest extends FunSuite:
       val src = "(let add[s] (x: Int @ s) (y: Int) = x + y in fun(unit: Unit) => add[2] 2 3) (())"
       val typed = infer(parse(src))
       assertEquals(pretty.expr(typed),
-        "(let add[s] (x: Int @ s) (y: Int): Int ->[((1 | (1 | case((s | 1), 1, case(1, 2, 1)))) | (s | 1))] Int @" +
-        " s = x +@(s | 1) lift[(s | 1)](y) in fun(unit: Unit): Int @ 2 => add[2] (lift[2](2))@1 3@1) (())@1")
+        "(let add[s] (x: Int @ s) (y: Int): Int ->[((1 | (1 | case((s | 1), 1, 2))) | (s | 1))] Int @ s = x +@(s " +
+        "| 1) lift[(s | 1)](y) in fun(unit: Unit): Int @ 2 => add[2] (lift[2](2))@1 3@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(5))
     }
 
@@ -304,8 +302,8 @@ class ElabTest extends FunSuite:
       val expr = "(let add[s] (x: Int @ s) (y: Int @ s) = x + y in fun(unit: Unit) => add[2] 2 3) (())"
       val inferred = infer(parse(expr))
       assertEquals(pretty.expr(inferred),
-        "(let add[s] (x: Int @ s) (y: Int @ s): Int @ s ->[((1 | 1) | (s | s))] Int @ s = x +@(s | s) y in " +
-        "fun(unit: Unit): Int @ 2 => add[2] (lift[2](2))@1 (lift[2](3))@1) (())@1")
+        "(let add[s] (x: Int @ s) (y: Int @ s): Int @ s ->[(1 | (s | s))] Int @ s = x +@(s | s) y in fun(unit: " +
+        "Unit): Int @ 2 => add[2] (lift[2](2))@1 (lift[2](3))@1) (())@1")
       assert(Nil.implyTyEq(inferred.ty.get, TInt.at(Dyn)))
     }
 
@@ -322,8 +320,8 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assertEquals(pretty.expr(typed),
         "sfun[a] => sfun[b] => sfun[c] => sfun[d: a <= c, b <= c, a <= d, b <= d] => fun(x: Int @ a): Int @ b " +
-        "->[(((1 | case(2, 1, case(a, 2, 1))) | (1 | case(2, 1, case(b, 2, 1)))) | 2)] Int @ 2 => fun(y: Int @ " +
-        "b): Int @ 2 => lift[2](x) +@2 lift[2](y)")
+        "->[(((1 | case(a, 2, 1)) | (1 | case(b, 2, 1))) | 2)] Int @ 2 => fun(y: Int @ b): Int @ 2 => lift[2](x) " +
+        "+@2 lift[2](y)")
     }
 
     {
@@ -376,7 +374,7 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "if@1 true then lift[((1 | 1) | 2)](1) else lift[2](2)")
+      "if@1 true then lift[2](1) else lift[2](2)")
       assertEquals(run(s"run($src)"), Value.VNum(1))
     }
 
@@ -394,7 +392,7 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "if@2 lift[2](true) then lift[((2 | 1) | 1)](1) else lift[((2 | 1) | 1)](2)")
+      "if@2 lift[2](true) then lift[2](1) else lift[2](2)")
       assertEquals(run(s"run($src)"), Value.VNum(1))
     }
 
@@ -412,7 +410,7 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assertEquals(pretty.expr(typed),
         "(let choose[s] (b: Bool @ s): Int @ ((s | 1) | 1) = if@s b then lift[((s | 1) | 1)](1) else lift[((s | " +
-        "1) | 1)](2) in fun(unit: Unit): Int @ ((2 | 1) | 1) => choose[2] (lift[2](true))@1) (())@1")
+        "1) | 1)](2) in fun(unit: Unit): Int @ 2 => choose[2] (lift[2](true))@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(1))
     }
 
@@ -423,9 +421,9 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assertEquals(pretty.expr(typed),
         "sfun[a] => sfun[b] => sfun[c] => sfun[d: a <= c, b <= c, a <= d, b <= d] => fun(x: Int @ a): Int @ b " +
-        "->[((((1 | case(2, 1, case(1, 2, 1))) | (1 | case(((2 | a) | b), 1, case(a, 2, 1)))) | (1 | case(((2 | " +
-        "a) | b), 1, case(b, 2, 1)))) | 2)] Int @ ((2 | a) | b) => fun(y: Int @ b): Int @ ((2 | a) | b) => if@2 " +
-        "lift[2](true) then lift[((2 | a) | b)](x) else lift[((2 | a) | b)](y)")
+        "->[(((2 | (1 | case(((2 | a) | b), 1, case(a, 2, 1)))) | (1 | case(((2 | a) | b), 1, case(b, 2, 1)))) | " +
+        "2)] Int @ ((2 | a) | b) => fun(y: Int @ b): Int @ ((2 | a) | b) => if@2 lift[2](true) then lift[((2 | a)" +
+        " | b)](x) else lift[((2 | a) | b)](y)")
     }
 
     {
@@ -447,8 +445,7 @@ class ElabTest extends FunSuite:
     assertEquals(pretty.expr(typed),
       "(let choose[a, b, c: a <= c, b <= c] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[(((1" +
       " | (1 | case(((a | b) | c), 1, case(b, 2, 1)))) | 1) | a)] Int @ ((a | b) | c) = if@a p then lift[((a | " +
-      "b) | c)](x) else y in fun(unit: Unit): Int @ ((1 | 1) | 2) => choose[1, 1, 2] false@1 3@1 " +
-      "(lift[2](4))@1) (())@1")
+      "b) | c)](x) else y in fun(unit: Unit): Int @ 2 => choose[1, 1, 2] false@1 3@1 (lift[2](4))@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(4))
     }
 
@@ -457,9 +454,9 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "(let choose[a, b, c: a <= b, c <= b] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[(((1" +
-      " | 1) | (1 | case(b, 1, case(c, 2, 1)))) | a)] Int @ b = if@a p then x else lift[b](y) in fun(unit: " +
-      "Unit): Int @ 2 => choose[1, 2, 1] false@1 (lift[2](3))@1 4@1) (())@1")
+      "(let choose[a, b, c: a <= b, c <= b] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[((1 " +
+      "| (1 | case(b, 1, case(c, 2, 1)))) | a)] Int @ b = if@a p then x else lift[b](y) in fun(unit: Unit): Int" +
+      " @ 2 => choose[1, 2, 1] false@1 (lift[2](3))@1 4@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(4))
     }
 
@@ -468,9 +465,9 @@ class ElabTest extends FunSuite:
       val typed = infer(parse(src))
       assert(Nil.implyTyEq(typed.ty.get, TInt.at(Dyn)))
     assertEquals(pretty.expr(typed),
-      "(let choose[a, b, c: a <= b, c <= b] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[(((1" +
-      " | 1) | (1 | case(b, 1, case(c, 2, 1)))) | a)] Int @ b = if@a p then x else lift[b](y) in fun(unit: " +
-      "Unit): Int @ 2 => choose[1, 2, 2] false@1 (lift[2](3))@1 (lift[2](4))@1) (())@1")
+      "(let choose[a, b, c: a <= b, c <= b] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[((1 " +
+      "| (1 | case(b, 1, case(c, 2, 1)))) | a)] Int @ b = if@a p then x else lift[b](y) in fun(unit: Unit): Int" +
+      " @ 2 => choose[1, 2, 2] false@1 (lift[2](3))@1 (lift[2](4))@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(4))
     }
 
@@ -482,7 +479,7 @@ class ElabTest extends FunSuite:
       "(let choose[a, b, c: b <= a, c <= a] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[(((1" +
       " | (1 | case(((a | b) | c), 1, case(b, 2, 1)))) | (1 | case(((a | b) | c), 1, case(c, 2, 1)))) | a)] Int" +
       " @ ((a | b) | c) = if@a p then lift[((a | b) | c)](x) else lift[((a | b) | c)](y) in fun(unit: Unit): " +
-      "Int @ ((2 | 1) | 1) => choose[2, 1, 1] (lift[2](false))@1 3@1 4@1) (())@1")
+      "Int @ 2 => choose[2, 1, 1] (lift[2](false))@1 3@1 4@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(4))
     }
 
@@ -494,7 +491,7 @@ class ElabTest extends FunSuite:
       "(let choose[a, b, c: b <= a, c <= a] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[(((1" +
       " | (1 | case(((a | b) | c), 1, case(b, 2, 1)))) | (1 | case(((a | b) | c), 1, case(c, 2, 1)))) | a)] Int" +
       " @ ((a | b) | c) = if@a p then lift[((a | b) | c)](x) else lift[((a | b) | c)](y) in fun(unit: Unit): " +
-      "Int @ ((2 | 1) | 2) => choose[2, 1, 2] (lift[2](false))@1 3@1 (lift[2](4))@1) (())@1")
+      "Int @ 2 => choose[2, 1, 2] (lift[2](false))@1 3@1 (lift[2](4))@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(4))
     }
 
@@ -506,7 +503,7 @@ class ElabTest extends FunSuite:
       "(let choose[a, b, c: b <= a, c <= a] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[(((1" +
       " | (1 | case(((a | b) | c), 1, case(b, 2, 1)))) | (1 | case(((a | b) | c), 1, case(c, 2, 1)))) | a)] Int" +
       " @ ((a | b) | c) = if@a p then lift[((a | b) | c)](x) else lift[((a | b) | c)](y) in fun(unit: Unit): " +
-      "Int @ ((2 | 2) | 1) => choose[2, 2, 1] (lift[2](false))@1 (lift[2](3))@1 4@1) (())@1")
+      "Int @ 2 => choose[2, 2, 1] (lift[2](false))@1 (lift[2](3))@1 4@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(4))
     }
 
@@ -518,7 +515,7 @@ class ElabTest extends FunSuite:
       "(let choose[a, b, c: b <= a, c <= a] (p: Bool @ a) (x: Int @ b) (y: Int @ c): Int @ b -> Int @ c ->[(((1" +
       " | (1 | case(((a | b) | c), 1, case(b, 2, 1)))) | (1 | case(((a | b) | c), 1, case(c, 2, 1)))) | a)] Int" +
       " @ ((a | b) | c) = if@a p then lift[((a | b) | c)](x) else lift[((a | b) | c)](y) in fun(unit: Unit): " +
-      "Int @ ((2 | 2) | 2) => choose[2, 2, 2] (lift[2](false))@1 (lift[2](3))@1 (lift[2](4))@1) (())@1")
+      "Int @ 2 => choose[2, 2, 2] (lift[2](false))@1 (lift[2](3))@1 (lift[2](4))@1) (())@1")
       assertEquals(run(s"run($src)"), Value.VNum(4))
     }
 
@@ -528,7 +525,7 @@ class ElabTest extends FunSuite:
       """
       val checked = infer(parse(s"(($str): Code[Int])"))
       assertEquals(pretty.expr(checked),
-        "if@2 lift[2](true) then lift[((2 | 1) | 1)](1) else lift[((2 | 1) | 1)](2)")
+        "if@2 lift[2](true) then lift[2](1) else lift[2](2)")
     }
   }
 
@@ -536,15 +533,15 @@ class ElabTest extends FunSuite:
     {
       val src = "sfun[a, b: a <= b, b <= a] => fun(x: Int@a) => fun(y: Int@b) => x + y"
       assertEquals(pretty.expr(infer(parse(src))),
-        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b ->[((1 | 1) | (a | b))] Int @ a => fun(y:" +
-        " Int @ b): Int @ a => x +@(a | b) y")
+        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b ->[(1 | (a | b))] Int @ a => fun(y: Int @" +
+        " b): Int @ a => x +@(a | b) y")
       assertEquals(run(s"($src)[1, 1](2)(3)"), Value.VNum(5))
     }
     {
       val src = "sfun[a, b: a <= b, b <= a] => fun(x: Int@a) => fun(y: Int@b) => y + x"
       assertEquals(pretty.expr(infer(parse(src))),
-        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b ->[((1 | 1) | (b | a))] Int @ b => fun(y:" +
-        " Int @ b): Int @ b => y +@(b | a) x")
+        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b ->[(1 | (b | a))] Int @ b => fun(y: Int @" +
+        " b): Int @ b => y +@(b | a) x")
       assertEquals(run(s"run(($src)[2, 2](2)(3))"), Value.VNum(5))
     }
   }
@@ -553,23 +550,23 @@ class ElabTest extends FunSuite:
     {
       val src = "sfun[a, b: a <= b, b <= a] => fun(x: Int@a) => fun(y: Int@b) => if true then x else y"
       assertEquals(pretty.expr(infer(parse(src))),
-        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b ->[(((1 | 1) | 1) | 1)] Int @ a => fun(y:" +
-        " Int @ b): Int @ a => if@1 true then x else y")
+        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b -> Int @ a => fun(y: Int @ b): Int @ a =>" +
+        " if@1 true then x else y")
       assertEquals(run(s"($src)[1, 1](2)(3)"), Value.VNum(2))
     }
     {
       val src = "sfun[a, b: a <= b, b <= a] => fun(x: Int@a) => fun(y: Int@b) => if false then y else x"
       assertEquals(pretty.expr(infer(parse(src))),
-        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b ->[(((1 | 1) | 1) | 1)] Int @ b => fun(y:" +
-        " Int @ b): Int @ b => if@1 false then y else x")
+        "sfun[a] => sfun[b: a <= b, b <= a] => fun(x: Int @ a): Int @ b -> Int @ b => fun(y: Int @ b): Int @ b =>" +
+        " if@1 false then y else x")
       assertEquals(run(s"run(($src)[2, 2](2)(3))"), Value.VNum(2))
     }
     {
       val src = "sfun[a, b: a <= b, b <= a] => fun(p: Bool@a) => " +
         "fun(x: Int@b) => if p then x else x"
       assertEquals(pretty.expr(infer(parse(src))),
-        "sfun[a] => sfun[b: a <= b, b <= a] => fun(p: Bool @ a): Int @ b ->[(((1 | 1) | 1) | a)] Int @ b => " +
-        "fun(x: Int @ b): Int @ b => if@a p then x else x")
+        "sfun[a] => sfun[b: a <= b, b <= a] => fun(p: Bool @ a): Int @ b ->[(1 | a)] Int @ b => fun(x: Int @ b): " +
+        "Int @ b => if@a p then x else x")
     }
   }
 
@@ -721,15 +718,13 @@ class ElabTest extends FunSuite:
     val expected = TFun(TInt, TInt.at(Dyn), Dyn)
     val typed = infer(parse(s"(($src): Int ->[2] Code[Int])"))
     assertEquals(pretty.expr(typed),
-      "let $s0 (x: Int @ 2): Int = 7 in lift[1](fun($s1: Int): Int @ 2 => lift[2]($s0 (lift[2]($s1))@1) |> " +
-      "(((((1 | case(2, 1, case(1, 2, 1))) | 1) | 1) | case(2, 1, case(1, 2, 1))) | 2))")
+      "let $s0 (x: Int @ 2): Int = 7 in lift[1](fun($s1: Int): Int @ 2 => lift[2]($s0 (lift[2]($s1))@1) |> 2)")
     assert(Nil.implyTyEq(typed.ty.get, expected.at()))
     assertEquals(instar.interp.eval(ERun(EApp(typed, ENum(3), Some(Sta))))._1,
       Value.VNum(7))
     val lifted = infer(parse(s"(($src): Code[Int -> Int])"))
     assertEquals(pretty.expr(lifted),
-      "let $s0 (x: Int @ 2): Int = 7 in fun@2($s1: Int @ 2): Int @ 2 => lift[2]($s0 $s1@1) |> ((((1 | 1) | 1) |" +
-      " case(2, 1, case(1, 2, 1))) | 1)")
+      "let $s0 (x: Int @ 2): Int = 7 in fun@2($s1: Int @ 2): Int @ 2 => lift[2]($s0 $s1@1) |> 2")
     assertEquals(instar.interp.eval(ERun(EApp(lifted, ELift(ENum(3), Dyn), Some(Dyn))))._1,
       Value.VNum(7))
   }
@@ -741,14 +736,12 @@ class ElabTest extends FunSuite:
     """
     assertEquals(pretty.expr(infer(parse(src))),
       "let f = let $s0 (x: Int @ 2): Int = 1 in lift[1](fun($s1: Int): Int @ 2 => lift[2]($s0 (lift[2]($s1))@1)" +
-      " |> (((((1 | case(2, 1, case(1, 2, 1))) | 1) | 1) | case(2, 1, case(1, 2, 1))) | 2)) in let g = let $s2 " +
-      "(y: Int @ 2): Int = 2 in lift[1](fun($s3: Int): Int @ 2 => lift[2]($s2 (lift[2]($s3))@1) |> (((((1 | " +
-      "case(2, 1, case(1, 2, 1))) | 1) | 1) | case(2, 1, case(1, 2, 1))) | 2)) in g")
+      " |> 2) in let g = let $s2 (y: Int @ 2): Int = 2 in lift[1](fun($s3: Int): Int @ 2 => lift[2]($s2 " +
+      "(lift[2]($s3))@1) |> 2) in g")
     assertEquals(pretty.expr(infer(parse(src))),
       "let f = let $s0 (x: Int @ 2): Int = 1 in lift[1](fun($s1: Int): Int @ 2 => lift[2]($s0 (lift[2]($s1))@1)" +
-      " |> (((((1 | case(2, 1, case(1, 2, 1))) | 1) | 1) | case(2, 1, case(1, 2, 1))) | 2)) in let g = let $s2 " +
-      "(y: Int @ 2): Int = 2 in lift[1](fun($s3: Int): Int @ 2 => lift[2]($s2 (lift[2]($s3))@1) |> (((((1 | " +
-      "case(2, 1, case(1, 2, 1))) | 1) | 1) | case(2, 1, case(1, 2, 1))) | 2)) in g")
+      " |> 2) in let g = let $s2 (y: Int @ 2): Int = 2 in lift[1](fun($s3: Int): Int @ 2 => lift[2]($s2 " +
+      "(lift[2]($s3))@1) |> 2) in g")
   }
 
   test("function coercions evaluate their source once before calls") {
@@ -760,10 +753,10 @@ class ElabTest extends FunSuite:
       (fun(first: Code[Int]) => (fun(second: Code[Int]) => lift[2](!cell))(f(2)))(f(1))
     """
     assertEquals(pretty.expr(infer(parse(src))),
-      "let cell = ref@1(0) in let make (u: Unit): Int -> Int = let ignored = cell :=@1 !@1 cell +@(1 | 1) 1 in " +
-      "fun(x: Int): Int => x in let f = let $s0 = make (())@1 in lift[1](fun($s1: Int): Int @ 2 => lift[2]($s0 " +
-      "$s1@1) |> ((((1 | 1) | 1) | case(2, 1, case(1, 2, 1))) | 2)) in (fun(first: Int @ 2): Int @ 2 => " +
-      "(fun(second: Int @ 2): Int @ 2 => lift[2](!@1 cell)) (f 2@1)@1) (f 1@1)@1")
+      "let cell = ref@1(0) in let make (u: Unit): Int -> Int = let ignored = cell :=@1 !@1 cell +@1 1 in fun(x:" +
+      " Int): Int => x in let f = let $s0 = make (())@1 in lift[1](fun($s1: Int): Int @ 2 => lift[2]($s0 $s1@1)" +
+      " |> 2) in (fun(first: Int @ 2): Int @ 2 => (fun(second: Int @ 2): Int @ 2 => lift[2](!@1 cell)) (f " +
+      "2@1)@1) (f 1@1)@1")
     assertEquals(run(s"run($src)"), Value.VNum(1))
   }
 
@@ -811,15 +804,15 @@ class ElabTest extends FunSuite:
   test("fix selects its stage from the declared recursive type") {
     val static = "fix f: Int -> Int. fun(n: Int) => if n <= 0 then 1 else f(n - 1)"
     assertEquals(pretty.expr(infer(parse(static))),
-      "letrec@1 f (n: Int): Int = (if@1 n <=@(1 | 1) 0 then 1 else f (n -@(1 | 1) 1)@1) |> 1 in f")
+      "letrec@1 f (n: Int): Int = (if@1 n <=@1 0 then 1 else f (n -@1 1)@1) |> 1 in f")
     assertEquals(run(s"($static)(3)"), Value.VNum(1))
     assertEquals(pretty.expr(infer(parse("fix@1 f: Int -> Int. fun(n: Int) => n"))),
       "letrec@1 f (n: Int): Int = n |> 1 in f")
     val dynamic = "fix f: Code[Int -> Int]. fun@2(n: Code[Int]) => if n <= 0 then 1 else f(n - 1)"
     assertEquals(pretty.expr(infer(parse(dynamic))),
-      "letrec@2 f = fun@2($s2: Int @ 2): Int @ 2 => (let $s0 (n: Int @ 2): Int @ ((2 | 1) | 2) = if@2 n <=@(2 |" +
-      " 1) lift[(2 | 1)](0) then lift[((2 | 1) | 2)](1) else f (n -@(2 | 1) lift[(2 | 1)](1))@2 in fun@2($s1: " +
-      "Int @ 2): Int @ ((2 | 1) | 2) => $s0 $s1@1) $s2@2 |> ((((1 | 2) | 1) | 2) | 1) in f")
+      "letrec@2 f = fun@2($s2: Int @ 2): Int @ 2 => (let $s0 (n: Int @ 2): Int @ 2 = if@2 n <=@2 lift[2](0) " +
+      "then lift[2](1) else f (n -@2 lift[2](1))@2 in fun@2($s1: Int @ 2): Int @ 2 => $s0 $s1@1) $s2@2 |> 2 in " +
+      "f")
     assertEquals(run(s"run(($dynamic)(3))"), Value.VNum(1))
   }
 
@@ -838,8 +831,8 @@ class ElabTest extends FunSuite:
     val src = "fix f: forall[s]. Int ->[s] Int@s. sfun[s] => fun(n: Int) => " +
       "if n <= 0 then lift[s](1) else f[s](n - 1)"
     assertEquals(pretty.expr(infer(parse(src))),
-      "letrec@1 f[$s1] = (sfun[s] => fun(n: Int): Int @ s => if@1 n <=@(1 | 1) 0 then lift[s](1) else f[s] (n " +
-      "-@(1 | 1) 1)@1)[$s1] |> 1 in f")
+      "letrec@1 f[$s1] = (sfun[s] => fun(n: Int): Int @ s => if@1 n <=@1 0 then lift[s](1) else f[s] (n -@1 " +
+      "1)@1)[$s1] |> 1 in f")
     assertEquals(run(s"($src)[1](3)"), Value.VNum(1))
     assertEquals(run(s"run(($src)[2](3))"), Value.VNum(1))
   }
@@ -854,10 +847,9 @@ class ElabTest extends FunSuite:
         before * 100 + !cell
       """
       assertEquals(pretty.expr(infer(parse(src))),
-        "let cell = ref@1(0) in let f = letrec@1 f ($s0: Int): Int = (let ignored = cell :=@1 !@1 cell +@(1 | 1) " +
-        "1 in fun(n: Int): Int => n) $s0@1 |> ((((((1 | (((1 | 1) | 1) | (1 | 1))) | 1) | 1) | 1) | 1) | 1) in f " +
-        "in let before = !@1 cell in let first = f 1@1 in let second = f 2@1 in before *@(1 | 1) 100 +@(1 | 1) " +
-        "!@1 cell")
+        "let cell = ref@1(0) in let f = letrec@1 f ($s0: Int): Int = (let ignored = cell :=@1 !@1 cell +@1 1 in " +
+        "fun(n: Int): Int => n) $s0@1 |> 1 in f in let before = !@1 cell in let first = f 1@1 in let second = f " +
+        "2@1 in before *@1 100 +@1 !@1 cell")
       assertEquals(run(src), Value.VNum(2))
     }
     {
@@ -870,10 +862,9 @@ class ElabTest extends FunSuite:
       """
       assertEquals(pretty.expr(infer(parse(src))),
         "let cell = ref@2(lift[2](0)) in letrec@2 f = fun@2($s2: Int @ 2): Int @ 2 => (let ignored = cell :=@2 " +
-        "!@2 cell +@(2 | 1) lift[(2 | 1)](1) in let $s0 (n: Int @ 2): Int @ 2 = n in fun@2($s1: Int @ 2): Int @ 2" +
-        " => $s0 $s1@1) $s2@2 |> ((((((1 | (((1 | 2) | (1 | case((2 | 1), 1, case(1, 2, 1)))) | (2 | 1))) | 2) | " +
-        "(1 | 2)) | 1) | 2) | 1) in let before = !@2 cell in let first = f (lift[2](1))@2 in let second = f " +
-        "(lift[2](2))@2 in before *@(2 | 1) lift[(2 | 1)](100) +@(2 | 2) !@2 cell")
+        "!@2 cell +@2 lift[2](1) in let $s0 (n: Int @ 2): Int @ 2 = n in fun@2($s1: Int @ 2): Int @ 2 => $s0 " +
+        "$s1@1) $s2@2 |> 2 in let before = !@2 cell in let first = f (lift[2](1))@2 in let second = f " +
+        "(lift[2](2))@2 in before *@2 lift[2](100) +@2 !@2 cell")
       assertEquals(run(s"run($src)"), Value.VNum(2))
     }
   }
@@ -896,9 +887,8 @@ class ElabTest extends FunSuite:
         before * 100 + !cell
       """
       assertEquals(pretty.expr(infer(parse(src))),
-        "let cell = ref@1(0) in letrec@1 f[$s1] = (let ignored = cell :=@1 !@1 cell +@(1 | 1) 1 in sfun[s] => " +
-        "1)[$s1] |> 1 in let before = !@1 cell in let first = f[1] in let second = f[2] in before *@(1 | 1) 100 " +
-        "+@(1 | 1) !@1 cell")
+        "let cell = ref@1(0) in letrec@1 f[$s1] = (let ignored = cell :=@1 !@1 cell +@1 1 in sfun[s] => 1)[$s1] " +
+        "|> 1 in let before = !@1 cell in let first = f[1] in let second = f[2] in before *@1 100 +@1 !@1 cell")
       assertEquals(run(src), Value.VNum(2))
     }
   }
@@ -1170,13 +1160,11 @@ class CoreTypingTest extends FunSuite:
   test("elaborated function coercions pass core typing unchanged") {
     val elaborated = Elaboration.infer(parse("(fun(x: Int@2) => x : Int ->[2] Int@2)"))
     assertEquals(pretty.expr(elaborated),
-      "let $s0 (x: Int @ 2): Int @ 2 = x in lift[1](fun($s1: Int): Int @ 2 => $s0 (lift[2]($s1))@1 |> ((((1 | " +
-      "case(2, 1, case(1, 2, 1))) | 1) | 1) | 2))")
+      "let $s0 (x: Int @ 2): Int @ 2 = x in lift[1](fun($s1: Int): Int @ 2 => $s0 (lift[2]($s1))@1 |> 2)")
     val typed = core.infer(elaborated)
     assert(Nil.implyTyEq(typed.ty.get, TFun(TInt, TInt.at(Dyn), Dyn)))
     assertEquals(pretty.expr(typed),
-      "let $s0 (x: Int @ 2): Int @ 2 = x in lift[1](fun($s1: Int): Int @ 2 => $s0 (lift[2]($s1))@1 |> ((((1 | " +
-      "case(2, 1, case(1, 2, 1))) | 1) | 1) | 2))")
+      "let $s0 (x: Int @ 2): Int @ 2 = x in lift[1](fun($s1: Int): Int @ 2 => $s0 (lift[2]($s1))@1 |> 2)")
   }
 
 class CoreTypingNegativeTest extends FunSuite:
