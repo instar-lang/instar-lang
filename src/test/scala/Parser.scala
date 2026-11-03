@@ -111,7 +111,7 @@ class ParserTest extends FunSuite:
   test("constrained function headers preserve constraints in their annotations") {
     val header = "let f[a, b: a <= b](x: Int@a): Int@b = lift[b](x) in f[1, 2](3)"
     val expanded = """
-      let f: forall[a]. forall[b: a <= b]. Int@a -> Int@b =
+      let f =
         sfun[a] => sfun[b: a <= b] => fun(x: Int@a): Int@b => lift[b](x)
       in f[1, 2](3)
     """
@@ -130,7 +130,33 @@ class ParserTest extends FunSuite:
     assertEquals(parse("x +@(a | b) y"), EBinOp("+", EVar("x"), EVar("y"), Some(SVar("a") | SVar("b"))))
     assertEquals(parse("sfun[a, b, c: a | b <= c] => 1"),
       ESLam("a", ESLam("b", ESLam("c", ENum(1), List(StageConstraint(SVar("a") | SVar("b"), SVar("c")))))))
+  }
+
+  test("effect casts do not conflict with stage joins") {
+    assertEquals(parse("1 + 2 |> 1 | 2"),
+      EEffCast(EBinOp("+", ENum(1), ENum(2), None), Sta | Dyn))
+    assertEquals(parse("1 |> 1 |> 2"), EEffCast(EEffCast(ENum(1), Sta), Dyn))
     assertEquals(parse("lift[case(s, 1, 2)](1)"), ELift(ENum(1), SCase(SVar("s"), Sta, Dyn)))
+  }
+
+  test("parses latent effects in complete types") {
+    assertEquals(parseType("Int ->[2] Int@2"), TFun(TInt, TInt.at(Dyn), Dyn))
+    assertEquals(parseType("forall[s] =>[s] Int@s"), TForallSt("s", TInt.at(SVar("s")), Nil, SVar("s")))
+    assertEquals(parseType("Int ->[case(s, 1, 2)] Int"), TFun(TInt, TInt, SCase(SVar("s"), Sta, Dyn)))
+    assertEquals(parseType("Code[Int ->[2] Int]"), TFun(TInt.at(Dyn), TInt.at(Dyn)).at(Dyn))
+  }
+
+  test("grouped forall binders attach the effect to the innermost abstraction") {
+    assertEquals(parseType("forall[a, b] =>[b] Int@b"),
+      TForallSt("a", TForallSt("b", TInt.at(SVar("b")), Nil, SVar("b"))))
+  }
+
+  test("pretty printing round-trips effect casts and compound stages") {
+    val expr = parse("sfun[s] => fun(x: Int@s) => lift[(s | 2)](x) |> case(s, 1, 2)")
+    assertEquals(parse(instar.pretty.expr(expr)), expr)
+    val ty = parseType("forall[s] =>[case(s, 1, 2)] Int@s ->[s | 2] Int@(s | 2)")
+    val source = EAscribe(ENum(1), ty)
+    assertEquals(parse(instar.pretty.expr(source)), source)
   }
 
   test("rejects unsupported stage join syntax") {
@@ -175,6 +201,11 @@ class ParserTest extends FunSuite:
         |""".stripMargin
 
     assertEquals(parse(newSyntax), parse(oldSyntax))
+  }
+
+  test("ordinary function headers annotate the result without fixing a latent effect") {
+    assertEquals(parse("let f(x: Int): Int@2 = x in f(1)"),
+      parse("let f = fun(x: Int): Int@2 => x in f(1)"))
   }
 
   test("parses refs with explicit stages") {

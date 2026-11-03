@@ -33,15 +33,16 @@ private[typing] object StageConstraints:
       if !constraints.implyStEq(left.stage, right.stage) then false
       else (left.base, right.base) match
         case (TUnit, TUnit) | (TInt, TInt) | (TBool, TBool) => true
-        case (TFun(la, lb), TFun(ra, rb)) =>
-          constraints.implyTyEq(la, ra) && constraints.implyTyEq(lb, rb)
+        case (TFun(la, lb, le), TFun(ra, rb, re)) =>
+          constraints.implyTyEq(la, ra) && constraints.implyTyEq(lb, rb) && constraints.implyStEq(le, re)
         case (TRef(a), TRef(b)) => constraints.implyTyEq(a, b)
-        case (TForallSt(x, a, ac), TForallSt(y, b, bc)) =>
+        case (TForallSt(x, a, ac, ae), TForallSt(y, b, bc, be)) =>
           val z = Counter.fresh
           val ac1 = Subst.constraints(ac, x, SVar(z))
           val bc1 = Subst.constraints(bc, y, SVar(z))
           constraints.implyCsEq(ac1, bc1) &&
-            (constraints ++ ac1).implyTyEq(Subst.ty(a, x, SVar(z)), Subst.ty(b, y, SVar(z)))
+            (constraints ++ ac1).implyTyEq(Subst.ty(a, x, SVar(z)), Subst.ty(b, y, SVar(z))) &&
+            (constraints ++ ac1).implyStEq(Stage.substitute(ae, x, SVar(z)), Stage.substitute(be, y, SVar(z)))
         case _ => false
 
   private def allAssignments(variables: List[String]): Iterator[Assignment] = variables match

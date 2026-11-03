@@ -131,6 +131,9 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
     case EDeref(e, st) =>
       maybeParens(s"!${renderStageValue(st)} ${renderExpr(e, 6)}", parentPrec > 6)
 
+    case EEffCast(e, effect) =>
+      maybeParens(s"${renderExpr(e, 2)} |> ${renderStage(effect)}", parentPrec > 0)
+
     case EAscribe(e, asTy) =>
       maybeParens(s"${renderExpr(e, 0)} : ${renderType(asTy, 0)}", true)
 
@@ -149,10 +152,12 @@ private def renderType(ty: Type, parentPrec: Int): String = ty match
   case TInt => "Int"
   case TBool => "Bool"
   case TRef(inner) => s"Ref[${renderType(inner, 0)}]"
-  case TForallSt(s, body, constraints) =>
-    maybeParens(s"forall[$s${renderConstraints(constraints)}]. ${renderType(body, 0)}", parentPrec > 0)
-  case TFun(arg, ret) =>
-    maybeParens(s"${renderType(arg, 1)} -> ${renderType(ret, 0)}", parentPrec > 0)
+  case TForallSt(s, body, constraints, effect) =>
+    val arrow = if effect == Sta then "." else s" =>[${renderStage(effect)}]"
+    maybeParens(s"forall[$s${renderConstraints(constraints)}]$arrow ${renderType(body, 0)}", parentPrec > 0)
+  case TFun(arg, ret, effect) =>
+    val arrow = if effect == Sta then "->" else s"->[${renderStage(effect)}]"
+    maybeParens(s"${renderType(arg, 1)} $arrow ${renderType(ret, 0)}", parentPrec > 0)
   case TAt(base, stage) =>
     maybeParens(s"${renderType(base, 2)} @ ${renderStage(stage)}", parentPrec > 1)
 

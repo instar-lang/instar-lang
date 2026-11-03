@@ -36,8 +36,7 @@ private object WF:
     st match
       case SNum(1) | SNum(2) => ()
       case SNum(n) => fail(s"unsupported stage $n; expected 1 or 2")
-      case SVar(s) =>
-        assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
+      case SVar(s) => assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
       case SJoin(a, b) =>
         check(ctx, a)
         check(ctx, b)
@@ -47,26 +46,32 @@ private object WF:
         check(ctx, b)
 
   def check(ctx: Ctx, ty: Type): Unit =
-    val base = ty.base
     val st = ty.stage
     check(ctx, st)
-    base match
+    ty.base match
       case TInt | TBool | TUnit => ()
-      case TFun(arg, ret) =>
+      case TFun(arg, ret, effect) =>
         check(ctx, arg)
         check(ctx, ret)
+        check(ctx, effect)
         ctx.constraints.assertStLeq(st, arg.stage)
         ctx.constraints.assertStLeq(st, ret.stage)
+        assert((StageConstraint(Dyn, st) :: ctx.constraints).implyStEq(effect, Sta),
+          "a stage-2 function must have a pure latent effect")
       case TRef(inner) =>
         check(ctx, inner)
         ctx.constraints.assertStLeq(st, inner.stage)
-      case TForallSt(s, body, constraints) =>
+      case TForallSt(s, body, constraints, effect) =>
         assert(ctx.constraints.implyStEq(st, Sta), "stage abstractions must be at stage 1")
         if ctx.containsStVar(s) then
           val fresh = Counter.fresh
-          check(ctx + (fresh, Subst.constraints(constraints, s, SVar(fresh))),
-            Subst.ty(body, s, SVar(fresh)))
-        else check(ctx + (s, constraints), body)
+          val inner = ctx + (fresh, Subst.constraints(constraints, s, SVar(fresh)))
+          check(inner, Subst.ty(body, s, SVar(fresh)))
+          check(inner, Stage.substitute(effect, s, SVar(fresh)))
+        else
+          val inner = ctx + (s, constraints)
+          check(inner, body)
+          check(inner, effect)
       case TAt(_, _) => fail("unexpected outer type annotation")
 
 trait Typing:
@@ -83,55 +88,38 @@ class CoreTyping extends Typing:
 
   protected final def infer(ctx: Ctx, expr: Expr): Expr =
     expr match
-      case EUnit => EUnit.withType(TUnit)
+      case EUnit => EUnit.withType(TUnit, Sta)
       case ENum(i) => ENum(i).withType(TInt)
       case EBool(b) => EBool(b).withType(TBool)
-
       case EVar(x) =>
         assert(ctx.containsVar(x), s"unbound variable `$x`")
         EVar(x).withType(ctx(x))
-
       case e: ELam => inferLam(ctx, e)
-      case lam: ESLam if ctx.containsStVar(lam.s) =>
-        infer(ctx, freshenStageBinder(lam))
+      case lam: ESLam if ctx.containsStVar(lam.s) => infer(ctx, freshenStageBinder(lam))
       case ESLam(s, body, constraints) =>
-        val typedBody = infer(ctx + (s, constraints), body)
-        val bodyTy = typedBody.ty.get
-        ESLam(s, typedBody, constraints).withType(TForallSt(s, bodyTy, constraints))
-
+        val typed = infer(ctx + (s, constraints), body)
+        ESLam(s, typed, constraints).withType(TForallSt(s, typed.ty.get, constraints, typed.effect))
       case ESApp(e, st) =>
         WF.check(ctx, st)
-        val typedFun = infer(ctx, e)
-        typedFun.ty.get.base match
-          case TForallSt(s, bodyTy, constraints) =>
-            Subst.constraints(constraints, s, st).foreach { c =>
-              ctx.constraints.assertStLeq(c.lower, c.upper)
-            }
-            ESApp(typedFun, st).withType(Subst.ty(bodyTy, s, st))
-          case other => fail(s"expected a stage-polymorphic type, found $other")
-
-      case e: EApp => inferApp(ctx, e)
-      case ELift(e, st) =>
         val typed = infer(ctx, e)
-        val ty = typed.ty.get
-        WF.check(ctx, st)
-        ctx.constraints.assertStLeq(ty.stage, st)
-        ty.base match
-          case TInt | TBool | TUnit => ()
-          case TFun(arg, ret) =>
-            ctx.constraints.assertStLeq(st, arg.stage)
-            ctx.constraints.assertStLeq(st, ret.stage)
-          case _ if ctx.constraints.implyStEq(ty.stage, st) => ()
-          case _ => fail(s"cannot lift type $ty to $st")
-        ELift(typed, st).withType(ty.at(st))
-
+        ctx.constraints.assertStLeq(typed.ty.get.stage, Sta)
+        typed.ty.get.base match
+          case TForallSt(s, body, constraints, effect) =>
+            Subst.constraints(constraints, s, st).foreach(c => ctx.constraints.assertStLeq(c.lower, c.upper))
+            ESApp(typed, st).withType(Subst.ty(body, s, st),
+              typed.effect | Stage.substitute(effect, s, st))
+          case other => fail(s"expected a stage-polymorphic type, found $other")
+      case e: EApp => inferApp(ctx, e)
+      case e: ELift => inferLift(ctx, e)
       case ERun(e) =>
-        val typedInner = infer(Ctx(), e)
-        val innerTy = typedInner.ty.get
-        if Nil.implyStEq(innerTy.stage, Dyn) then
-          ERun(typedInner).withType(innerTy.erase)
-        else fail(s"`run` expects `Code[T]`, found $innerTy")
-
+        val typed = infer(Ctx(), e)
+        assert(Nil.implyStEq(typed.ty.get.stage, Dyn), s"`run` expects stage 2, found ${typed.ty.get}")
+        ERun(typed).withType(typed.ty.get.erase)
+      case EEffCast(e, to) =>
+        WF.check(ctx, to)
+        val typed = infer(ctx, e)
+        ctx.constraints.assertStLeq(typed.effect, to)
+        EEffCast(typed, to).withType(typed.ty.get, to)
       case e: ELet => inferLet(ctx, e)
       case e: ELetRec => inferLetRec(ctx, e)
       case e: ECond => inferCond(ctx, e)
@@ -141,52 +129,42 @@ class CoreTyping extends Typing:
       case e: EDeref => inferDeref(ctx, e)
       case e: EAssign => inferAssign(ctx, e)
       case e: EAscribe => inferAscribe(ctx, e)
-      case ELoc(_) =>
-        fail("cannot type-check internal location expressions")
-
-      // Experimental:
-
+      case ELoc(_) => fail("cannot type-check internal location expressions")
       case EIsApp(e) =>
-        val typedE = infer(ctx, e)
-        typedE.ty.getOrElse(fail("internal error: isApp argument is missing a type")) match
-          case ty if ctx.constraints.implyStEq(ty.stage, Dyn) => EIsApp(typedE).withType(TBool)
-          case other => fail(s"`isApp` expects `Code[T]`, found $other")
-
+        val typed = infer(ctx, e)
+        assert(ctx.constraints.implyStEq(typed.ty.get.stage, Dyn), "`isApp` expects stage 2")
+        EIsApp(typed).withType(TBool, typed.effect)
       case ECBNApp(e1, e2) =>
         val typedFun = infer(ctx, e1)
         typedFun.ty.get.base match
-          case TFun(argTy, resTy) =>
-            val typedArg = check(ctx, e2, argTy)
-            ECBNApp(typedFun, typedArg).withType(resTy)
-          case other =>
-            fail(s"expected a function, found $other")
-
-      case EBNLam(x, Some(argTy), body, retTy) =>
-        WF.check(ctx, argTy)
-        val tyBody =
-          retTy match
-            case Some(t) =>
-              WF.check(ctx, t)
-              check(ctx + (x -> argTy), body, t)
-            case None => infer(ctx + (x -> argTy), body)
-        EBNLam(x, Some(argTy), tyBody, tyBody.ty).withType(TFun(argTy, tyBody.ty.get))
-
-      case EBNLam(_, None, _, _) =>
-        fail("cannot infer a by-name lambda without a parameter type")
+          case TFun(arg, ret, effect) =>
+            val typedArg = check(ctx, e2, arg)
+            ECBNApp(typedFun, typedArg).withType(ret,
+              typedFun.effect | typedArg.effect | effect | typedFun.ty.get.stage)
+          case other => fail(s"expected a function, found $other")
+      case EBNLam(x, Some(arg), body, retTy) =>
+        WF.check(ctx, arg)
+        val typed = retTy match
+          case Some(ret) =>
+            WF.check(ctx, ret)
+            check(ctx + (x -> arg), body, ret)
+          case None => infer(ctx + (x -> arg), body)
+        EBNLam(x, Some(arg), typed, typed.ty).withType(TFun(arg, typed.ty.get, typed.effect))
+      case EBNLam(_, None, _, _) => fail("cannot infer a by-name lambda without a parameter type")
 
   protected def check(ctx: Ctx, expr: Expr, expected: Type): Expr =
     expr match
       case ELam(x, None, body, retTy) =>
         expected.base match
-          case TFun(arg, ret) =>
+          case TFun(arg, ret, effect) =>
             assert(ctx.constraints.implyStEq(expected.stage, Sta), "a core lambda must be at stage 1")
             retTy.foreach { ty =>
               WF.check(ctx, ty)
-              assert(ctx.constraints.implyTyEq(ty, ret),
-                s"lambda result annotation $ty does not match expected type $ret")
+              assert(ctx.constraints.implyTyEq(ty, ret), s"lambda result annotation $ty does not match $ret")
             }
-            val typedBody = check(ctx + (x -> arg), body, ret)
-            ELam(x, None, typedBody, retTy).withType(expected)
+            val typed = check(ctx + (x -> arg), body, ret)
+            assert(ctx.constraints.implyStEq(typed.effect, effect), "lambda body effect does not match its type")
+            ELam(x, None, typed, retTy).withType(expected)
           case _ => fail(s"expected a function type for a core lambda, found $expected")
       case _ =>
         val typed = infer(ctx, expr)
@@ -198,12 +176,12 @@ class CoreTyping extends Typing:
     expr match
       case ELam(x, Some(arg), body, retTy) =>
         WF.check(ctx, arg)
-        val typedBody = retTy match
+        val typed = retTy match
           case Some(ret) =>
             WF.check(ctx, ret)
             check(ctx + (x -> arg), body, ret)
           case None => infer(ctx + (x -> arg), body)
-        ELam(x, Some(arg), typedBody, retTy).withType(TFun(arg, typedBody.ty.get))
+        ELam(x, Some(arg), typed, retTy).withType(TFun(arg, typed.ty.get, typed.effect))
       case ELam(_, None, _, _) =>
         val expected = expr.ty.getOrElse(fail("cannot infer a core lambda without a parameter type"))
         WF.check(ctx, expected)
@@ -217,88 +195,106 @@ class CoreTyping extends Typing:
     assert(ctx.constraints.implyStEq(funTy.stage, st),
       s"function stage ${funTy.stage} does not match application stage $st")
     funTy.base match
-      case TFun(arg, ret) =>
-        EApp(typedFun, check(ctx, expr.e2, arg), Some(st)).withType(ret)
+      case TFun(arg, ret, effect) =>
+        val typedArg = check(ctx, expr.e2, arg)
+        EApp(typedFun, typedArg, Some(st)).withType(ret, typedFun.effect | typedArg.effect | effect | st)
       case _ => fail(s"expected a function, found $funTy")
 
+  protected def inferLift(ctx: Ctx, expr: ELift): Expr =
+    val typed = infer(ctx, expr.t)
+    val ty = typed.ty.get
+    val st = expr.to
+    WF.check(ctx, st)
+    ctx.constraints.assertStLeq(ty.stage, st)
+    val target = ty.base match
+      case TInt | TBool | TUnit => ty.at(st)
+      case TFun(arg, ret, effect) =>
+        ctx.constraints.assertStLeq(st, arg.stage)
+        ctx.constraints.assertStLeq(st, ret.stage)
+        TFun(arg, ret, scase(st, effect, scase(ty.stage, Sta, effect))).at(st)
+      case _ => fail(s"cannot lift type $ty to $st")
+    ELift(typed, st).withType(target, scase(st, typed.effect, scase(ty.stage, Dyn, typed.effect)))
+
   protected def inferLet(ctx: Ctx, expr: ELet): Expr =
-    val typedRhs = infer(ctx, expr.rhs)
-    val typedBody = infer(ctx + (expr.x -> typedRhs.ty.get), expr.body)
-    ELet(expr.x, typedRhs, typedBody).withType(typedBody.ty.get)
+    val rhs = infer(ctx, expr.rhs)
+    val body = infer(ctx + (expr.x -> rhs.ty.get), expr.body)
+    ELet(expr.x, rhs, body).withType(body.ty.get, rhs.effect | body.effect)
 
   protected def inferLetRec(ctx: Ctx, expr: ELetRec): Expr =
     val st = expr.st.getOrElse(fail("core recursive bindings require an explicit stage"))
     WF.check(ctx, st)
-    val recTy = expr.rhs match
+    val recTy = expr.rhs.ty.getOrElse(expr.rhs match
       case EAscribe(_, ty) => ty
       case ELam(_, Some(arg), _, Some(ret)) => TFun(arg, ret)
-      case _ => expr.rhs.ty.getOrElse(fail(s"core recursive binding `${expr.f}` needs a type annotation"))
+      case _ => fail(s"core recursive binding `${expr.f}` needs a type annotation"))
     WF.check(ctx, recTy)
-    assert(ctx.constraints.implyStEq(recTy.stage, st),
-      s"letrec stage $st does not match recursive type $recTy")
+    assert(ctx.constraints.implyStEq(recTy.stage, st), s"letrec stage $st does not match recursive type $recTy")
     recTy.base match
       case _: TFun | _: TForallSt => ()
       case _ => fail(s"letrec requires a function or stage-polymorphic type, found $recTy")
-    val recursiveCtx = ctx + (expr.f -> recTy)
-    val typedRhs = check(recursiveCtx, expr.rhs, recTy)
-    val typedBody = infer(recursiveCtx, expr.body)
-    ELetRec(expr.f, typedRhs, typedBody, Some(st)).withType(typedBody.ty.get)
+    val recursive = ctx + (expr.f -> recTy)
+    val rhs = check(recursive, expr.rhs, recTy)
+    val body = infer(recursive, expr.body)
+    ELetRec(expr.f, rhs, body, Some(st)).withType(body.ty.get, rhs.effect | body.effect | st)
 
   protected def inferCond(ctx: Ctx, expr: ECond): Expr =
     val st = expr.st.getOrElse(fail("core conditionals require an explicit stage"))
     WF.check(ctx, st)
-    val typedCond = check(ctx, expr.e1, TBool.at(st))
-    val typedThen = infer(ctx, expr.e2)
-    val result = typedThen.ty.get
-    val typedElse = check(ctx, expr.e3, result)
-    ctx.constraints.assertStLeq(st, result.stage)
-    ECond(typedCond, typedThen, typedElse, Some(st)).withType(result)
+    val cond = check(ctx, expr.e1, TBool.at(st))
+    val thn = infer(ctx, expr.e2)
+    val els = check(ctx, expr.e3, thn.ty.get)
+    ctx.constraints.assertStLeq(st, thn.ty.get.stage)
+    ECond(cond, thn, els, Some(st)).withType(thn.ty.get,
+      scase(st, cond.effect | thn.effect | els.effect, Dyn))
 
   protected def inferBin(ctx: Ctx, expr: EBinOp): Expr =
     val st = expr.st.getOrElse(fail("core binary operations require an explicit stage"))
     WF.check(ctx, st)
     val (arg, ret) = inferBinOp(expr.op, st)
-    EBinOp(expr.op, check(ctx, expr.e1, arg), check(ctx, expr.e2, arg), Some(st)).withType(ret)
+    val left = check(ctx, expr.e1, arg)
+    val right = check(ctx, expr.e2, arg)
+    EBinOp(expr.op, left, right, Some(st)).withType(ret, left.effect | right.effect | st)
 
   protected def inferUnary(ctx: Ctx, expr: EUnaryOp): Expr =
     val st = expr.st.getOrElse(fail("core unary operations require an explicit stage"))
     WF.check(ctx, st)
     val (arg, ret) = inferUnaryOp(expr.op, st)
-    EUnaryOp(expr.op, check(ctx, expr.e, arg), Some(st)).withType(ret)
+    val typed = check(ctx, expr.e, arg)
+    EUnaryOp(expr.op, typed, Some(st)).withType(ret, typed.effect | st)
 
   protected def inferAlloc(ctx: Ctx, expr: EAlloc): Expr =
     val st = expr.st.getOrElse(fail("core allocations require an explicit stage"))
     WF.check(ctx, st)
     val typed = infer(ctx, expr.e)
     ctx.constraints.assertStLeq(st, typed.ty.get.stage)
-    EAlloc(typed, Some(st)).withType(TRef(typed.ty.get).at(st))
+    EAlloc(typed, Some(st)).withType(TRef(typed.ty.get).at(st), typed.effect | st)
 
   protected def inferDeref(ctx: Ctx, expr: EDeref): Expr =
     val st = expr.st.getOrElse(fail("core dereferences require an explicit stage"))
     WF.check(ctx, st)
     val typed = infer(ctx, expr.e)
     val ty = typed.ty.get
-    assert(ctx.constraints.implyStEq(ty.stage, st),
-      s"reference stage ${ty.stage} does not match dereference stage $st")
+    assert(ctx.constraints.implyStEq(ty.stage, st), s"reference stage ${ty.stage} does not match dereference stage $st")
     ty.base match
-      case TRef(elem) => EDeref(typed, Some(st)).withType(elem)
+      case TRef(elem) => EDeref(typed, Some(st)).withType(elem, typed.effect | st)
       case _ => fail(s"`!` expects a reference, found $ty")
 
   protected def inferAssign(ctx: Ctx, expr: EAssign): Expr =
     val st = expr.st.getOrElse(fail("core assignments require an explicit stage"))
     WF.check(ctx, st)
-    val typedLeft = infer(ctx, expr.e1)
-    val ty = typedLeft.ty.get
-    assert(ctx.constraints.implyStEq(ty.stage, st),
-      s"reference stage ${ty.stage} does not match assignment stage $st")
+    val typed = infer(ctx, expr.e1)
+    val ty = typed.ty.get
+    assert(ctx.constraints.implyStEq(ty.stage, st), s"reference stage ${ty.stage} does not match assignment stage $st")
     ty.base match
       case TRef(elem) =>
-        EAssign(typedLeft, check(ctx, expr.e2, elem), Some(st)).withType(TUnit.at(st))
+        val rhs = check(ctx, expr.e2, elem)
+        EAssign(typed, rhs, Some(st)).withType(TUnit.at(st), typed.effect | rhs.effect | st)
       case _ => fail(s"`:=` expects a reference on the left, found $ty")
 
   protected def inferAscribe(ctx: Ctx, expr: EAscribe): Expr =
     WF.check(ctx, expr.asTy)
-    EAscribe(check(ctx, expr.e, expr.asTy), expr.asTy).withType(expr.asTy)
+    val typed = check(ctx, expr.e, expr.asTy)
+    EAscribe(typed, expr.asTy).withType(expr.asTy, typed.effect)
 
 object Elaboration extends CoreTyping:
   override def infer(expr: Expr): Expr =
@@ -314,120 +310,116 @@ object Elaboration extends CoreTyping:
 
   override protected def inferLam(ctx: Ctx, expr: ELam): Expr =
     expr match
-      case ELam(x, Some(argTy), body, Some(retTy)) =>
-        WF.check(ctx, argTy)
-        WF.check(ctx, retTy)
-        val tyBody = check(ctx + (x -> argTy), body, retTy)
-        ELam(x, Some(argTy), tyBody, Some(retTy)).withType(TFun(argTy, retTy))
-
-      case ELam(x, Some(argTy), body, None) =>
-        WF.check(ctx, argTy)
-        val tyBody = infer(ctx + (x -> argTy), body)
-        ELam(x, Some(argTy), tyBody, tyBody.ty).withType(TFun(argTy, tyBody.ty.get))
-
-      case ELam(_, None, _, _) =>
-        fail("cannot infer a lambda without a parameter type")
+      case ELam(x, Some(arg), body, retTy) =>
+        WF.check(ctx, arg)
+        val typed = retTy match
+          case Some(ret) =>
+            WF.check(ctx, ret)
+            check(ctx + (x -> arg), body, ret)
+          case None => infer(ctx + (x -> arg), body)
+        ELam(x, Some(arg), typed, typed.ty).withType(TFun(arg, typed.ty.get, typed.effect))
+      case _ => fail("cannot infer a lambda without a parameter type")
 
   override protected def inferApp(ctx: Ctx, expr: EApp): Expr =
-    expr match
-      case EApp(e1, e2, None) =>
-        val typedFun = infer(ctx, e1)
-        val funTy = typedFun.ty.get
-        funTy.base match
-          case TFun(argTy, resTy) =>
-            val typedArg = check(ctx, e2, argTy)
-            EApp(typedFun, typedArg, Some(funTy.stage)).withType(resTy)
-          case _ => fail(s"expected a function, found $funTy")
-
-      case _ => super.inferApp(ctx, expr)
+    expr.st match
+      case Some(_) => super.inferApp(ctx, expr)
+      case None =>
+        val typed = infer(ctx, expr.e1)
+        typed.ty.get.base match
+          case TFun(arg, ret, effect) =>
+            val argument = check(ctx, expr.e2, arg)
+            EApp(typed, argument, Some(typed.ty.get.stage)).withType(ret,
+              typed.effect | argument.effect | effect | typed.ty.get.stage)
+          case _ => fail(s"expected a function, found ${typed.ty.get}")
 
   override protected def inferLet(ctx: Ctx, expr: ELet): Expr =
-    expr match
-      case ELet(x, rhs, body) =>
-        val typedRhs = infer(ctx, rhs)
-        val bodyCtx = ctx + (x -> typedRhs.ty.get)
-        val typedBody = infer(bodyCtx, body)
-        val resultTy = typedBody.ty.get.at(typedRhs.ty.get.stage)
-        ELet(x, typedRhs, coerce(bodyCtx, typedBody, resultTy)).withType(resultTy)
+    val rhs = infer(ctx, expr.rhs)
+    val bodyCtx = ctx + (expr.x -> rhs.ty.get)
+    val body = infer(bodyCtx, expr.body)
+    val resultTy = body.ty.get.at(rhs.ty.get.stage)
+    val converted = coerce(bodyCtx, body, resultTy)
+    ELet(expr.x, rhs, converted).withType(resultTy, rhs.effect | converted.effect)
 
   override protected def inferLetRec(ctx: Ctx, expr: ELetRec): Expr =
-    expr match
-      case ELetRec(f, EAscribe(rhs, ty), body, explicitStage) =>
+    expr.rhs match
+      case EAscribe(rhs, ty) =>
         WF.check(ctx, ty)
         val st = ty.stage
-        explicitStage.foreach { s =>
+        expr.st.foreach(s =>
           WF.check(ctx, s)
-          assert(ctx.constraints.implyStEq(s, st), s"letrec stage $s does not match recursive type $ty")
-        }
-        val recursiveCtx = ctx + (f -> ty)
-        val typedRhs = check(recursiveCtx, rhs, ty)
-        val delayed = ty.base match
-          case TFun(arg, ret) =>
+          assert(ctx.constraints.implyStEq(s, st), s"letrec stage $s does not match recursive type $ty"))
+        val recursive = ctx + (expr.f -> ty)
+        val delayed = (rhs, ty.base) match
+          case (_, TFun(arg, ret, effect)) =>
+            val typed = check(recursive, rhs, ty)
             val x = Counter.fresh
-            val call = EApp(typedRhs, EVar(x).withType(arg), Some(st)).withType(ret)
-            val lam = ELam(x, Some(arg), call, Some(ret)).withType(TFun(arg, ret))
-            ELift(lam, st).withType(ty)
-          case TForallSt(s, inner, constraints) =>
+            val call = EApp(typed, EVar(x).withType(arg), Some(st)).withType(ret, typed.effect | effect | st)
+            ctx.constraints.assertStLeq(scase(st, call.effect, Sta), effect)
+            val castEffect = call.effect | effect
+            val body = EEffCast(call, castEffect).withType(ret, castEffect)
+            val lam = ELam(x, Some(arg), body, Some(ret)).withType(TFun(arg, ret, body.effect))
+            val lifted = if ctx.constraints.implyStEq(st, Sta) then lam
+              else ELift(lam, st).withType(ty, st)
+            lifted.withType(ty)
+          case (_, TForallSt(s, inner, constraints, effect)) =>
+            val typed = check(recursive, rhs, ty)
             val fresh = Counter.fresh
             val stage = SVar(fresh)
-            val call = ESApp(typedRhs, stage).withType(Subst.ty(inner, s, stage))
-            ESLam(fresh, call, Subst.constraints(constraints, s, stage)).withType(ty)
+            val innerCtx = recursive + (fresh, Subst.constraints(constraints, s, stage))
+            val targetEffect = Stage.substitute(effect, s, stage)
+            val call = ESApp(typed, stage).withType(Subst.ty(inner, s, stage), typed.effect | targetEffect)
+            innerCtx.constraints.assertStLeq(call.effect, targetEffect)
+            val body = EEffCast(call, targetEffect).withType(call.ty.get, targetEffect)
+            ESLam(fresh, body, Subst.constraints(constraints, s, stage)).withType(ty)
           case _ => fail(s"letrec requires a function or stage-polymorphic type, found $ty")
-        val typedBody = infer(recursiveCtx, body)
-        val resultTy = typedBody.ty.get.at(st)
-        ELetRec(f, delayed, coerce(recursiveCtx, typedBody, resultTy), Some(st)).withType(resultTy)
-      case ELetRec(f, _, _, _) =>
-        fail(s"recursive `letrec` binding `$f` needs a type annotation or an annotated function header")
+        val body = infer(recursive, expr.body)
+        val resultTy = body.ty.get.at(st)
+        val converted = coerce(recursive, body, resultTy)
+        ELetRec(expr.f, delayed, converted, Some(st)).withType(resultTy, delayed.effect | converted.effect | st)
+      case _ => fail(s"recursive `letrec` binding `${expr.f}` needs a type annotation or an annotated function header")
 
   override protected def inferCond(ctx: Ctx, expr: ECond): Expr =
-    expr match
-      case ECond(cond, thn, els, stage) =>
-        val typedCond = stage match
-          case Some(st) =>
-            WF.check(ctx, st)
-            check(ctx, cond, TBool.at(st))
-          case None => infer(ctx, cond)
-        val condTy = typedCond.ty.get.base
-        val condStage = typedCond.ty.get.stage
-        assert(condTy == TBool, s"expected a Boolean condition, found ${typedCond.ty.get}")
-        val typedThen = infer(ctx, thn)
-        val typedElse = infer(ctx, els)
-        val thenTy = typedThen.ty.get
-        val elseTy = typedElse.ty.get
-        assert(ctx.constraints.implyTyEq(thenTy.at(Sta), elseTy.at(Sta)),
-          s"conditional branches have different base types: $thenTy and $elseTy")
-        val stages = List(condStage, thenTy.stage, elseTy.stage)
-        val resultStage = stages.find(candidate =>
-          stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
-          .getOrElse(fail(s"cannot infer a maximum stage for ${stages.mkString(", ")}"))
-        val resultTy = thenTy.at(resultStage)
-        ECond(typedCond, coerce(ctx, typedThen, resultTy),
-          coerce(ctx, typedElse, resultTy), Some(condStage)).withType(resultTy)
+    val cond = expr.st match
+      case Some(st) =>
+        WF.check(ctx, st)
+        check(ctx, expr.e1, TBool.at(st))
+      case None => infer(ctx, expr.e1)
+    assert(cond.ty.get.base == TBool, s"expected a Boolean condition, found ${cond.ty.get}")
+    val thn = infer(ctx, expr.e2)
+    val els = infer(ctx, expr.e3)
+    assert(ctx.constraints.implyTyEq(thn.ty.get.at(Sta), els.ty.get.at(Sta)),
+      s"conditional branches have different base types: ${thn.ty.get} and ${els.ty.get}")
+    val stages = List(cond.ty.get.stage, thn.ty.get.stage, els.ty.get.stage)
+    val stage = stages.find(candidate => stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
+      .getOrElse(fail(s"cannot infer a maximum stage for ${stages.mkString(", ")}"))
+    val resultTy = thn.ty.get.at(stage)
+    val left = coerce(ctx, thn, resultTy)
+    val right = coerce(ctx, els, resultTy)
+    ECond(cond, left, right, Some(cond.ty.get.stage)).withType(resultTy,
+      cond.effect | left.effect | right.effect | cond.ty.get.stage)
 
   override protected def inferBin(ctx: Ctx, expr: EBinOp): Expr =
-    expr match
-      case EBinOp(op, e1, e2, None) =>
-        val typedL = infer(ctx, e1)
-        val typedR = infer(ctx, e2)
-        val stages = List(typedL.ty.get.stage, typedR.ty.get.stage)
-        val st = stages.find(candidate =>
-          stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
+    expr.st match
+      case Some(_) => super.inferBin(ctx, expr)
+      case None =>
+        val left = infer(ctx, expr.e1)
+        val right = infer(ctx, expr.e2)
+        val stages = List(left.ty.get.stage, right.ty.get.stage)
+        val st = stages.find(candidate => stages.forall(source => ctx.constraints.implyStLeq(source, candidate)))
           .getOrElse(fail(s"cannot infer a maximum stage for ${stages.mkString(", ")}"))
-        val (argTy, resTy) = inferBinOp(op, st)
-        EBinOp(op, coerce(ctx, typedL, argTy),
-          coerce(ctx, typedR, argTy), Some(st)).withType(resTy)
-
-      case _ => super.inferBin(ctx, expr)
+        val (arg, ret) = inferBinOp(expr.op, st)
+        val l = coerce(ctx, left, arg)
+        val r = coerce(ctx, right, arg)
+        EBinOp(expr.op, l, r, Some(st)).withType(ret, l.effect | r.effect | st)
 
   override protected def inferUnary(ctx: Ctx, expr: EUnaryOp): Expr =
-    expr match
-      case EUnaryOp(op, e, None) =>
-        val typed = infer(ctx, e)
-        val st = typed.ty.get.stage
-        val (argTy, resultTy) = inferUnaryOp(op, st)
-        EUnaryOp(op, coerce(ctx, typed, argTy), Some(st)).withType(resultTy)
-
-      case _ => super.inferUnary(ctx, expr)
+    expr.st match
+      case Some(_) => super.inferUnary(ctx, expr)
+      case None =>
+        val typed = infer(ctx, expr.e)
+        val (arg, ret) = inferUnaryOp(expr.op, typed.ty.get.stage)
+        val operand = coerce(ctx, typed, arg)
+        EUnaryOp(expr.op, operand, Some(arg.stage)).withType(ret, operand.effect | arg.stage)
 
   override protected def inferAlloc(ctx: Ctx, expr: EAlloc): Expr =
     super.inferAlloc(ctx, EAlloc(expr.e, Some(expr.st.getOrElse(Sta))))
@@ -439,28 +431,33 @@ object Elaboration extends CoreTyping:
     super.inferAssign(ctx, EAssign(expr.e1, expr.e2, Some(expr.st.getOrElse(Sta))))
 
   override protected def inferAscribe(ctx: Ctx, expr: EAscribe): Expr =
-    expr match
-      case EAscribe(e, ty) =>
-        WF.check(ctx, ty)
-        check(ctx, e, ty)
+    WF.check(ctx, expr.asTy)
+    check(ctx, expr.e, expr.asTy)
 
   private def coerce(ctx: Ctx, expr: Expr, expected: Type): Expr =
     val from = expr.ty.get
-    ctx.constraints.assertStLeq(from.stage, expected.stage)
     (from.base, expected.base) match
       case (TInt, TInt) | (TBool, TBool) | (TUnit, TUnit) =>
-        ELift(expr, expected.stage).withType(expected)
-      case (TFun(fromArg, fromRet), TFun(toArg, toRet)) =>
+        ctx.constraints.assertStLeq(from.stage, expected.stage)
+        ELift(expr, expected.stage).withType(expected,
+          scase(expected.stage, expr.effect, scase(from.stage, Dyn, expr.effect)))
+      case (TFun(fromArg, fromRet, fromEffect), TFun(toArg, toRet, toEffect)) =>
+        ctx.constraints.assertStLeq(from.stage, expected.stage)
         ctx.constraints.assertStLeq(expected.stage, toArg.stage)
         ctx.constraints.assertStLeq(expected.stage, toRet.stage)
         val f = Counter.fresh
         val x = Counter.fresh
-        val arg = coerce(ctx + (x -> toArg), EVar(x).withType(toArg), fromArg)
-        val call = EApp(EVar(f).withType(from), arg, Some(from.stage)).withType(fromRet)
-        val body = coerce(ctx + (f -> from) + (x -> toArg), call, toRet)
-        val lam = ELam(x, None, body, None).withType(TFun(toArg, toRet))
-        val lifted = ELift(lam, expected.stage).withType(expected)
-        ELet(f, expr, lifted).withType(expected)
+        val inner = ctx + (f -> from) + (x -> toArg)
+        val arg = coerce(inner, EVar(x).withType(toArg), fromArg)
+        val call = EApp(EVar(f).withType(from), arg, Some(from.stage)).withType(fromRet, arg.effect | fromEffect | from.stage)
+        val body = coerce(inner, call, toRet)
+        val bodyEffect = body.effect
+        ctx.constraints.assertStLeq(scase(expected.stage, bodyEffect, Sta), toEffect)
+        val castEffect = bodyEffect | toEffect
+        val cast = EEffCast(body, castEffect).withType(toRet, castEffect)
+        val lam = ELam(x, Some(toArg), cast, Some(toRet)).withType(TFun(toArg, toRet, castEffect))
+        val lifted = ELift(lam, expected.stage).withType(expected, expected.stage)
+        ELet(f, expr, lifted).withType(expected, expr.effect | expected.stage)
       case _ if ctx.constraints.implyTyEq(from, expected) => expr.withType(expected)
       case _ => fail(s"cannot coerce type $from to $expected")
 
@@ -492,23 +489,24 @@ private object Subst:
       case EDeref(t, st) => EDeref(expr(t), st.map(stage))
       case EAssign(a, b, st) => EAssign(expr(a), expr(b), st.map(stage))
       case EAscribe(t, tpe) => EAscribe(expr(t), ty(tpe))
+      case EEffCast(t, eff) => EEffCast(expr(t), stage(eff))
       case EIsApp(t) => EIsApp(expr(t))
       case ECBNApp(a, b) => ECBNApp(expr(a), expr(b))
-    e.ty.foreach(t => result.withType(ty(t)))
+    e.ty.foreach(t => result.withType(ty(t), stage(e.effect)))
     result
 
   def ty(tpe: Type, from: String, to: Stage): Type =
     tpe match
       case TUnit | TInt | TBool => tpe
       case TAt(t, st) => TAt(ty(t, from, to), Stage.substitute(st, from, to))
-      case TFun(arg, ret) => TFun(ty(arg, from, to), ty(ret, from, to))
+      case TFun(arg, ret, eff) => TFun(ty(arg, from, to), ty(ret, from, to), Stage.substitute(eff, from, to))
       case TRef(t) => TRef(ty(t, from, to))
-      case TForallSt(s, _, _) if s == from => tpe
-      case TForallSt(s, t, cs) if Stage.variables(to)(s) =>
+      case TForallSt(s, _, _, _) if s == from => tpe
+      case TForallSt(s, t, cs, eff) if Stage.variables(to)(s) =>
         val fresh = Counter.fresh
-        val renamed = TForallSt(fresh, ty(t, s, SVar(fresh)), constraints(cs, s, SVar(fresh)))
+        val renamed = TForallSt(fresh, ty(t, s, SVar(fresh)), constraints(cs, s, SVar(fresh)), Stage.substitute(eff, s, SVar(fresh)))
         ty(renamed, from, to)
-      case TForallSt(s, t, cs) => TForallSt(s, ty(t, from, to), constraints(cs, from, to))
+      case TForallSt(s, t, cs, eff) => TForallSt(s, ty(t, from, to), constraints(cs, from, to), Stage.substitute(eff, from, to))
 
 private def freshenStageBinder(lam: ESLam): Expr =
   val fresh = Counter.fresh

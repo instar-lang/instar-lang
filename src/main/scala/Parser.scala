@@ -22,6 +22,7 @@ object Lexer:
     case Equal
     case Arrow
     case Join
+    case Pipe
     case FatArrow
     case Plus
     case Minus
@@ -155,7 +156,12 @@ object Lexer:
             add(Kind.Assign, ":=", startLine, startCol)
           else
             add(Kind.Colon, ":", startLine, startCol)
-        case '|' => advance(); add(Kind.Join, "|", startLine, startCol)
+        case '|' =>
+          advance()
+          if !atEnd() && current() == '>' then
+            advance()
+            add(Kind.Pipe, "|>", startLine, startCol)
+          else add(Kind.Join, "|", startLine, startCol)
         case '@' => advance(); add(Kind.At, "@", startLine, startCol)
         case ',' => advance(); add(Kind.Comma, ",", startLine, startCol)
         case '.' => advance(); add(Kind.Dot, ".", startLine, startCol)
@@ -260,7 +266,12 @@ private case class Parser(tokens: Vector[Token]):
       case Kind.SFun => parseSFun()
       case Kind.Fix => parseFix()
       case Kind.If => parseIf()
-      case _ => parseAssignment()
+      case _ =>
+        var expr = parseAssignment()
+        while at(Kind.Pipe) do
+          advance()
+          expr = EEffCast(expr, parseStage())
+        expr
 
   private def parseAssignment(): Expr =
     val lhs = parseComparison()
@@ -285,11 +296,7 @@ private case class Parser(tokens: Vector[Token]):
       val body = parseExpr()
 
       val rhs = buildHeaderRhs(binders, retTy, rhsBody)
-      val rhsWithAnn =
-        retTy match
-          case Some(ty) => EAscribe(rhs, buildHeaderType(binders, ty))
-          case None => rhs
-      ELet(name, rhsWithAnn, body)
+      ELet(name, rhs, body)
     else
       val ann = parseOptionalTypeAnnotation()
       expect(Kind.Equal, "`=`")
@@ -352,7 +359,7 @@ private case class Parser(tokens: Vector[Token]):
     val lam = binders.foldRight(parseExpr()) { case ((st, constraints), body) =>
       ESLam(st, body, constraints)
     }
-    ann.foreach(lam.withType)
+    ann.foreach(t => lam.withType(t))
     lam
 
   private def parseFix(): Expr =
@@ -532,9 +539,14 @@ private case class Parser(tokens: Vector[Token]):
       case Kind.Forall =>
         advance()
         val binders = parseStageBinders()
-        expect(Kind.Dot, "`.`")
-        binders.foldRight(parseTypeExpr()) { case ((st, constraints), body) =>
-          TForallSt(st, body, constraints).at()
+        val effect = if at(Kind.FatArrow) then
+          advance()
+          parseBracketedStage()
+        else
+          expect(Kind.Dot, "`.`")
+          Sta
+        binders.zipWithIndex.foldRight(parseTypeExpr()) { case (((st, constraints), i), body) =>
+          TForallSt(st, body, constraints, if i == binders.size - 1 then effect else Sta).at()
         }
       case _ => parseArrowType()
 
@@ -542,7 +554,8 @@ private case class Parser(tokens: Vector[Token]):
     val lhs = parseAtType()
     if at(Kind.Arrow) then
       advance()
-      TFun(lhs, parseArrowType()).at()
+      val effect = if at(Kind.LBracket) then parseBracketedStage() else Sta
+      TFun(lhs, parseTypeExpr(), effect).at()
     else lhs
 
   private def parseAtType(): Type =
@@ -582,9 +595,9 @@ private case class Parser(tokens: Vector[Token]):
 
   private def normalizeType(ty: Type): Type =
     val base = ty.base match
-      case TFun(arg, ret) => TFun(normalizeType(arg), normalizeType(ret))
+      case TFun(arg, ret, _) => TFun(normalizeType(arg), normalizeType(ret))
       case TRef(inner) => TRef(normalizeType(inner))
-      case TForallSt(s, body, constraints) => TForallSt(s, normalizeType(body), constraints)
+      case TForallSt(s, body, constraints, eff) => TForallSt(s, normalizeType(body), constraints, eff)
       case other => other
     base.at(Dyn)
 

@@ -447,6 +447,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
         }, γ1)
       }, γ)
     case EAscribe(e, _) => eval(e, ρ, ς, σ, k, γ)
+    case EEffCast(e, _) => eval(e, ρ, ς, σ, k, γ)
     // Experimental features below:
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
     case ECBNApp(e1, e2) =>

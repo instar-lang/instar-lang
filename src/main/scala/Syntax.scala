@@ -31,9 +31,9 @@ case class StageConstraint(lower: Stage, upper: Stage)
 
 enum Type:
   case TUnit, TInt, TBool
-  case TFun(t1: Type, t2: Type)
+  case TFun(t1: Type, t2: Type, effect: Stage = Sta)
   case TRef(t: Type)
-  case TForallSt(s: String, t: Type, constraints: List[StageConstraint] = Nil)
+  case TForallSt(s: String, t: Type, constraints: List[StageConstraint] = Nil, effect: Stage = Sta)
   case TAt(t: Type, s: Stage)
 
   def stage: Stage = this match
@@ -49,7 +49,7 @@ enum Type:
     if target == t.stage then t else TAt(t, target)
 
   def erase: Type = base match
-    case TFun(arg, ret) => TFun(arg.erase, ret.erase)
+    case TFun(arg, ret, _) => TFun(arg.erase, ret.erase)
     case TRef(inner) => TRef(inner.erase)
     case t => t
 
@@ -57,7 +57,8 @@ type Loc = Int
 
 enum Expr:
   var ty: Option[Type] = None
-  def withType(t: Type): Expr = { ty = Some(t); this }
+  var effect: Stage = Sta
+  def withType(t: Type, eff: Stage = effect): Expr = { ty = Some(t); effect = eff; this }
   case EUnit
   case ENum(i: Int)
   case EBool(b: Boolean)
@@ -78,6 +79,7 @@ enum Expr:
   case EDeref(e: Expr, st: Option[Stage])
   case EAssign(e1: Expr, e2: Expr, st: Option[Stage])
   case EAscribe(e: Expr, asTy: Type)
+  case EEffCast(e: Expr, to: Stage)
   // Experimental:
   case ELoc(l: Loc)
   // Extend the language to allow programmers to inspect code values
@@ -101,6 +103,7 @@ extension (e: Expr)
       case ELetRec(_, rhs, body, _) => rhs.isPure && body.isPure
       case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
       case EAscribe(e, _) => e.isPure
+      case EEffCast(e, _) => e.isPure
       case _ => false
 
   def freeVar: Set[String] =
@@ -124,6 +127,7 @@ extension (e: Expr)
       case EDeref(e, _) => e.freeVar
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case EAscribe(e, _) => e.freeVar
+      case EEffCast(e, _) => e.freeVar
       case EIsApp(e) => e.freeVar
 
   // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
@@ -151,6 +155,7 @@ extension (e: Expr)
       case EDeref(e, s) => EDeref(e.subst(from, to), s)
       case EAssign(e1, e2, s) => EAssign(e1.subst(from, to), e2.subst(from, to), s)
       case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
+      case EEffCast(e, eff) => EEffCast(e.subst(from, to), eff)
 
 given Conversion[Stage, Option[Stage]] = Some(_)
 

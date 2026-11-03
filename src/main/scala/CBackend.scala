@@ -280,6 +280,7 @@ object CBackend:
     private def stripAscriptions(expr: Expr): Expr =
       expr match
         case EAscribe(e, _) => stripAscriptions(e)
+        case EEffCast(e, _) => stripAscriptions(e)
         case other => other
 
     private def lookupVar(name: String, env: Map[String, String]): String =

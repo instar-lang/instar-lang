@@ -47,6 +47,11 @@ class CBackendTest extends FunSuite:
     if Files.exists(path) then
       Files.walk(path).iterator().asScala.toList.reverse.foreach(Files.deleteIfExists)
 
+  test("effect casts are erased during C generation") {
+    val code = VCode(EEffCast(EBinOp1("+", ENum(40), ENum(2)), Dyn))
+    assertEquals(runCompiledC(CBackend.compile(code)), "42")
+  }
+
   test("compiled simple staged code returns the right value") {
     val out = parseEvalCompile("lift[2](1) +@2 lift[2](2)")
     assertEquals(out, "3")

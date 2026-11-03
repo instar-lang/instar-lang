@@ -1,4 +1,5 @@
-(letrec power[s](x: Int@s)(n: Int): Int@s =
+(letrec power: forall[s]. Int@s -> Int ->[s] Int@s =
+  sfun[s] => fun(x: Int@s) => fun(n: Int): Int@s =>
   if n == 0
   then 1
   else x * power[s] x (n - 1) in
