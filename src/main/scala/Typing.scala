@@ -351,6 +351,7 @@ private def substStage(ty: Type, from: String, to: Stage): Type =
     case TUnit | TInt | TBool => ty
     case TFun(t1, t2) => TFun(substStage(t1, from, to), substStage(t2, from, to))
     case TRef(t) => TRef(substStage(t, from, to))
+    case TArr(t) => TArr(substStage(t, from, to))
     case TForallSt(s, t) if s == from => TForallSt(s, t)
     case TForallSt(s, t) if SVar(s) == to => t
     case TForallSt(s, t) => TForallSt(s, substStage(t, from, to))
@@ -396,6 +397,7 @@ private def unliftType(ty: Type, st: Stage): Type =
     case (TAt(t, s1), s2) if s1 == s2 => unliftType(t, st)
     case (TFun(t1, t2), _) => TFun(unliftType(t1, st), unliftType(t2, st))
     case (TRef(t), _) => TRef(unliftType(t, st))
+    case (TArr(t), _) => TArr(unliftType(t, st))
     case (TForallSt(s, t), _) => TForallSt(s, unliftType(t, st))
     case (t, SNum(1)) => t
     case (other, _) => other
@@ -422,6 +424,8 @@ private def equivType(left: Type, right: Type): Boolean =
     case (TFun(l1, l2), TFun(r1, r2)) =>
       equivType(l1, r1) && equivType(l2, r2)
     case (TRef(l), TRef(r)) =>
+      equivType(l, r)
+    case (TArr(l), TArr(r)) =>
       equivType(l, r)
     case (TCode(l), TCode(r)) =>
       equivType(l, r)

@@ -351,9 +351,19 @@ class ParserTest extends FunSuite:
     )
   }
 
+  test("parses the array primitives") {
+    assertEquals(parse("alloc(3, 0)"), EArrAlloc(ENum(3), ENum(0), None))
+    assertEquals(parse("get(a, i)"), EArrGet(EVar("a"), EVar("i"), None))
+    assertEquals(parse("set(a, i, 1)"), EArrSet(EVar("a"), EVar("i"), ENum(1), None))
+    assertEquals(parse("len(a)"), EArrLen(EVar("a"), None))
+    assertEquals(parse("get@2(a, i)"), EArrGet(EVar("a"), EVar("i"), Some(SNum(2))))
+  }
+
   test("`[...]` carries both type and stage arguments, told apart by case") {
     assertEquals(parseType("Code[Int]"), TCode(TInt))
     assertEquals(parseType("Ref[Int]"), TRef(TInt))
+    assertEquals(parseType("Array[Int]"), TArr(TInt))
+    assertEquals(parseType("Array[Array[Int]]"), TArr(TArr(TInt)))
     assertEquals(parseType("Code[Code[Int]]"), TCode(TCode(TInt)))
 
     assertEquals(parse("f[2]"), ESApp(EVar("f"), SNum(2)))

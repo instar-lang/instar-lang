@@ -47,6 +47,10 @@ object Lexer:
     case Then
     case Else
     case Ref
+    case Alloc
+    case Get
+    case Set
+    case Len
     case Assign
     case IsApp
     case Forall
@@ -76,6 +80,10 @@ object Lexer:
     "then" -> Kind.Then,
     "else" -> Kind.Else,
     "ref" -> Kind.Ref,
+    "alloc" -> Kind.Alloc,
+    "get" -> Kind.Get,
+    "set" -> Kind.Set,
+    "len" -> Kind.Len,
     "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
     "run" -> Kind.Run,
@@ -548,7 +556,9 @@ private case class Parser(tokens: Vector[Token]):
 
   private def canStartJuxtapositionArg(kind: Kind): Boolean =
     kind match
-      case Kind.IntLit | Kind.True | Kind.False | Kind.Identifier | Kind.Lift | Kind.Ref | Kind.IsApp | Kind.Run => true
+      case Kind.IntLit | Kind.True | Kind.False | Kind.Identifier | Kind.Lift | Kind.Ref | Kind.IsApp | Kind.Run |
+          Kind.Alloc | Kind.Get | Kind.Set | Kind.Len =>
+        true
       case _ => false
 
   private def parsePrimary(): Expr =
@@ -568,6 +578,8 @@ private case class Parser(tokens: Vector[Token]):
         parseLift()
       case Kind.Ref =>
         parseRef()
+      case Kind.Alloc | Kind.Get | Kind.Set | Kind.Len =>
+        parseArrayOp()
       case Kind.IsApp =>
         parseIsApp()
       case Kind.Run =>
@@ -606,6 +618,24 @@ private case class Parser(tokens: Vector[Token]):
     val expr = parseExpr()
     expect(Kind.RParen, "`)`")
     EAlloc(expr, stage)
+
+  private def parseArrayOp(): Expr =
+    val op = advance()
+    val stage = parseOptionalStageValue()
+    expect(Kind.LParen, "`(`")
+    val args = ArrayBuffer.empty[Expr]
+    if !at(Kind.RParen) then
+      args += parseExpr()
+      while at(Kind.Comma) do
+        advance()
+        args += parseExpr()
+    expect(Kind.RParen, "`)`")
+    (op.kind, args.toList) match
+      case (Kind.Alloc, List(n, init)) => EArrAlloc(n, init, stage)
+      case (Kind.Get, List(a, i)) => EArrGet(a, i, stage)
+      case (Kind.Set, List(a, i, v)) => EArrSet(a, i, v, stage)
+      case (Kind.Len, List(a)) => EArrLen(a, stage)
+      case _ => fail(s"malformed array operation `${op.lexeme}`")
 
   private def parseIsApp(): Expr =
     expect(Kind.IsApp, "`isApp`")
@@ -688,6 +718,9 @@ private case class Parser(tokens: Vector[Token]):
       case ("Int", Nil) => TInt
       case ("Bool", Nil) => TBool
       case ("Ref", List(t)) => TRef(t)
+      case ("Array", List(t)) => TArr(t)
+      case ("Array", _) =>
+        fail("`Array` takes exactly one type argument: `Array[T]`")
       case ("Code", List(t)) => TCode(t)
       case ("Code", _) =>
         fail("`Code` takes exactly one type argument: `Code[T]`")

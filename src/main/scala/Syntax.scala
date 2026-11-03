@@ -10,6 +10,7 @@ enum Type:
   case TUnit, TInt, TBool
   case TFun(t1: Type, t2: Type)
   case TRef(t: Type)
+  case TArr(t: Type)
   case TForallSt(s: String, t: Type)
   case TForallTy(x: String, t: Type)
   case TAt(t: Type, s: Stage)
