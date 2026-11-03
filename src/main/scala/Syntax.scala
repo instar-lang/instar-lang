@@ -5,14 +5,26 @@ import scala.language.implicitConversions
 enum Stage:
   case SNum(n: Int)
   case SVar(x: String)
+  case SJoin(left: Stage, right: Stage)
+  case SCase(cond: Stage, static: Stage, dynamic: Stage)
+
+  def |(other: Stage): Stage = Stage.join(this, other)
 
 object Stage:
+  def join(left: Stage, right: Stage): Stage = SJoin(left, right)
+
+  def scase(cond: Stage, static: Stage, dynamic: Stage): Stage = SCase(cond, static, dynamic)
+
   def variables(stage: Stage): Set[String] = stage match
     case SNum(_) => Set.empty
     case SVar(name) => Set(name)
+    case SJoin(a, b) => variables(a) ++ variables(b)
+    case SCase(c, a, b) => variables(c) ++ variables(a) ++ variables(b)
 
   def substitute(stage: Stage, from: String, to: Stage): Stage = stage match
     case SVar(name) if name == from => to
+    case SJoin(a, b) => join(substitute(a, from, to), substitute(b, from, to))
+    case SCase(c, a, b) => scase(substitute(c, from, to), substitute(a, from, to), substitute(b, from, to))
     case other => other
 
 case class StageConstraint(lower: Stage, upper: Stage)

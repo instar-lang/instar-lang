@@ -38,6 +38,13 @@ private object WF:
       case SNum(n) => fail(s"unsupported stage $n; expected 1 or 2")
       case SVar(s) =>
         assert(ctx.containsStVar(s), s"unbound stage variable `$s`")
+      case SJoin(a, b) =>
+        check(ctx, a)
+        check(ctx, b)
+      case SCase(c, a, b) =>
+        check(ctx, c)
+        check(ctx, a)
+        check(ctx, b)
 
   def check(ctx: Ctx, ty: Type): Unit =
     val base = ty.base

@@ -21,6 +21,7 @@ object Lexer:
     case Dot
     case Equal
     case Arrow
+    case Join
     case FatArrow
     case Plus
     case Minus
@@ -154,6 +155,7 @@ object Lexer:
             add(Kind.Assign, ":=", startLine, startCol)
           else
             add(Kind.Colon, ":", startLine, startCol)
+        case '|' => advance(); add(Kind.Join, "|", startLine, startCol)
         case '@' => advance(); add(Kind.At, "@", startLine, startCol)
         case ',' => advance(); add(Kind.Comma, ",", startLine, startCol)
         case '.' => advance(); add(Kind.Dot, ".", startLine, startCol)
@@ -547,7 +549,8 @@ private case class Parser(tokens: Vector[Token]):
     val base = parseAtomicType()
     if at(Kind.At) then
       advance()
-      TAt(base.base, parseStage())
+      val stage = parseStage(allowJoin = false)
+      TAt(base.base, stage)
     else base
 
   private def parseAtomicType(): Type =
@@ -629,21 +632,34 @@ private case class Parser(tokens: Vector[Token]):
       case (HeaderBinder.Term(_, ty), acc) => TFun(ty, acc)
     }
 
-  private def parseStage(): Stage =
-    current.kind match
+  private def parseStage(allowJoin: Boolean = true): Stage =
+    def atom(): Stage = current.kind match
       case Kind.IntLit =>
         val n = advance().lexeme.toInt
         if n != 1 && n != 2 then fail("Stage indices must be 1 or 2")
         SNum(n)
-      case Kind.Identifier =>
-        SVar(advance().lexeme)
+      case Kind.Identifier if current.lexeme == "case" && peek(1).kind == Kind.LParen =>
+        advance()
+        advance()
+        val cond = parseStage()
+        expect(Kind.Comma, "`,`")
+        val static = parseStage()
+        expect(Kind.Comma, "`,`")
+        val dynamic = parseStage()
+        expect(Kind.RParen, "`)`")
+        scase(cond, static, dynamic)
+      case Kind.Identifier => SVar(advance().lexeme)
       case Kind.LParen =>
         advance()
         val stage = parseStage()
         expect(Kind.RParen, "`)` after stage expression")
         stage
-      case _ =>
-        fail("Expected a stage")
+      case _ => fail("Expected a stage")
+    var stage = atom()
+    while allowJoin && at(Kind.Join) do
+      advance()
+      stage = stage | atom()
+    stage
 
   private def parseStageBinders(): List[(String, List[StageConstraint])] =
     expect(Kind.LBracket, "`[`")
@@ -668,7 +684,8 @@ private case class Parser(tokens: Vector[Token]):
   private def parseOptionalStageValue(): Option[Stage] =
     if at(Kind.At) then
       advance()
-      Some(parseStage())
+      val stage = parseStage(allowJoin = false)
+      Some(stage)
     else
       None
 

@@ -160,6 +160,8 @@ private def renderStage(stage: Stage): String =
   stage match
     case SNum(n) => n.toString
     case SVar(x) => x
+    case SJoin(a, b) => s"(${renderStage(a)} | ${renderStage(b)})"
+    case SCase(c, a, b) => s"case(${renderStage(c)}, ${renderStage(a)}, ${renderStage(b)})"
 
 private def renderConstraints(constraints: List[StageConstraint]): String =
   if constraints.isEmpty then ""

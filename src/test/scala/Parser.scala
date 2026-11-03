@@ -123,26 +123,24 @@ class ParserTest extends FunSuite:
       intercept[ParserException] { parse(src) }
   }
 
-  test("rejects stage join syntax") {
-    intercept[Lexer.LexerException] { parse("lift[a | b](1)") }
-    intercept[Lexer.LexerException] { parse("lift[a ⊔ b](1)") }
-    intercept[Lexer.LexerException] { parse("f[a | b]") }
-    intercept[Lexer.LexerException] { parse("f[a ⊔ b]") }
-    intercept[Lexer.LexerException] { parseType("Int@(a | b)") }
-    intercept[Lexer.LexerException] { parseType("Int@(a ⊔ b)") }
-    intercept[Lexer.LexerException] { parse("sfun[a, b, c: a | b <= c] => 1") }
-    intercept[Lexer.LexerException] { parse("sfun[a, b, c: a ⊔ b <= c] => 1") }
-    intercept[Lexer.LexerException] { parse("x +@(a | b) y") }
-    intercept[Lexer.LexerException] { parse("x +@(a ⊔ b) y") }
+  test("parses stage joins") {
+    assertEquals(parse("lift[a | b](1)"), ELift(ENum(1), SVar("a") | SVar("b")))
+    assertEquals(parse("f[a | b]"), ESApp(EVar("f"), SVar("a") | SVar("b")))
+    assertEquals(parseType("Int@(a | b)"), TAt(TInt, SVar("a") | SVar("b")))
+    assertEquals(parse("x +@(a | b) y"), EBinOp("+", EVar("x"), EVar("y"), Some(SVar("a") | SVar("b"))))
+    assertEquals(parse("sfun[a, b, c: a | b <= c] => 1"),
+      ESLam("a", ESLam("b", ESLam("c", ENum(1), List(StageConstraint(SVar("a") | SVar("b"), SVar("c")))))))
+    assertEquals(parse("lift[case(s, 1, 2)](1)"), ELift(ENum(1), SCase(SVar("s"), Sta, Dyn)))
   }
 
-  test("rejects unparenthesized stage joins after @") {
-    intercept[Lexer.LexerException] { parse("lift[2](1) +@1 | 2 lift[2](2)") }
-    intercept[Lexer.LexerException] { parse("x +@a | b y") }
-    intercept[Lexer.LexerException] { parse("x +@a ⊔ b y") }
-    intercept[Lexer.LexerException] { parse("fun@a | b(x: Int) => x") }
-    intercept[Lexer.LexerException] { parse("f(x)@a | b") }
-    intercept[Lexer.LexerException] { parseType("Int@a | b") }
+  test("rejects unsupported stage join syntax") {
+    intercept[ParserException] { parse("lift[2](1) +@1 | 2 lift[2](2)") }
+    intercept[ParserException] { parse("x +@a | b y") }
+    intercept[Lexer.LexerException] { parse("lift[a ⊔ b](1)") }
+    intercept[ParserException] { parse("fun@a | b(x: Int) => x") }
+    intercept[ParserException] { parse("f(x)@a | b") }
+    intercept[ParserException] { parseType("Int@a | b") }
+    intercept[ParserException] { parseType("Int@1 | 2") }
   }
 
   test("accepts parenthesized atomic stages after @") {
