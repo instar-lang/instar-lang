@@ -93,7 +93,7 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       fail("ADTs are not implemented in the type checker yet")
 
     // Stopgap: arrays are implemented in the interpreter only.
-    case EArrLit(_, _) | EArrGet(_, _, _) | EArrSet(_, _, _, _) | EArrLen(_, _) =>
+    case EArrAlloc(_, _, _) | EArrGet(_, _, _) | EArrSet(_, _, _, _) | EArrLen(_, _) =>
       fail("arrays are not implemented in the type checker yet")
 
     case EApp(e1, e2, None) => infer(ctx, EApp(e1, e2, Some(Sta)))

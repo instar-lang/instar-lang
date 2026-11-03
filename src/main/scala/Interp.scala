@@ -445,24 +445,18 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           reflect(EAssign1(x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
-    case EArrLit(elems, s) if evalExprStage(s, ς) == Sta =>
-      def loop(pending: List[Expr], vs: List[Value], σ1: Store, γ1: MCont): (Value, Store) =
-        pending match
-          case e :: rest =>
-            eval(e, ρ, ς, σ1, { case (v, σ2, γ2) =>
-              loop(rest, vs :+ v, σ2, γ2)
-            }, γ1)
-          case Nil => k(VArr(vs.toArray), σ1, γ1)
-      loop(elems, Nil, σ, γ)
-    case EArrLit(elems, s) if evalExprStage(s, ς) == Dyn =>
-      def loop(pending: List[Expr], vs: List[Expr], σ1: Store, γ1: MCont): (Value, Store) =
-        pending match
-          case e :: rest =>
-            eval(e, ρ, ς, σ1, { case (VCode(x), σ2, γ2) =>
-              loop(rest, vs :+ x, σ2, γ2)
-            }, γ1)
-          case Nil => reflect(EArrLit1(vs*), σ1, k, γ1)
-      loop(elems, Nil, σ, γ)
+    case EArrAlloc(n, init, s) if evalExprStage(s, ς) == Sta =>
+      eval(n, ρ, ς, σ, { case (VNum(size), σ1, γ1) =>
+        eval(init, ρ, ς, σ1, { case (v, σ2, γ2) =>
+          k(VArr(Array.fill(size)(v)), σ2, γ2)
+        }, γ1)
+      }, γ)
+    case EArrAlloc(n, init, s) if evalExprStage(s, ς) == Dyn =>
+      eval(n, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(init, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          reflect(EArrAlloc1(x1, x2), σ2, k, γ2)
+        }, γ1)
+      }, γ)
     case EArrGet(a, i, s) if evalExprStage(s, ς) == Sta =>
       eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
         eval(i, ρ, ς, σ1, { case (VNum(ix), σ2, γ2) =>
