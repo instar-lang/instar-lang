@@ -332,6 +332,10 @@ object Elaboration extends CoreTyping:
               typed.effect | argument.effect | effect | typed.ty.get.stage)
           case _ => fail(s"expected a function, found ${typed.ty.get}")
 
+  override protected def inferLift(ctx: Ctx, expr: ELift): Expr =
+    WF.check(ctx, expr.to)
+    coerceStage(ctx, infer(ctx, expr.t), expr.to)
+
   override protected def inferLet(ctx: Ctx, expr: ELet): Expr =
     val rhs = infer(ctx, expr.rhs)
     val bodyCtx = ctx + (expr.x -> rhs.ty.get)
@@ -434,13 +438,36 @@ object Elaboration extends CoreTyping:
     WF.check(ctx, expr.asTy)
     check(ctx, expr.e, expr.asTy)
 
+  private def coerceStage(ctx: Ctx, expr: Expr, stage: Stage): Expr =
+    val from = expr.ty.get
+    if ctx.constraints.implyStEq(from.stage, stage) then expr
+    else
+      ctx.constraints.assertStLeq(from.stage, stage)
+      from.base match
+        case TInt | TBool | TUnit =>
+          ELift(expr, stage).withType(from.at(stage),
+            expr.effect | scase(stage, Sta, scase(from.stage, Dyn, Sta)))
+        case TFun(arg, ret, effect) =>
+          ctx.constraints.assertStLeq(stage, arg.stage)
+          val f = Counter.fresh
+          val x = Counter.fresh
+          val inner = ctx + (f -> from) + (x -> arg)
+          val call = EApp(EVar(f).withType(from), EVar(x).withType(arg), Some(from.stage)).withType(ret, effect | from.stage)
+          val body = coerceStage(inner, call, stage | ret.stage)
+          val bodyEffect = body.effect
+          val latent = scase(stage, bodyEffect, Sta)
+          val target = TFun(arg, body.ty.get, latent).at(stage)
+          val lam = ELam(x, Some(arg), body, body.ty).withType(TFun(arg, body.ty.get, bodyEffect))
+          val lifted = ELift(lam, stage).withType(target, stage)
+          ELet(f, expr, lifted).withType(target, expr.effect | stage)
+        case _ => fail(s"cannot promote type $from to $stage")
+
   private def coerce(ctx: Ctx, expr: Expr, expected: Type): Expr =
     val from = expr.ty.get
-    (from.base, expected.base) match
+    if ctx.constraints.implyTyEq(from, expected) then expr.withType(expected)
+    else (from.base, expected.base) match
       case (TInt, TInt) | (TBool, TBool) | (TUnit, TUnit) =>
-        ctx.constraints.assertStLeq(from.stage, expected.stage)
-        ELift(expr, expected.stage).withType(expected,
-          scase(expected.stage, expr.effect, scase(from.stage, Dyn, expr.effect)))
+        coerceStage(ctx, expr, expected.stage).withType(expected)
       case (TFun(fromArg, fromRet, fromEffect), TFun(toArg, toRet, toEffect)) =>
         ctx.constraints.assertStLeq(from.stage, expected.stage)
         ctx.constraints.assertStLeq(expected.stage, toArg.stage)
@@ -458,7 +485,21 @@ object Elaboration extends CoreTyping:
         val lam = ELam(x, Some(toArg), cast, Some(toRet)).withType(TFun(toArg, toRet, castEffect))
         val lifted = ELift(lam, expected.stage).withType(expected, expected.stage)
         ELet(f, expr, lifted).withType(expected, expr.effect | expected.stage)
-      case _ if ctx.constraints.implyTyEq(from, expected) => expr.withType(expected)
+      case (TForallSt(s, body, constraints, effect), TForallSt(t, target, targetCs, targetEffect)) =>
+        val f = Counter.fresh
+        val fresh = Counter.fresh
+        val stage = SVar(fresh)
+        val cs = Subst.constraints(targetCs, t, stage)
+        val inner = ctx + (f -> from) + (fresh, cs)
+        Subst.constraints(constraints, s, stage).foreach(c => inner.constraints.assertStLeq(c.lower, c.upper))
+        val sourceEffect = Stage.substitute(effect, s, stage)
+        val expectedEffect = Stage.substitute(targetEffect, t, stage)
+        val call = ESApp(EVar(f).withType(from), stage).withType(Subst.ty(body, s, stage), sourceEffect)
+        val converted = coerce(inner, call, Subst.ty(target, t, stage))
+        inner.constraints.assertStLeq(converted.effect, expectedEffect)
+        val cast = EEffCast(converted, expectedEffect).withType(converted.ty.get, expectedEffect)
+        val lam = ESLam(fresh, cast, cs).withType(TForallSt(fresh, cast.ty.get, cs, expectedEffect))
+        ELet(f, expr, lam).withType(expected, expr.effect | Sta)
       case _ => fail(s"cannot coerce type $from to $expected")
 
 private object Subst:
