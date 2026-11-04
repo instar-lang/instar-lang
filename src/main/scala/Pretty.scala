@@ -132,6 +132,18 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
     case EDeref(e, st) =>
       maybeParens(s"!${renderStageValue(st)} ${renderExpr(e, 6)}", parentPrec > 6)
 
+    case EArrAlloc(n, init, st) =>
+      s"alloc${renderStageValue(st)}(${renderExpr(n, 0)}, ${renderExpr(init, 0)})"
+
+    case EArrGet(a, i, st) =>
+      s"get${renderStageValue(st)}(${renderExpr(a, 0)}, ${renderExpr(i, 0)})"
+
+    case EArrSet(a, i, v, st) =>
+      s"set${renderStageValue(st)}(${renderExpr(a, 0)}, ${renderExpr(i, 0)}, ${renderExpr(v, 0)})"
+
+    case EArrLen(a, st) =>
+      s"len${renderStageValue(st)}(${renderExpr(a, 0)})"
+
     case EAscribe(e, asTy) =>
       maybeParens(s"${renderExpr(e, 0)} : ${renderType(asTy, 0)}", true)
 
