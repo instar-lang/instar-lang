@@ -35,6 +35,11 @@ enum Value:
   case VBNClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
   case VThunk(e: Expr, ρ: Env, ς: StEnv)
+  // Experimental:
+  case VTClo(body: Expr, ρ: Env, ς: StEnv)
+  case VPack(value: Value)
+  case VCon(tag: String, args: List[Value])
+  case VArr(elems: Array[Value])
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -277,6 +282,8 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
   case VNum(i) => reflect(ENum(i), σ, k, γ)
   case VBool(b) => reflect(EBool(b), σ, k, γ)
   case VLoc(l) => reflect(ELoc(l), σ, k, γ)
+  case VPack(_) => throw new MatchError("cannot lift existential packages")
+  case VArr(_) => throw new MatchError("cannot lift array values")
   case VClo(x, argTy, body, retTy, ρf, ςf) =>
     val l = σ.size
     val y = fresh()
@@ -373,6 +380,11 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val ρf1 = ρf + (f -> l)
           val v = VSClo(x, body, ρf1, ςf)
           eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
+        case (VTClo(body, ρf, ςf), σ1, γ1) =>
+          val l = σ1.size
+          val ρf1 = ρf + (f -> l)
+          val v = VTClo(body, ρf1, ςf)
+          eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
       }, γ)
     case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Sta =>
       eval(e1, ρ, ς, σ, { case (VBool(b), σ1, γ1) =>
@@ -436,6 +448,55 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           reflect(EAssign1(x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
+    case EArrAlloc(n, init, s) if evalExprStage(s, ς) == Sta =>
+      eval(n, ρ, ς, σ, { case (VNum(size), σ1, γ1) =>
+        eval(init, ρ, ς, σ1, { case (v, σ2, γ2) =>
+          k(VArr(Array.fill(size)(v)), σ2, γ2)
+        }, γ1)
+      }, γ)
+    case EArrAlloc(n, init, s) if evalExprStage(s, ς) == Dyn =>
+      eval(n, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(init, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          reflect(EArrAlloc1(x1, x2), σ2, k, γ2)
+        }, γ1)
+      }, γ)
+    case EArrGet(a, i, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VNum(ix), σ2, γ2) =>
+          k(elems(ix), σ2, γ2)
+        }, γ1)
+      }, γ)
+    case EArrGet(a, i, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          reflect(EArrGet1(x1, x2), σ2, k, γ2)
+        }, γ1)
+      }, γ)
+    case EArrSet(a, i, e2, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VNum(ix), σ2, γ2) =>
+          eval(e2, ρ, ς, σ2, { case (v, σ3, γ3) =>
+            elems(ix) = v
+            k(VUnit, σ3, γ3)
+          }, γ2)
+        }, γ1)
+      }, γ)
+    case EArrSet(a, i, e2, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          eval(e2, ρ, ς, σ2, { case (VCode(x3), σ3, γ3) =>
+            reflect(EArrSet1(x1, x2, x3), σ3, k, γ3)
+          }, γ2)
+        }, γ1)
+      }, γ)
+    case EArrLen(a, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        k(VNum(elems.length), σ1, γ1)
+      }, γ)
+    case EArrLen(a, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
+        reflect(EArrLen1(x), σ1, k, γ1)
+      }, γ)
     case EAscribe(e, _) => eval(e, ρ, ς, σ, k, γ)
     case EFix(f, e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, {
@@ -456,13 +517,55 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
         reflect(EFix(g, x, Some(Sta)), σ2, k, γ)
       })
-    // Experimental features below:
+    // Experimental:
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
     case ECBNApp(e1, e2) =>
       eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
         val v2 = VThunk(e2, ρ, ς)
         val l = σ1.size
         eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
+      }, γ)
+    case ETLam(_, body) =>
+      k(VTClo(body, ρ, ς), σ, γ)
+    case ETApp(e, _) =>
+      eval(e, ρ, ς, σ, { case (VTClo(body, ρf, ςf), σ1, γ1) =>
+        eval(body, ρf, ςf, σ1, k, γ1)
+      }, γ)
+    case EPack(_, payload) =>
+      eval(payload, ρ, ς, σ, { case (v, σ1, γ1) =>
+        k(VPack(v), σ1, γ1)
+      }, γ)
+    case EUnpack(_, x, packed, body) =>
+      eval(packed, ρ, ς, σ, { case (VPack(payload), σ1, γ1) =>
+        val l = σ1.size
+        eval(body, ρ + (x -> l), ς, σ1 + (l -> payload), k, γ1)
+      }, γ)
+    // ADTs, first stage only
+    case ETypeDecl(_, _, _, body) => eval(body, ρ, ς, σ, k, γ)
+    case ECon(tag, args) =>
+      def loop(pending: List[Expr], vs: List[Value], σ1: Store, γ1: MCont): (Value, Store) =
+        pending match
+          case arg :: rest =>
+            eval(arg, ρ, ς, σ1, { case (v, σ2, γ2) =>
+              loop(rest, vs :+ v, σ2, γ2) }, γ1)
+          case Nil => k(VCon(tag, vs), σ1, γ1)
+      loop(args, Nil, σ, γ)
+    case EMatch(scrutinee, cases) =>
+      eval(scrutinee, ρ, ς, σ, { case (v, σ1, γ1) =>
+        v match
+          case VCon(tag, fields) =>
+            cases.find(_.con == tag) match
+              case Some(MatchCase(_, binders, body)) =>
+                def loop(xs: List[String], vs: List[Value], ρ1: Env, σ2: Store): (Env, Store) =
+                  (xs, vs) match
+                    case (x :: xs1, v :: vs1) =>
+                      val l = σ2.size
+                      loop(xs1, vs1, ρ1 + (x -> l), σ2 + (l -> v))
+                    case _ => (ρ1, σ2)
+                val (ρ1, σ2) = loop(binders, fields, ρ, σ1)
+                eval(body, ρ1, ς, σ2, k, γ1)
+              case None => throw new MatchError(s"no case for constructor `$tag`")
+          case other => throw new MatchError(s"cannot match on `$other`")
       }, γ)
 
 def eval(e: Expr): (Value, Store) =

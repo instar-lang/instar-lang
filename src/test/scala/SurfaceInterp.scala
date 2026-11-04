@@ -606,3 +606,44 @@ class CoreOpt extends SurfaceBase {
       Set("rewriting", "simp-cond"))
   }
 }
+
+class ADT extends SurfaceBase {
+  test("list-length") {
+    val src = """
+      type List[A] = Nil | Cons(A, List[A]) in
+      let length = fix go. fun(xs: List[A]) =>
+        match xs with
+        | Nil => 0
+        | Cons(_, ys) => 1 + go(ys)
+      in
+      length(Cons(1, Cons(2, Cons(3, Nil))))
+    """
+    testEvalSurface(src, VNum(3))
+  }
+
+  test("tree-size") {
+    val src = """
+      type Tree[A] = Leaf | Node(Tree[A], A, Tree[A]) in
+      let size = fix go. fun(t: Tree[A]) =>
+        match t with
+        | Leaf => 0
+        | Node(l, _, r) => 1 + go(l) + go(r)
+      in
+      size(Node(Node(Leaf, 1, Leaf), 2, Leaf))
+    """
+    testEvalSurface(src, VNum(2))
+  }
+
+  test("option-get-or-else") {
+    val src = """
+      type Option[A] = None | Some(A) in
+      let getOrElse = fun(o: Option[Int]) => fun(d: Int) =>
+        match o with
+        | None => d
+        | Some(x) => x
+      in
+      getOrElse(Some(42))(0)
+    """
+    testEvalSurface(src, VNum(42))
+  }
+}

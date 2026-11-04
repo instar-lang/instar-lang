@@ -10,9 +10,17 @@ enum Type:
   case TUnit, TInt, TBool
   case TFun(t1: Type, t2: Type)
   case TRef(t: Type)
+  case TArr(t: Type)
   case TForallSt(s: String, t: Type)
   case TAt(t: Type, s: Stage)
   case TCode(t: Type)
+  // Experimental:
+  // Forall && Existential
+  case TVar(x: String)
+  case TForallTy(x: String, t: Type)
+  case TExistsTy(x: String, t: Type)
+  // ADT type constructor
+  case TCon(name: String, args: List[Type])
 
 type Loc = Int
 
@@ -38,6 +46,11 @@ enum Expr:
   case EAlloc(e: Expr, st: Option[Stage])
   case EDeref(e: Expr, st: Option[Stage])
   case EAssign(e1: Expr, e2: Expr, st: Option[Stage])
+  // Arrays
+  case EArrAlloc(n: Expr, init: Expr, st: Option[Stage])
+  case EArrGet(a: Expr, i: Expr, st: Option[Stage])
+  case EArrSet(a: Expr, i: Expr, v: Expr, st: Option[Stage])
+  case EArrLen(a: Expr, st: Option[Stage])
   case EAscribe(e: Expr, asTy: Type)
   case EFix(f: String, e: Expr, st: Option[Stage])
   // Experimental:
@@ -45,6 +58,19 @@ enum Expr:
   // Extend the language to allow programmers to inspect code values
   case EIsApp(e: Expr)
   case ECBNApp(e1: Expr, e2: Expr)
+  // Forall types
+  case ETLam(x: String, body: Expr)
+  case ETApp(e: Expr, argTy: Type)
+  // Existential types
+  case EPack(witness: Type, e: Expr)
+  case EUnpack(tyName: String, x: String, packed: Expr, body: Expr)
+  // ADTs, first stage only
+  case ETypeDecl(name: String, params: List[String], ctors: List[Constructor], body: Expr)
+  case ECon(name: String, args: List[Expr])
+  case EMatch(scrutinee: Expr, cases: List[MatchCase])
+
+case class Constructor(name: String, fields: List[Type])
+case class MatchCase(con: String, binders: List[String], body: Expr)
 
 val Sta = Stage.SNum(1)
 val Dyn = Stage.SNum(2)
@@ -54,16 +80,24 @@ extension (e: Expr)
     e match
       case EUnit | ENum(_) | EBool(_) | EVar(_) => true
       case ESLam(_, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
+      case ETLam(_, _) => true
       case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
       case ESApp(_, _) | EApp(_, _, _) => false
+      case ETApp(e, _) => e.isPure
+      case EPack(_, e) => e.isPure
+      case EUnpack(_, _, packed, body) => packed.isPure && body.isPure
       case ELift(t, _) => false
       case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
+      case EArrAlloc(_, _, _) | EArrGet(_, _, _) | EArrSet(_, _, _, _) | EArrLen(_, _) => false
       case ERun(t) => t.isPure
       case ELet(_, rhs, body) => rhs.isPure && body.isPure
       case ELetRec(_, rhs, body) => rhs.isPure && body.isPure
       case ECond(e1, e2, e3, _) => e1.isPure && e2.isPure && e3.isPure
       case EAscribe(e, _) => e.isPure
       case EFix(_, e, _) => e.isPure
+      case ECon(_, args) => args.forall(_.isPure)
+      case EMatch(scrutinee, cases) => scrutinee.isPure && cases.forall(_.body.isPure)
+      case ETypeDecl(_, _, _, body) => body.isPure
       case _ => false
 
   def freeVar: Set[String] =
@@ -72,6 +106,10 @@ extension (e: Expr)
       case EVar(x) => Set(x)
       case ESLam(x, body) => body.freeVar
       case ESApp(e, _) => e.freeVar
+      case ETLam(_, body) => body.freeVar
+      case ETApp(e, _) => e.freeVar
+      case EPack(_, e) => e.freeVar
+      case EUnpack(_, x, packed, body) => packed.freeVar ++ (body.freeVar - x)
       case ELam(x, _, body, _) => body.freeVar - x
       case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case ECBNApp(e1, e2) => e1.freeVar ++ e2.freeVar
@@ -85,8 +123,17 @@ extension (e: Expr)
       case EAlloc(e, _) => e.freeVar
       case EDeref(e, _) => e.freeVar
       case EAssign(e1, e2, _) => e1.freeVar ++ e2.freeVar
+      case EArrAlloc(n, init, _) => n.freeVar ++ init.freeVar
+      case EArrGet(a, i, _) => a.freeVar ++ i.freeVar
+      case EArrSet(a, i, v, _) => a.freeVar ++ i.freeVar ++ v.freeVar
+      case EArrLen(a, _) => a.freeVar
       case EAscribe(e, _) => e.freeVar
       case EFix(f, e, _) => e.freeVar - f
+      case EIsApp(e) => e.freeVar
+      case ECon(_, args) => args.foldLeft(Set[String]())((acc, a) => acc ++ a.freeVar)
+      case EMatch(scrutinee, cases) =>
+        cases.foldLeft(scrutinee.freeVar)((acc, c) => acc ++ (c.body.freeVar -- c.binders))
+      case ETypeDecl(_, _, _, body) => body.freeVar
 
   // We only use this function to substitute the binding variable with the argument (which is always a pure, atomic expression),
   // and all variables after reflect are distinct, so we do not need to consider variable capture here.
@@ -96,6 +143,15 @@ extension (e: Expr)
       case EVar(x) => if x == from then to else e
       case ESLam(x, body) => ESLam(x, body.subst(from, to))
       case ESApp(e, st) => ESApp(e.subst(from, to), st)
+      case ETLam(x, body) => ETLam(x, body.subst(from, to))
+      case ETApp(e, argTy) => ETApp(e.subst(from, to), argTy)
+      case EPack(witness, e) => EPack(witness, e.subst(from, to))
+      case EUnpack(tyName, x, packed, body) =>
+        EUnpack(tyName, x, packed.subst(from, to),
+          if x == from then body else body.subst(from, to))
+      case EIsApp(e) => EIsApp(e.subst(from, to))
+      case ECBNApp(e1, e2) => ECBNApp(e1.subst(from, to), e2.subst(from, to))
+      case ELoc(_) => e
       case ELam(x, argTy, body, retTy) =>
         ELam(x, argTy, body.subst(from, to), retTy)
       case EApp(e1, e2, st) => EApp(e1.subst(from, to), e2.subst(from, to), st)
@@ -112,9 +168,25 @@ extension (e: Expr)
       case EAlloc(e, s) => EAlloc(e.subst(from, to), s)
       case EDeref(e, s) => EDeref(e.subst(from, to), s)
       case EAssign(e1, e2, s) => EAssign(e1.subst(from, to), e2.subst(from, to), s)
+      case EArrAlloc(n, init, s) => EArrAlloc(n.subst(from, to), init.subst(from, to), s)
+      case EArrGet(a, i, s) => EArrGet(a.subst(from, to), i.subst(from, to), s)
+      case EArrSet(a, i, v, s) => EArrSet(a.subst(from, to), i.subst(from, to), v.subst(from, to), s)
+      case EArrLen(a, s) => EArrLen(a.subst(from, to), s)
       case EAscribe(e, asTy) => EAscribe(e.subst(from, to), asTy)
       case EFix(f, e, s) =>
         EFix(f, e.subst(from, to), s)
+      case ECon(name, args) =>
+        ECon(name, args.map(_.subst(from, to)))
+      case EMatch(scrutinee, cases) =>
+        EMatch(
+          scrutinee.subst(from, to),
+          cases.map { c =>
+            if c.binders.contains(from) then c
+            else MatchCase(c.con, c.binders, c.body.subst(from, to))
+          },
+        )
+      case ETypeDecl(name, params, ctors, body) =>
+        ETypeDecl(name, params, ctors, body.subst(from, to))
 
 given Conversion[Stage, Option[Stage]] = Some(_)
 
@@ -139,6 +211,14 @@ def EDeref1(e: Expr): Expr = EDeref(e, Some(Sta))
 def EDeref2(e: Expr): Expr = EDeref(e, Some(Dyn))
 def EAssign1(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Some(Sta))
 def EAssign2(e1: Expr, e2: Expr): Expr = EAssign(e1, e2, Some(Dyn))
+def EArrAlloc1(n: Expr, init: Expr): Expr = EArrAlloc(n, init, Some(Sta))
+def EArrAlloc2(n: Expr, init: Expr): Expr = EArrAlloc(n, init, Some(Dyn))
+def EArrGet1(a: Expr, i: Expr): Expr = EArrGet(a, i, Some(Sta))
+def EArrGet2(a: Expr, i: Expr): Expr = EArrGet(a, i, Some(Dyn))
+def EArrSet1(a: Expr, i: Expr, v: Expr): Expr = EArrSet(a, i, v, Some(Sta))
+def EArrSet2(a: Expr, i: Expr, v: Expr): Expr = EArrSet(a, i, v, Some(Dyn))
+def EArrLen1(a: Expr): Expr = EArrLen(a, Some(Sta))
+def EArrLen2(a: Expr): Expr = EArrLen(a, Some(Dyn))
 
 // Note: they lift term to stage 1/2, but lift itself can only be at stage 1
 def ELift1(e: Expr): Expr = ELift(e, Sta)

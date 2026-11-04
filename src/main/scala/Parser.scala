@@ -36,6 +36,7 @@ object Lexer:
     case True
     case False
     case Fun
+    case TFun
     case SFun
     case Lift
     case Let
@@ -46,10 +47,18 @@ object Lexer:
     case Then
     case Else
     case Ref
+    case Alloc
+    case Get
+    case Set
+    case Len
     case Assign
     case IsApp
     case Forall
     case Run
+    case Type
+    case Match
+    case With
+    case Bar
     case EOF
 
   case class Token(kind: Kind, lexeme: String, line: Int, col: Int)
@@ -60,6 +69,7 @@ object Lexer:
     "true" -> Kind.True,
     "false" -> Kind.False,
     "fun" -> Kind.Fun,
+    "tfun" -> Kind.TFun,
     "sfun" -> Kind.SFun,
     "lift" -> Kind.Lift,
     "let" -> Kind.Let,
@@ -70,9 +80,16 @@ object Lexer:
     "then" -> Kind.Then,
     "else" -> Kind.Else,
     "ref" -> Kind.Ref,
+    "alloc" -> Kind.Alloc,
+    "get" -> Kind.Get,
+    "set" -> Kind.Set,
+    "len" -> Kind.Len,
     "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
     "run" -> Kind.Run,
+    "type" -> Kind.Type,
+    "match" -> Kind.Match,
+    "with" -> Kind.With,
   )
 
   def lex(input: String): Vector[Token] =
@@ -184,6 +201,7 @@ object Lexer:
             add(Kind.BangEq, "!=", startLine, startCol)
           else
             add(Kind.Bang, "!", startLine, startCol)
+        case '|' => advance(); add(Kind.Bar, "|", startLine, startCol)
         case '<' =>
           advance()
           if !atEnd() && current() == '=' then
@@ -221,9 +239,13 @@ def parseType(input: String): Type =
 private case class Parser(tokens: Vector[Token]):
   private enum HeaderBinder:
     case Stage(name: String)
+    case TypeParam(name: String)
     case Term(name: String, ty: Type)
 
   private var pos = 0
+  private var typeScope: List[String] = Nil
+
+  private def isDataType(name: String): Boolean = typeScope.contains(name)
 
   private def current: Token = tokens(pos)
   private def peek(offset: Int): Token = tokens(math.min(pos + offset, tokens.length - 1))
@@ -255,9 +277,12 @@ private case class Parser(tokens: Vector[Token]):
       case Kind.Let => parseLet()
       case Kind.LetRec => parseLetRec()
       case Kind.Fun => parseFun()
+      case Kind.TFun => parseTFun()
       case Kind.SFun => parseSFun()
       case Kind.Fix => parseFix()
       case Kind.If => parseIf()
+      case Kind.Type => parseTypeDecl()
+      case Kind.Match => parseMatch()
       case _ => parseAssignment()
 
   private def parseAssignment(): Expr =
@@ -272,7 +297,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseLet(): Expr =
     expect(Kind.Let, "`let`")
-    val name = parseIdentifier("binding name")
+    val name = parseVarBinder("binding name")
     val binders = parseHeaderBinders()
 
     if binders.nonEmpty then
@@ -300,7 +325,7 @@ private case class Parser(tokens: Vector[Token]):
 
   private def parseLetRec(): Expr =
     expect(Kind.LetRec, "`letrec`")
-    val name = parseIdentifier("recursive binding name")
+    val name = parseVarBinder("recursive binding name")
     val binders = parseHeaderBinders()
 
     if binders.nonEmpty then
@@ -330,7 +355,7 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Fun, "`fun`")
     val stage = parseOptionalStageValue()
     expect(Kind.LParen, "`(`")
-    val arg = parseIdentifier("parameter name")
+    val arg = parseVarBinder("parameter name")
     expect(Kind.Colon, "`:` after function parameter")
     val argTy = parseTypeExpr()
     expect(Kind.RParen, "`)`")
@@ -345,6 +370,7 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.SFun, "`sfun`")
     expect(Kind.LBracket, "`[`")
     val st = parseIdentifier("stage variable")
+    if !isLowerName(st) then fail(s"Stage variables must be lowercase; found `$st`")
     expect(Kind.RBracket, "`]`")
     val ann = parseOptionalTypeAnnotation()
     expect(Kind.FatArrow, "`=>`")
@@ -352,10 +378,19 @@ private case class Parser(tokens: Vector[Token]):
     ann.foreach(lam.withType)
     lam
 
+  private def parseTFun(): Expr =
+    expect(Kind.TFun, "`tfun`")
+    val names = parseBracketNames("type variable").map { name =>
+      if isUpperName(name) then name
+      else fail(s"Type variables must be uppercase; found `$name`")
+    }
+    expect(Kind.FatArrow, "`=>`")
+    names.foldRight(parseExpr())((name, acc) => ETLam(name, acc))
+
   private def parseFix(): Expr =
     expect(Kind.Fix, "`fix`")
     val stage = parseOptionalStageValue()
-    val name = parseIdentifier("fixpoint name")
+    val name = parseVarBinder("fixpoint name")
     expect(Kind.Dot, "`.`")
     EFix(name, parseExpr(), stage)
 
@@ -368,6 +403,76 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Else, "`else`")
     val els = parseExpr()
     ECond(cond, thn, els, stage)
+
+  private def parseTypeDecl(): Expr =
+    expect(Kind.Type, "`type`")
+    val name = parseIdentifier("type name")
+    if !isUpperName(name) then fail(s"Type names must be uppercase; found `$name`")
+    val params =
+      if at(Kind.LBracket) then
+        val names = parseBracketNames("type variable")
+        names.foreach(n => if !isUpperName(n) then fail(s"Type parameters must be uppercase; found `$n`"))
+        names
+      else Nil
+    expect(Kind.Equal, "`=`")
+    typeScope = name :: typeScope // recursive: its own fields may mention it
+    val ctors = parseConstructors()
+    expect(Kind.In, "`in`")
+    val body = parseExpr()
+    typeScope = typeScope.tail
+    ETypeDecl(name, params, ctors, body)
+
+  private def parseConstructors(): List[Constructor] =
+    val ctors = ArrayBuffer.empty[Constructor]
+    ctors += parseConstructor()
+    while at(Kind.Bar) do
+      advance()
+      ctors += parseConstructor()
+    ctors.toList
+
+  private def parseConstructor(): Constructor =
+    val name = parseIdentifier("constructor name")
+    if !isUpperName(name) then fail(s"Constructor names must be uppercase; found `$name`")
+    if !at(Kind.LParen) then Constructor(name, Nil)
+    else
+      advance()
+      val fields = ArrayBuffer.empty[Type]
+      if !at(Kind.RParen) then
+        fields += parseTypeExpr()
+        while at(Kind.Comma) do
+          advance()
+          fields += parseTypeExpr()
+      expect(Kind.RParen, "`)`")
+      Constructor(name, fields.toList)
+
+  private def parseMatch(): Expr =
+    expect(Kind.Match, "`match`")
+    val scrutinee = parseExpr()
+    expect(Kind.With, "`with`")
+    val cases = ArrayBuffer.empty[MatchCase]
+    while at(Kind.Bar) do
+      advance()
+      cases += parseMatchCase()
+    if cases.isEmpty then fail("Expected at least one `|` case")
+    EMatch(scrutinee, cases.toList)
+
+  private def parseMatchCase(): MatchCase =
+    val con = parseIdentifier("constructor name in pattern")
+    if !isUpperName(con) then fail(s"Pattern heads must be constructors (uppercase); found `$con`")
+    val binders =
+      if at(Kind.LParen) then
+        advance()
+        val names = ArrayBuffer.empty[String]
+        if !at(Kind.RParen) then
+          names += parseVarBinder("pattern binder")
+          while at(Kind.Comma) do
+            advance()
+            names += parseVarBinder("pattern binder")
+        expect(Kind.RParen, "`)`")
+        names.toList
+      else Nil
+    expect(Kind.FatArrow, "`=>`")
+    MatchCase(con, binders, parseExpr())
 
   private def parseComparison(): Expr =
     var expr = parseAdditive()
@@ -419,8 +524,10 @@ private case class Parser(tokens: Vector[Token]):
     while keepGoing do
       current.kind match
         case Kind.LBracket =>
-          val stages = parseBracketedStages()
-          stages.foreach(stage => expr = ESApp(expr, stage))
+          expr = parseBracketArgs().foldLeft(expr) {
+            case (e, st: Stage) => ESApp(e, st)
+            case (e, ty: Type) => ETApp(e, ty)
+          }
         case Kind.LParen =>
           advance()
           val arg = parseExpr()
@@ -434,18 +541,24 @@ private case class Parser(tokens: Vector[Token]):
     expr
 
   private def parseAtomicPostfix(): Expr =
-    var expr = parsePrimary()
-    while at(Kind.LBracket) do
-      val stages = parseBracketedStages()
-      stages.foreach(stage => expr = ESApp(expr, stage))
-    expr
+    def loop(expr: Expr): Expr =
+      current.kind match
+        case Kind.LBracket =>
+          loop(parseBracketArgs().foldLeft(expr) {
+            case (e, st: Stage) => ESApp(e, st)
+            case (e, ty: Type) => ETApp(e, ty)
+          })
+        case _ => expr
+    loop(parsePrimary())
 
   private def parseJuxtapositionArg(): Expr =
     parseAtomicPostfix()
 
   private def canStartJuxtapositionArg(kind: Kind): Boolean =
     kind match
-      case Kind.IntLit | Kind.True | Kind.False | Kind.Identifier | Kind.Lift | Kind.Ref | Kind.IsApp | Kind.Run => true
+      case Kind.IntLit | Kind.True | Kind.False | Kind.Identifier | Kind.Lift | Kind.Ref | Kind.IsApp | Kind.Run |
+          Kind.Alloc | Kind.Get | Kind.Set | Kind.Len =>
+        true
       case _ => false
 
   private def parsePrimary(): Expr =
@@ -459,11 +572,14 @@ private case class Parser(tokens: Vector[Token]):
         advance()
         EBool(false)
       case Kind.Identifier =>
-        EVar(advance().lexeme)
+        if isUpperName(current.lexeme) then parseConstructorApp()
+        else EVar(advance().lexeme)
       case Kind.Lift =>
         parseLift()
       case Kind.Ref =>
         parseRef()
+      case Kind.Alloc | Kind.Get | Kind.Set | Kind.Len =>
+        parseArrayOp()
       case Kind.IsApp =>
         parseIsApp()
       case Kind.Run =>
@@ -473,9 +589,23 @@ private case class Parser(tokens: Vector[Token]):
       case _ =>
         fail(s"Unexpected token `${current.lexeme}`")
 
+  private def parseConstructorApp(): Expr =
+    val name = advance().lexeme
+    if !at(Kind.LParen) then ECon(name, Nil)
+    else
+      advance()
+      val args = ArrayBuffer.empty[Expr]
+      if !at(Kind.RParen) then
+        args += parseExpr()
+        while at(Kind.Comma) do
+          advance()
+          args += parseExpr()
+      expect(Kind.RParen, "`)`")
+      ECon(name, args.toList)
+
   private def parseLift(): Expr =
     expect(Kind.Lift, "`lift`")
-    val stage = parseBracketedStage()
+    val stage = parseBracketStage()
     expect(Kind.LParen, "`(`")
     val expr = parseExpr()
     expect(Kind.RParen, "`)`")
@@ -488,6 +618,24 @@ private case class Parser(tokens: Vector[Token]):
     val expr = parseExpr()
     expect(Kind.RParen, "`)`")
     EAlloc(expr, stage)
+
+  private def parseArrayOp(): Expr =
+    val op = advance()
+    val stage = parseOptionalStageValue()
+    expect(Kind.LParen, "`(`")
+    val args = ArrayBuffer.empty[Expr]
+    if !at(Kind.RParen) then
+      args += parseExpr()
+      while at(Kind.Comma) do
+        advance()
+        args += parseExpr()
+    expect(Kind.RParen, "`)`")
+    (op.kind, args.toList) match
+      case (Kind.Alloc, List(n, init)) => EArrAlloc(n, init, stage)
+      case (Kind.Get, List(a, i)) => EArrGet(a, i, stage)
+      case (Kind.Set, List(a, i, v)) => EArrSet(a, i, v, stage)
+      case (Kind.Len, List(a)) => EArrLen(a, stage)
+      case _ => fail(s"malformed array operation `${op.lexeme}`")
 
   private def parseIsApp(): Expr =
     expect(Kind.IsApp, "`isApp`")
@@ -523,11 +671,11 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.Forall =>
         advance()
-        expect(Kind.LBracket, "`[`")
-        val st = parseIdentifier("stage variable")
-        expect(Kind.RBracket, "`]`")
+        val names = parseBracketNames("stage or type variable")
         expect(Kind.Dot, "`.`")
-        TForallSt(st, parseTypeExpr())
+        names.foldRight(parseTypeExpr()) { (name, acc) =>
+          if isLowerName(name) then TForallSt(name, acc) else TForallTy(name, acc)
+        }
       case _ =>
         parseArrowType()
 
@@ -554,13 +702,8 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.Identifier =>
         val name = advance().lexeme
-        if at(Kind.LBracket) then
-          advance()
-          val arg = parseTypeExpr()
-          expect(Kind.RBracket, "`]`")
-          applyTypeConstructor(name, Some(arg))
-        else
-          applyTypeConstructor(name, None)
+        val args = if at(Kind.LBracket) then parseBracketedTypes() else Nil
+        if isDataType(name) then TCon(name, args) else applyTypeConstructor(name, args)
       case Kind.LParen =>
         advance()
         val ty = parseTypeExpr()
@@ -569,19 +712,25 @@ private case class Parser(tokens: Vector[Token]):
       case _ =>
         fail("Expected a type")
 
-  private def applyTypeConstructor(name: String, arg: Option[Type]): Type =
-    (name, arg) match
-      case ("Unit", None) => TUnit
-      case ("Int", None) => TInt
-      case ("Bool", None) => TBool
-      case ("Ref", Some(t)) => TRef(t)
-      case ("Code", Some(t)) => TCode(t)
-      case ("Code", None) =>
-        fail("`Code` must be applied as `Code[T]`")
-      case ("Ref", None) =>
-        fail("`Ref` must be applied as `Ref[T]`")
-      case _ =>
-        fail(s"Unsupported type constructor `$name` for CoreEffOpt")
+  private def applyTypeConstructor(name: String, args: List[Type]): Type =
+    (name, args) match
+      case ("Unit", Nil) => TUnit
+      case ("Int", Nil) => TInt
+      case ("Bool", Nil) => TBool
+      case ("Ref", List(t)) => TRef(t)
+      case ("Array", List(t)) => TArr(t)
+      case ("Array", _) =>
+        fail("`Array` takes exactly one type argument: `Array[T]`")
+      case ("Code", List(t)) => TCode(t)
+      case ("Code", _) =>
+        fail("`Code` takes exactly one type argument: `Code[T]`")
+      case ("Ref", _) =>
+        fail("`Ref` takes exactly one type argument: `Ref[T]`")
+      case (v, Nil) if isUpperName(v) => TVar(v)
+      case (v, Nil) =>
+        fail(s"Type variables must be uppercase; found `$v`")
+      case (v, _) =>
+        fail(s"Unsupported type constructor `$v`")
 
   private def parseOptionalTypeAnnotation(): Option[Type] =
     if at(Kind.Colon) then
@@ -596,17 +745,12 @@ private case class Parser(tokens: Vector[Token]):
     while keepGoing do
       current.kind match
         case Kind.LBracket =>
-          advance()
-          val stageNames = ArrayBuffer.empty[String]
-          stageNames += parseIdentifier("stage variable")
-          while at(Kind.Comma) do
-            advance()
-            stageNames += parseIdentifier("stage variable")
-          expect(Kind.RBracket, "`]`")
-          stageNames.foreach(name => out += HeaderBinder.Stage(name))
+          parseBracketNames("stage or type variable").foreach { name =>
+            out += (if isLowerName(name) then HeaderBinder.Stage(name) else HeaderBinder.TypeParam(name))
+          }
         case Kind.LParen =>
           advance()
-          val arg = parseIdentifier("parameter name")
+          val arg = parseVarBinder("parameter name")
           expect(Kind.Colon, "`:` after function parameter")
           val argTy = parseTypeExpr()
           expect(Kind.RParen, "`)`")
@@ -620,6 +764,8 @@ private case class Parser(tokens: Vector[Token]):
     binders.foldRight(body) {
       case (HeaderBinder.Stage(name), acc) =>
         ESLam(name, acc)
+      case (HeaderBinder.TypeParam(name), acc) =>
+        ETLam(name, acc)
       case (HeaderBinder.Term(name, ty), acc) =>
         val lam = ELam(name, Some(ty), acc, pendingRet)
         pendingRet = None
@@ -629,6 +775,7 @@ private case class Parser(tokens: Vector[Token]):
   private def buildHeaderType(binders: List[HeaderBinder], retTy: Type): Type =
     binders.foldRight(retTy) {
       case (HeaderBinder.Stage(name), acc) => TForallSt(name, acc)
+      case (HeaderBinder.TypeParam(name), acc) => TForallTy(name, acc)
       case (HeaderBinder.Term(_, ty), acc) => TFun(ty, acc)
     }
 
@@ -639,7 +786,9 @@ private case class Parser(tokens: Vector[Token]):
         if n < 0 then fail("Stage indices must be non-negative")
         SNum(n)
       case Kind.Identifier =>
-        SVar(advance().lexeme)
+        val name = parseIdentifier("stage variable")
+        if isLowerName(name) then SVar(name)
+        else fail(s"Stage variables must be lowercase; found `$name`")
       case _ =>
         fail("Expected a stage")
 
@@ -650,21 +799,66 @@ private case class Parser(tokens: Vector[Token]):
     else
       None
 
-  private def parseBracketedStage(): Stage =
+  private def parseBracketedTypes(): List[Type] =
+    expect(Kind.LBracket, "`[`")
+    val types = ArrayBuffer.empty[Type]
+    types += parseTypeExpr()
+    while at(Kind.Comma) do
+      advance()
+      types += parseTypeExpr()
+    expect(Kind.RBracket, "`]`")
+    types.toList
+
+  private def parseBracketStage(): Stage =
     expect(Kind.LBracket, "`[`")
     val st = parseStage()
     expect(Kind.RBracket, "`]`")
     st
 
-  private def parseBracketedStages(): List[Stage] =
+  private def parseBracketNames(expected: String): List[String] =
     expect(Kind.LBracket, "`[`")
-    val stages = ArrayBuffer.empty[Stage]
-    stages += parseStage()
+    val names = ArrayBuffer.empty[String]
+    names += parseBinderName(expected)
     while at(Kind.Comma) do
       advance()
-      stages += parseStage()
+      names += parseBinderName(expected)
     expect(Kind.RBracket, "`]`")
-    stages.toList
+    names.toList
+
+  private def parseBinderName(expected: String): String =
+    val name = parseIdentifier(expected)
+    if isLowerName(name) || isUpperName(name) then name
+    else fail(s"Expected a lowercase stage variable or an uppercase type variable but found `$name`")
+
+  private def parseVarBinder(expected: String): String =
+    val name = parseIdentifier(expected)
+    if name == "_" || isLowerName(name) then name
+    else fail(s"Expected $expected (lowercase or `_`) but found `$name`")
+
+  private def parseBracketArgs(): List[Stage | Type] =
+    expect(Kind.LBracket, "`[`")
+    val args = ArrayBuffer.empty[Stage | Type]
+    args += parseBracketArg()
+    while at(Kind.Comma) do
+      advance()
+      args += parseBracketArg()
+    expect(Kind.RBracket, "`]`")
+    args.toList
+
+  private def parseBracketArg(): Stage | Type =
+    current.kind match
+      case Kind.IntLit => parseStage()
+      case Kind.Identifier if isLowerName(current.lexeme) => parseStage()
+      case Kind.Identifier if isUpperName(current.lexeme) => parseTypeExpr()
+      case Kind.LParen => parseTypeExpr()
+      case _ =>
+        fail(s"Expected a stage variable (lowercase) or a type (uppercase) but found `${current.lexeme}`")
+
+  private def isLowerName(name: String): Boolean =
+    name.headOption.exists(_.isLower)
+
+  private def isUpperName(name: String): Boolean =
+    name.headOption.exists(_.isUpper)
 
   private def parseIdentifier(expected: String): String =
     if at(Kind.Identifier) then advance().lexeme
