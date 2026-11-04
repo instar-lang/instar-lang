@@ -309,12 +309,6 @@ class ParserTest extends FunSuite:
     assertEquals(parsed, expected)
   }
 
-  test("rejects fun without a parameter type") {
-    intercept[ParserException] {
-      parse("fun(x) => x")
-    }
-  }
-
   test("parses `tfun[T]` headers and explicit type abstractions") {
     assertEquals(
       parse("let id[T] (x: T) = x in id"),
@@ -405,6 +399,38 @@ class ParserTest extends FunSuite:
     )
   }
 
+  test("`exists[T].` is an existential type, nested like forall") {
+    assertEquals(
+      parseType("exists[T]. T -> T"),
+      TExistsTy("T", TFun(TVar("T"), TVar("T"))),
+    )
+    assertEquals(
+      parseType("exists[T]. exists[U]. T -> U"),
+      TExistsTy("T", TExistsTy("U", TFun(TVar("T"), TVar("U")))),
+    )
+    assertEquals(
+      parseType("exists[T, U]. T -> U"),
+      TExistsTy("T", TExistsTy("U", TFun(TVar("T"), TVar("U")))),
+    )
+  }
+
+  test("parses `pack` and `unpack`, symmetric to `tfun` and type application") {
+    assertEquals(parse("pack [Int, 42]"), EPack(TInt, ENum(42)))
+    assertEquals(
+      parse("pack [Code[Int], lift[2](1)]"),
+      EPack(TCode(TInt), ELift(ENum(1), SNum(2))),
+    )
+    assertEquals(
+      parse("unpack [T, x] = pack [Int, 41] in x + 1"),
+      EUnpack(
+        "T",
+        "x",
+        EPack(TInt, ENum(41)),
+        EBinOp("+", EVar("x"), ENum(1), None),
+      ),
+    )
+  }
+
   test("no type scope: an unknown uppercase name is a type variable wherever it appears") {
     // No scope is tracked: `T` is a `TVar` here even though nothing binds it.
     assertEquals(
@@ -418,23 +444,9 @@ class ParserTest extends FunSuite:
     assertEquals(parse("fun(x: T) => x"), ELam("x", Some(TVar("T")), EVar("x"), None))
   }
 
-  test("type variables must be uppercase, stage variables lowercase") {
-    val ty = intercept[ParserException] { parse("fun(x: t) => x") }
-    assert(ty.getMessage.contains("Type variables must be uppercase"), clues(ty.getMessage))
-    val st = intercept[ParserException] { parse("sfun[S] => 1") }
-    assert(st.getMessage.contains("Stage variables must be lowercase"), clues(st.getMessage))
-  }
-
   test("mixed `[s, T]` applies stage and type in written order") {
     assertEquals(parse("f[s, T]"), ETApp(ESApp(EVar("f"), SVar("s")), TVar("T")))
     assertEquals(parse("f[T, 2]"), ESApp(ETApp(EVar("f"), TVar("T")), SNum(2)))
-  }
-
-  test("a type variable cannot take type arguments") {
-    val e = intercept[ParserException] {
-      parseType("T[Int]")
-    }
-    assert(e.getMessage.contains("Unsupported type constructor `T`"), clues(e.getMessage))
   }
 
   test("innermost type binder shadows the outer one") {

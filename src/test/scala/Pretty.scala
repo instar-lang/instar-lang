@@ -40,6 +40,9 @@ class PrettyTest extends FunSuite:
       "lift[2](1)",
       "fun(x: forall[T]. T) => x",
       "fun(x: forall[s]. Int @ s) => x",
+      "fun(x: exists[T]. T) => x",
+      "pack [Int, 42]",
+      "unpack [T, x] = pack [Int, 41] in x + 1",
       "f[s, T]",
     )
 

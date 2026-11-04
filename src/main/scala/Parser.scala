@@ -54,6 +54,9 @@ object Lexer:
     case Assign
     case IsApp
     case Forall
+    case Exists
+    case Pack
+    case Unpack
     case Run
     case Type
     case Match
@@ -86,6 +89,9 @@ object Lexer:
     "len" -> Kind.Len,
     "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
+    "exists" -> Kind.Exists,
+    "pack" -> Kind.Pack,
+    "unpack" -> Kind.Unpack,
     "run" -> Kind.Run,
     "type" -> Kind.Type,
     "match" -> Kind.Match,
@@ -283,6 +289,8 @@ private case class Parser(tokens: Vector[Token]):
       case Kind.If => parseIf()
       case Kind.Type => parseTypeDecl()
       case Kind.Match => parseMatch()
+      case Kind.Pack => parsePack()
+      case Kind.Unpack => parseUnpack()
       case _ => parseAssignment()
 
   private def parseAssignment(): Expr =
@@ -473,6 +481,29 @@ private case class Parser(tokens: Vector[Token]):
       else Nil
     expect(Kind.FatArrow, "`=>`")
     MatchCase(con, binders, parseExpr())
+
+  private def parsePack(): Expr =
+    expect(Kind.Pack, "`pack`")
+    expect(Kind.LBracket, "`[`")
+    val witness = parseTypeExpr()
+    expect(Kind.Comma, "`,` between witness type and payload")
+    val payload = parseExpr()
+    expect(Kind.RBracket, "`]`")
+    EPack(witness, payload)
+
+  private def parseUnpack(): Expr =
+    expect(Kind.Unpack, "`unpack`")
+    expect(Kind.LBracket, "`[`")
+    val tyName = parseIdentifier("type variable")
+    if !isUpperName(tyName) then fail(s"Existential type variables must be uppercase; found `$tyName`")
+    expect(Kind.Comma, "`,` between type variable and binder")
+    val x = parseVarBinder("binding name")
+    expect(Kind.RBracket, "`]`")
+    expect(Kind.Equal, "`=`")
+    val packed = parseExpr()
+    expect(Kind.In, "`in`")
+    val body = parseExpr()
+    EUnpack(tyName, x, packed, body)
 
   private def parseComparison(): Expr =
     var expr = parseAdditive()
@@ -676,6 +707,14 @@ private case class Parser(tokens: Vector[Token]):
         names.foldRight(parseTypeExpr()) { (name, acc) =>
           if isLowerName(name) then TForallSt(name, acc) else TForallTy(name, acc)
         }
+      case Kind.Exists =>
+        advance()
+        val names = parseBracketNames("type variable")
+        names.foreach { name =>
+          if !isUpperName(name) then fail(s"Existential type variables must be uppercase; found `$name`")
+        }
+        expect(Kind.Dot, "`.`")
+        names.foldRight(parseTypeExpr())((name, acc) => TExistsTy(name, acc))
       case _ =>
         parseArrowType()
 
