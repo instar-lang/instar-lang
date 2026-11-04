@@ -84,14 +84,6 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       val TForallSt(s, bodyTy) = typedFun.ty.get
       ESApp(typedFun, st).withType(substStage(bodyTy, s, st))
 
-    // Stopgap: type polymorphism is implemented in the parser and the interpreter only.
-    case ETLam(_, _) | ETApp(_, _) =>
-      fail("type polymorphism (`tfun[T]` / `e[T]`) is not implemented in the type checker yet")
-
-    // Stopgap: ADTs are implemented in the interpreter only.
-    case ETypeDecl(_, _, _, _) | ECon(_, _) | EMatch(_, _) =>
-      fail("ADTs are not implemented in the type checker yet")
-
     // Stopgap: arrays are implemented in the interpreter only.
     case EArrAlloc(_, _, _) | EArrGet(_, _, _) | EArrSet(_, _, _, _) | EArrLen(_, _) =>
       fail("arrays are not implemented in the type checker yet")
@@ -211,6 +203,14 @@ private def infer(ctx: Ctx, expr: Expr): Expr =
       fail("cannot type-check internal location expressions")
 
     // Experimental:
+    case ETLam(_, _) | ETApp(_, _) =>
+      fail("type polymorphism (`tfun[T]` / `e[T]`) is not implemented in the type checker yet")
+
+    case EPack(_, _) | EUnpack(_, _, _, _) =>
+      fail("existential types (`pack` / `unpack`) are not implemented in the type checker yet")
+
+    case ETypeDecl(_, _, _, _) | ECon(_, _) | EMatch(_, _) =>
+      fail("ADTs are not implemented in the type checker yet")
 
     case EIsApp(e) =>
       val typedE = infer(ctx, e)

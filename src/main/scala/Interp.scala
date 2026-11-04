@@ -31,11 +31,13 @@ enum Value:
   case VBool(b: Boolean)
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
-  case VTClo(body: Expr, ρ: Env, ς: StEnv)
   case VClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VBNClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
   case VThunk(e: Expr, ρ: Env, ς: StEnv)
+  // Experimental:
+  case VTClo(body: Expr, ρ: Env, ς: StEnv)
+  case VPack(value: Value)
   case VCon(tag: String, args: List[Value])
   case VArr(elems: Array[Value])
 
@@ -280,6 +282,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
   case VNum(i) => reflect(ENum(i), σ, k, γ)
   case VBool(b) => reflect(EBool(b), σ, k, γ)
   case VLoc(l) => reflect(ELoc(l), σ, k, γ)
+  case VPack(_) => throw new MatchError("cannot lift existential packages")
   case VArr(_) => throw new MatchError("cannot lift array values")
   case VClo(x, argTy, body, retTy, ρf, ςf) =>
     val l = σ.size
@@ -514,7 +517,7 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
         reflect(EFix(g, x, Some(Sta)), σ2, k, γ)
       })
-    // Experimental features below:
+    // Experimental:
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
     case ECBNApp(e1, e2) =>
       eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
@@ -522,12 +525,20 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
         val l = σ1.size
         eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
       }, γ)
-    // Type polymorphism (`tfun[T]` / `e[T]`)
     case ETLam(_, body) =>
       k(VTClo(body, ρ, ς), σ, γ)
     case ETApp(e, _) =>
       eval(e, ρ, ς, σ, { case (VTClo(body, ρf, ςf), σ1, γ1) =>
         eval(body, ρf, ςf, σ1, k, γ1)
+      }, γ)
+    case EPack(_, payload) =>
+      eval(payload, ρ, ς, σ, { case (v, σ1, γ1) =>
+        k(VPack(v), σ1, γ1)
+      }, γ)
+    case EUnpack(_, x, packed, body) =>
+      eval(packed, ρ, ς, σ, { case (VPack(payload), σ1, γ1) =>
+        val l = σ1.size
+        eval(body, ρ + (x -> l), ς, σ1 + (l -> payload), k, γ1)
       }, γ)
     // ADTs, first stage only
     case ETypeDecl(_, _, _, body) => eval(body, ρ, ς, σ, k, γ)

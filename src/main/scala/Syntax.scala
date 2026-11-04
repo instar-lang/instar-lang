@@ -12,10 +12,13 @@ enum Type:
   case TRef(t: Type)
   case TArr(t: Type)
   case TForallSt(s: String, t: Type)
-  case TForallTy(x: String, t: Type)
   case TAt(t: Type, s: Stage)
   case TCode(t: Type)
+  // Experimental:
+  // Forall && Existential
   case TVar(x: String)
+  case TForallTy(x: String, t: Type)
+  case TExistsTy(x: String, t: Type)
   // ADT type constructor
   case TCon(name: String, args: List[Type])
 
@@ -30,8 +33,6 @@ enum Expr:
   case EVar(name: String)
   case ESLam(x: String, body: Expr)
   case ESApp(e: Expr, st: Stage)
-  case ETLam(x: String, body: Expr)
-  case ETApp(e: Expr, argTy: Type)
   case ELam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
   case EBNLam(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type])
   case EApp(e1: Expr, e2: Expr, st: Option[Stage])
@@ -57,6 +58,12 @@ enum Expr:
   // Extend the language to allow programmers to inspect code values
   case EIsApp(e: Expr)
   case ECBNApp(e1: Expr, e2: Expr)
+  // Forall types
+  case ETLam(x: String, body: Expr)
+  case ETApp(e: Expr, argTy: Type)
+  // Existential types
+  case EPack(witness: Type, e: Expr)
+  case EUnpack(tyName: String, x: String, packed: Expr, body: Expr)
   // ADTs, first stage only
   case ETypeDecl(name: String, params: List[String], ctors: List[Constructor], body: Expr)
   case ECon(name: String, args: List[Expr])
@@ -77,6 +84,8 @@ extension (e: Expr)
       case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
       case ESApp(_, _) | EApp(_, _, _) => false
       case ETApp(e, _) => e.isPure
+      case EPack(_, e) => e.isPure
+      case EUnpack(_, _, packed, body) => packed.isPure && body.isPure
       case ELift(t, _) => false
       case EAlloc(_, _) | EDeref(_, _) | EAssign(_, _, _) => false
       case EArrAlloc(_, _, _) | EArrGet(_, _, _) | EArrSet(_, _, _, _) | EArrLen(_, _) => false
@@ -99,6 +108,8 @@ extension (e: Expr)
       case ESApp(e, _) => e.freeVar
       case ETLam(_, body) => body.freeVar
       case ETApp(e, _) => e.freeVar
+      case EPack(_, e) => e.freeVar
+      case EUnpack(_, x, packed, body) => packed.freeVar ++ (body.freeVar - x)
       case ELam(x, _, body, _) => body.freeVar - x
       case EApp(e1, e2, _) => e1.freeVar ++ e2.freeVar
       case ECBNApp(e1, e2) => e1.freeVar ++ e2.freeVar
@@ -134,6 +145,10 @@ extension (e: Expr)
       case ESApp(e, st) => ESApp(e.subst(from, to), st)
       case ETLam(x, body) => ETLam(x, body.subst(from, to))
       case ETApp(e, argTy) => ETApp(e.subst(from, to), argTy)
+      case EPack(witness, e) => EPack(witness, e.subst(from, to))
+      case EUnpack(tyName, x, packed, body) =>
+        EUnpack(tyName, x, packed.subst(from, to),
+          if x == from then body else body.subst(from, to))
       case EIsApp(e) => EIsApp(e.subst(from, to))
       case ECBNApp(e1, e2) => ECBNApp(e1.subst(from, to), e2.subst(from, to))
       case ELoc(_) => e

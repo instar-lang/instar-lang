@@ -26,6 +26,7 @@ def value(value: Value): String =
     case VLoc(loc) => s"loc($loc)"
     case VSClo(st, _, _, _) => s"<stage-closure:$st>"
     case VTClo(_, _, _) => "<type-closure>"
+    case VPack(_) => "<existential-package>"
     case VClo(x, _, _, _, _, _) => s"<closure:$x>"
     case VBNClo(x, _, _, _, _, _) => s"<cbn-closure:$x>"
     case VThunk(_, _, _) => "<thunk>"
@@ -87,6 +88,18 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
       val (base, tyVars) = collectTypeLambdas(expr)
       maybeParens(
         s"tfun[${tyVars.mkString(", ")}] => ${renderExpr(base, 0)}",
+        parentPrec > 0,
+      )
+
+    case EPack(witness, e) =>
+      maybeParens(
+        s"pack [${renderType(witness, 0)}, ${renderExpr(e, 0)}]",
+        parentPrec > 0,
+      )
+
+    case EUnpack(tyName, x, packed, body) =>
+      maybeParens(
+        s"unpack [$tyName, $x] = ${renderExpr(packed, 0)} in ${renderExpr(body, 0)}",
         parentPrec > 0,
       )
 
@@ -172,6 +185,8 @@ private def renderType(ty: Type, parentPrec: Int): String =
       maybeParens(s"forall[$s]. ${renderType(t, 0)}", parentPrec > 0)
     case TForallTy(x, t) =>
       maybeParens(s"forall[$x]. ${renderType(t, 0)}", parentPrec > 0)
+    case TExistsTy(x, t) =>
+      maybeParens(s"exists[$x]. ${renderType(t, 0)}", parentPrec > 0)
     case TVar(x) => x
     case TFun(t1, t2) =>
       maybeParens(s"${renderType(t1, 1)} -> ${renderType(t2, 0)}", parentPrec > 0)

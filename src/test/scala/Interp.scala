@@ -861,6 +861,17 @@ class CoreEffTest extends Base {
     testEval(ELetRec("id", id, EApp1(ETApp(EVar("id"), TInt), ENum(7))), "VNum(7)")
   }
 
+  test("exist") {
+    testEval(EPack(TInt, EBinOp1("+", ENum(20), ENum(22))), "VPack(VNum(42))")
+    testEval(EUnpack("T", "x", EPack(TInt, ENum(41)), EBinOp1("+", EVar("x"), ENum(1))), "VNum(42)")
+  }
+
+  test("exist-code") {
+    val e = EUnpack("T", "x", EPack(TCode(TInt), ENum2(42)), EVar("x"))
+    testEval(e, "VCode(ENum(42))")
+    testEval(ERun(e), "VNum(42)")
+  }
+
   test("rec") {
     testEval(e6, "VNum(120)")
     testEval(e7, "VNum(1024)")
