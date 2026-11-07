@@ -772,6 +772,35 @@ trait Stream52Base extends SurfaceBase {
         ]) in
   """
 
+  // LMS:
+  /*
+  def fold[R[+_], α: Manifest, ζ: Manifest](f: (R[ζ], R[α]) => R[ζ], z: R[ζ])(str: st_stream[R, α]): R[ζ] =
+    str.init[ζ] { (s: str.σ) =>
+      lazy val loop: R[ζ => ζ] = fun[R, ζ, ζ] { (z: R[ζ]) =>
+        str.step[ζ](s) {
+          case stream_shape.Nil        => z
+          case stream_shape.Cons(a, _) => app[R, ζ, ζ](loop, f(z, a))
+        }
+      }
+      app[R, ζ, ζ](loop, z)
+    }
+  */
+  protected val foldDecl: String = """
+  let fold[A, Z, s](f: Z @ s -> A @ s -> Z @ s)(z: Z @ s)(str: StStream[A, s]): Z @ s =
+    match str with
+    | StStream(packed) =>
+      unpack [S, repr] = packed in
+      match repr with
+      | Pair(init, step) =>
+        init[Z](fun(state: S) =>
+          let loop = fix@s go. lift[s](fun(acc: Z @ s): Z @ s =>
+            step[Z](state)(fun(shape: StreamShape[A @ s, Unit]) =>
+              match shape with
+              | Nil => acc
+              | Cons(a, _) => go(f(acc)(a))@s))
+          in loop(z)@s) in
+  """
+
   protected def stream52(decls: String*)(body: String): String =
     decls.map(_.trim).mkString("\n") + "\n" + body
 }
@@ -797,8 +826,8 @@ class Stream52 extends Stream52Base {
   test("of_arr yields elements in order, advances, then terminates") {
     val src = stream52(pairDecl, streamShapeDecl, stStreamDecl, incrDecl, ofArrDecl)("""
       let a = alloc(2, 0) in
-      let _ = set@1(a, 0, 7) in
-      let _ = set@1(a, 1, 8) in
+      let _ = set(a, 0, 7) in
+      let _ = set(a, 1, 8) in
       let str = of_arr[Int, 1](a) in
       match str with
       | StStream(packed) =>
@@ -825,10 +854,10 @@ class Stream52 extends Stream52Base {
   test("map transforms yielded elements") {
     val src = stream52(pairDecl, streamShapeDecl, stStreamDecl, incrDecl, ofArrDecl, mapDecl)("""
       let a = alloc(2, 0) in
-      let _ = set@1(a, 0, 7) in
-      let _ = set@1(a, 1, 8) in
+      let _ = set(a, 0, 7) in
+      let _ = set(a, 1, 8) in
       let str = of_arr[Int, 1](a) in
-      let mapped = map[Int, Int, 1](fun(x: Int @ 1) => x + 1)(str) in
+      let mapped = map[Int, Int, 1](fun(x: Int) => x + 1)(str) in
       match mapped with
       | StStream(packed) =>
         unpack [S, repr] = packed in
@@ -849,5 +878,17 @@ class Stream52 extends Stream52Base {
                       | Cons(_, _) => 0))))
     """)
     testEvalSurface(src, VNum(89))
+  }
+
+  test("fold sums yielded elements") {
+    val src = stream52(pairDecl, streamShapeDecl, stStreamDecl, incrDecl, ofArrDecl, foldDecl)("""
+      let a = alloc(4, 0) in
+      let _ = set(a, 0, 1) in
+      let _ = set(a, 1, 2) in
+      let _ = set(a, 2, 3) in
+      let _ = set(a, 3, 4) in
+      fold[Int, Int, 1](fun(acc: Int) => fun(x: Int) => acc + x)(0)(of_arr[Int, 1](a))
+    """)
+    testEvalSurface(src, VNum(10))
   }
 }
