@@ -816,6 +816,15 @@ trait Stream52Base extends SurfaceBase {
       res) in
   """
 
+  protected val iotaDecl: String = """
+  let iota = fun(n: Int) =>
+    let a = alloc(n, 0) in
+    let loop = fix go. fun(i: Int) =>
+      if i < n then let _ = set(a, i, i + 1) in go(i + 1) else a
+    in
+    loop(0) in
+  """
+
   protected def stream52(decls: String*)(body: String): String =
     decls.map(_.trim).mkString("\n") + "\n" + body
 }
@@ -905,15 +914,12 @@ class Stream52 extends Stream52Base {
       mapDecl,
       foldDecl,
       sumOfSquaresDecl,
+      iotaDecl,
     )("""
-      let a = alloc(4, 0) in
-      let _ = set(a, 0, 1) in
-      let _ = set(a, 1, 2) in
-      let _ = set(a, 2, 3) in
-      let _ = set(a, 3, 4) in
+      let a = iota(10) in
       sumOfSquares[1](a)
     """)
-    testEvalSurface(src, VNum(30))
+    testEvalSurface(src, VNum(385))
   }
 
   test("stage-2 sum of squares fuses") {
@@ -987,15 +993,12 @@ class Stream52 extends Stream52Base {
       mapDecl,
       foldDecl,
       sumOfSquaresDecl,
+      iotaDecl,
     )("""
-      let a = alloc(4, 0) in
-      let _ = set(a, 0, 1) in
-      let _ = set(a, 1, 2) in
-      let _ = set(a, 2, 3) in
-      let _ = set(a, 3, 4) in
+      let a = iota(10) in
       let squares = run(sumOfSquares[2]) in
       squares(a)
     """)
-    testEvalSurface(src, VNum(30))
+    testEvalSurface(src, VNum(385))
   }
 }
