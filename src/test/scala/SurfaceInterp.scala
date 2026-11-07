@@ -720,7 +720,7 @@ trait Stream52Base extends SurfaceBase {
   protected val ofArrDecl: String = """
   let of_arr[A, s](arr: Array[A] @ s): StStream[A, s] =
     let init[W](k: Pair[Ref[Int] @ s, Array[A] @ s] -> W @ s): W @ s =
-      k(Pair(ref@s(0), arr)) in
+      k(Pair(ref@s(lift[s](0)), arr)) in
 
     let step[W](state: Pair[Ref[Int] @ s, Array[A] @ s])
         (k: StreamShape[A @ s, Unit] -> W @ s): W @ s =
@@ -799,6 +799,20 @@ trait Stream52Base extends SurfaceBase {
               | Nil => acc
               | Cons(a, _) => go(f(acc)(a))@s))
           in loop(z)@s) in
+  """
+
+  // LMS:
+  /*
+  def sumOfSquares[R[+_]](arr: R[Array[Int]])(implicit S: Stream52Cast): R[Int] = {
+    val str = S.map[R, Int, Int]((x: R[Int]) => S.times[R](x, x))(S.of_arr[R, Int](arr))
+    S.fold[R, Int, Int]((z: R[Int], a: R[Int]) => S.plus[R](z, a), S.int[R](0))(str)
+  }
+  */
+  protected val sumOfSquaresDecl: String = """
+  let sumOfSquares[s](arr: Array[Int] @ s): Int @ s =
+    let arr = map[Int, Int, s](fun(x: Int @ s) => x *@s x)(of_arr[Int, s](arr)) in
+    let res = fold[Int, Int, s](fun(acc: Int @ s) => fun(x: Int @ s) => acc +@s x)(lift[s](0))(arr) in
+    res in
   """
 
   protected def stream52(decls: String*)(body: String): String =
@@ -890,5 +904,66 @@ class Stream52 extends Stream52Base {
       fold[Int, Int, 1](fun(acc: Int) => fun(x: Int) => acc + x)(0)(of_arr[Int, 1](a))
     """)
     testEvalSurface(src, VNum(10))
+  }
+
+  test("stage-2 sum of squares fuses") {
+    val src = stream52(
+      pairDecl,
+      streamShapeDecl,
+      stStreamDecl,
+      incrDecl,
+      ofArrDecl,
+      mapDecl,
+      foldDecl,
+      sumOfSquaresDecl,
+    )("""
+      lift[2](fun(arr: Array[Int] @ 2): Int @ 2 => sumOfSquares[2](arr))
+    """)
+    val (value, _) = eval(parse(src))
+    val code = instar.pretty.value(value)
+    // LMS (Stream52Suite / Stream52CastSuite, §5.2):
+    /*
+    class Snippet() extends (Array[Int] => Int) {
+      def apply(x0: Array[Int]): Int = {
+        var x1: scala.runtime.IntRef = null.asInstanceOf[scala.runtime.IntRef]
+        var x2: Function1[Int, Int] = null.asInstanceOf[Function1[Int, Int]]
+        var x3: Int = null.asInstanceOf[Int]
+        x1 = new scala.runtime.IntRef(0)
+        x2 = x4
+        x3 = x0.length
+        def x4(x5: Int): Int = if (x1.elem < x3) {
+          val x6 = x0(x1.elem)
+          x1.elem = (x1.elem + 1)
+          x2(x5 + x6 * x6)
+        } else x5
+        x4(0)
+      }
+    }
+    */
+    val expected =
+      """|let x19 (x0) =
+         |  let x1 = ref(0) in
+         |  let x17 = fix f2.
+         |    let x16 (x3) =
+         |      let x4 = ! x1 in
+         |      let x5 = len(x0) in
+         |      let x6 = x4 < x5 in
+         |      let x15 = if x6 then
+         |        let x7 = ! x1 in
+         |        let x8 = get(x0, x7) in
+         |        let x9 = ! x1 in
+         |        let x10 = x9 + 1 in
+         |        let x11 = x1 := x10 in
+         |        let x12 = x8 * x8 in
+         |        let x13 = x3 + x12 in
+         |        let x14 = f2 x13 in x14
+         |      else
+         |        x3
+         |      in x15
+         |    in x16
+         |  in
+         |  let x18 = x17 0 in x18
+         |in x19""".stripMargin
+    assertEquals(code, expected)
   }
 }
