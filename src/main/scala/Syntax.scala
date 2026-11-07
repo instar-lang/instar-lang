@@ -20,7 +20,7 @@ enum Type:
   case TForallTy(x: String, t: Type)
   case TExistsTy(x: String, t: Type)
   // ADT type constructor
-  case TCon(name: String, args: List[Type])
+  case TCon(name: String, args: List[Stage | Type])
 
 type Loc = Int
 

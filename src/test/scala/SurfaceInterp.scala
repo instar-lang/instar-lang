@@ -646,4 +646,17 @@ class ADT extends SurfaceBase {
     """
     testEvalSurface(src, VNum(42))
   }
+
+  test("list-length with a stage parameter") {
+    val src = """
+      type List[A, s] = Nil | Cons(A@s, List[A, s]) in
+      let length = fix go. fun(xs: List[A]) =>
+        match xs with
+        | Nil => 0
+        | Cons(_, ys) => 1 + go(ys)
+      in
+      length(Cons(1, Cons(2, Cons(3, Nil))))
+    """
+    testEvalSurface(src, VNum(3))
+  }
 }

@@ -1012,6 +1012,20 @@ class ADTSuite extends Base {
       "VNum(3)",
     )
   }
+
+  test("erases stage parameters of ADTs") {
+    val e = ETypeDecl(
+      "Option",
+      List("A", "s"),
+      List(Constructor("None", Nil), Constructor("Some", List(TAt(TVar("A"), SVar("s"))))),
+      EMatch(
+        ECon("Some", List(ENum(42))),
+        List(MatchCase("None", Nil, ENum(0)), MatchCase("Some", List("x"), EVar("x"))),
+      ),
+    )
+
+    testEval(e, "VNum(42)")
+  }
 }
 
 class ArraySuite extends Base {

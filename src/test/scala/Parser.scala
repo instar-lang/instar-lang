@@ -482,3 +482,38 @@ class ParserTest extends FunSuite:
       ),
     )
   }
+
+  test("preserves the written order of ADT type and stage parameters") {
+    assertEquals(
+      parse("type T[A, s] = C in C"),
+      ETypeDecl("T", List("A", "s"), List(Constructor("C", Nil)), ECon("C", Nil)),
+    )
+    assertEquals(
+      parse("type T[s, A] = C in C"),
+      ETypeDecl("T", List("s", "A"), List(Constructor("C", Nil)), ECon("C", Nil)),
+    )
+  }
+
+  test("parses ADTs with both type and stage parameters") {
+    val parsed = parse(
+      """type List[A, s] = Nil | Cons(A@s, List[A, s]) in
+        match Cons(1, Nil) with
+        | Nil => 0
+        | Cons(x, xs) => x"""
+    )
+    assertEquals(
+      parsed,
+      ETypeDecl(
+        "List",
+        List("A", "s"),
+        List(
+          Constructor("Nil", Nil),
+          Constructor("Cons", List(TAt(TVar("A"), SVar("s")), TCon("List", List(TVar("A"), SVar("s"))))),
+        ),
+        EMatch(
+          ECon("Cons", List(ENum(1), ECon("Nil", Nil))),
+          List(MatchCase("Nil", Nil, ENum(0)), MatchCase("Cons", List("x", "xs"), EVar("x"))),
+        ),
+      ),
+    )
+  }

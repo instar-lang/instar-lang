@@ -416,19 +416,16 @@ private case class Parser(tokens: Vector[Token]):
     expect(Kind.Type, "`type`")
     val name = parseIdentifier("type name")
     if !isUpperName(name) then fail(s"Type names must be uppercase; found `$name`")
-    val params =
-      if at(Kind.LBracket) then
-        val names = parseBracketNames("type variable")
-        names.foreach(n => if !isUpperName(n) then fail(s"Type parameters must be uppercase; found `$n`"))
-        names
-      else Nil
+    val params = ArrayBuffer.empty[String]
+    while at(Kind.LBracket) do
+      parseBracketNames("type or stage parameter").foreach(params += _)
     expect(Kind.Equal, "`=`")
     typeScope = name :: typeScope // recursive: its own fields may mention it
     val ctors = parseConstructors()
     expect(Kind.In, "`in`")
     val body = parseExpr()
     typeScope = typeScope.tail
-    ETypeDecl(name, params, ctors, body)
+    ETypeDecl(name, params.toList, ctors, body)
 
   private def parseConstructors(): List[Constructor] =
     val ctors = ArrayBuffer.empty[Constructor]
@@ -741,7 +738,7 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.Identifier =>
         val name = advance().lexeme
-        val args = if at(Kind.LBracket) then parseBracketedTypes() else Nil
+        val args = if at(Kind.LBracket) then parseBracketArgs() else Nil
         if isDataType(name) then TCon(name, args) else applyTypeConstructor(name, args)
       case Kind.LParen =>
         advance()
@@ -751,16 +748,16 @@ private case class Parser(tokens: Vector[Token]):
       case _ =>
         fail("Expected a type")
 
-  private def applyTypeConstructor(name: String, args: List[Type]): Type =
+  private def applyTypeConstructor(name: String, args: List[Stage | Type]): Type =
     (name, args) match
       case ("Unit", Nil) => TUnit
       case ("Int", Nil) => TInt
       case ("Bool", Nil) => TBool
-      case ("Ref", List(t)) => TRef(t)
-      case ("Array", List(t)) => TArr(t)
+      case ("Ref", List(t: Type)) => TRef(t)
+      case ("Array", List(t: Type)) => TArr(t)
       case ("Array", _) =>
         fail("`Array` takes exactly one type argument: `Array[T]`")
-      case ("Code", List(t)) => TCode(t)
+      case ("Code", List(t: Type)) => TCode(t)
       case ("Code", _) =>
         fail("`Code` takes exactly one type argument: `Code[T]`")
       case ("Ref", _) =>
@@ -837,16 +834,6 @@ private case class Parser(tokens: Vector[Token]):
       Some(parseStage())
     else
       None
-
-  private def parseBracketedTypes(): List[Type] =
-    expect(Kind.LBracket, "`[`")
-    val types = ArrayBuffer.empty[Type]
-    types += parseTypeExpr()
-    while at(Kind.Comma) do
-      advance()
-      types += parseTypeExpr()
-    expect(Kind.RBracket, "`]`")
-    types.toList
 
   private def parseBracketStage(): Stage =
     expect(Kind.LBracket, "`[`")
