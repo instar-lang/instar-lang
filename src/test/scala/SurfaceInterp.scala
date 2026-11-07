@@ -660,3 +660,55 @@ class ADT extends SurfaceBase {
     testEvalSurface(src, VNum(3))
   }
 }
+
+/** §5.2 staged streams, core data structures. */
+trait Stream52Base extends SurfaceBase {
+  // LMS: (R[IntRef], R[Array[α]]) as of_arr's state.
+  protected val pairDecl: String =
+    "type Pair[A, B] = Pair(A, B) in"
+
+  // LMS:
+  //   sealed trait stream_shape[+α, +ζ]
+  //   case object Nil
+  //   case class Cons[α, ζ](a: α, rest: ζ)
+  protected val streamShapeDecl: String =
+    "type StreamShape[A, B] = Nil | Cons(A, B) in"
+
+  // LMS:
+  //   trait st_stream[R[+_], α] {
+  //     type σ
+  //     def init[ω](k: σ => R[ω]): R[ω]
+  //     def step[ω](s: σ)(k: stream_shape[R[α], Unit] => R[ω]): R[ω]
+  //   }
+  // Instar: ∃S. init × step, with R[α] = α @ s.
+  protected val stStreamDecl: String = """
+    type StStream[A, s] = StStream(
+      exists[S]. Pair[
+        (forall[W]. (S -> W @ s) -> W @ s),
+        (forall[W]. S -> (StreamShape[A @ s, Unit] -> W @ s) -> W @ s)
+      ]
+    ) in
+  """
+
+  protected def stream52(decls: String*)(body: String): String =
+    decls.map(_.trim).mkString("\n") + "\n" + body
+}
+
+class Stream52 extends Stream52Base {
+  test("Pair is the product of two values") {
+    val src = stream52(pairDecl)("""
+      match Pair(1, 2) with
+      | Pair(x, y) => x + y
+    """)
+    testEvalSurface(src, VNum(3))
+  }
+
+  test("StreamShape is Nil | Cons of the element and the rest") {
+    val src = stream52(streamShapeDecl)("""
+      match Cons(42, ()) with
+      | Nil => 0
+      | Cons(x, _) => x
+    """)
+    testEvalSurface(src, VNum(42))
+  }
+}
