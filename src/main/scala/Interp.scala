@@ -284,7 +284,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
   case VLoc(l) => reflect(ELoc(l), σ, k, γ)
   case VPack(_) => throw new MatchError("cannot lift existential packages")
   case VArr(_) => throw new MatchError("cannot lift array values")
-  case VClo(x, argTy, body, retTy, ρf, ςf) =>
+  case VClo(x, _, body, _, ρf, ςf) =>
     val l = σ.size
     val y = fresh()
     reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
@@ -292,7 +292,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
         if (Opt("lam-hoist"))
           hoist(t, σ2, { case (VCode(t1), σ3, γ1) =>
             println(s"Hoisted lambda body: $t1")
-            reflect(ELam(y, argTy.erase, t1, retTy.erase), σ3, (v, σ3, γ1) => γ1(v, σ3), γ1)
+            reflect(ELam(y, None, t1, None), σ3, (v, σ3, γ1) => γ1(v, σ3), γ1)
           }, { case (VCode(t1), σ3) =>
             println(s"Hoisted whole term: $t1")
             // now we need to renormalize the whole term, as it may contain lifted bindings,
@@ -301,7 +301,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
             renormalize(t1, σ3, k, γ)
           })(using BiMap((EVar(y) -> y)))
         else
-          reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, k, γ)
+          reflect(ELam(y, None, t, None), σ2, k, γ)
       })
 
 def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match

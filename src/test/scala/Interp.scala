@@ -881,7 +881,7 @@ class CoreEffTest extends Base {
     testEval(e8(EApp1(EApp1(ESApp(EVar("power"), SNum(1)), ENum(2)), ENum(3))), "VNum(8)")
 
     testEval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(2)), EVar("x")), ENum(3)), Some(TCode(TInt))))),
-      "VCode(ELet(x4,ELam(x0,Some(TInt),ELet(x1,EBinOp(*,EVar(x0),ENum(1),Some(SNum(1))),ELet(x2,EBinOp(*,EVar(x0),EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),EVar(x3)))),Some(TInt)),EVar(x4)))")
+      "VCode(ELet(x4,ELam(x0,None,ELet(x1,EBinOp(*,EVar(x0),ENum(1),Some(SNum(1))),ELet(x2,EBinOp(*,EVar(x0),EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),EVar(x3)))),None),EVar(x4)))")
 
     val (VCode(e), _) = eval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(2)), EVar("x")), ENum(3)), Some(TCode(TInt))))))
     testEval(EApp1(e, ENum(2)), "VNum(8)")
@@ -891,7 +891,7 @@ class CoreEffTest extends Base {
     testEval(e9(EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(1)), ENum(2)), ENum(3)), EAlloc1(ENum(1)))), "VNum(8)")
 
     testEval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(2)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))),
-      "VCode(ELet(x12,ELam(x0,Some(TInt),ELet(x1,EAlloc(ENum(1),Some(SNum(1))),ELet(x2,EDeref(EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),ELet(x4,EAssign(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x5,EDeref(EVar(x1),Some(SNum(1))),ELet(x6,EBinOp(*,EVar(x0),EVar(x5),Some(SNum(1))),ELet(x7,EAssign(EVar(x1),EVar(x6),Some(SNum(1))),ELet(x8,EDeref(EVar(x1),Some(SNum(1))),ELet(x9,EBinOp(*,EVar(x0),EVar(x8),Some(SNum(1))),ELet(x10,EAssign(EVar(x1),EVar(x9),Some(SNum(1))),ELet(x11,EDeref(EVar(x1),Some(SNum(1))),EVar(x11)))))))))))),Some(TInt)),EVar(x12)))")
+      "VCode(ELet(x12,ELam(x0,None,ELet(x1,EAlloc(ENum(1),Some(SNum(1))),ELet(x2,EDeref(EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),ELet(x4,EAssign(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x5,EDeref(EVar(x1),Some(SNum(1))),ELet(x6,EBinOp(*,EVar(x0),EVar(x5),Some(SNum(1))),ELet(x7,EAssign(EVar(x1),EVar(x6),Some(SNum(1))),ELet(x8,EDeref(EVar(x1),Some(SNum(1))),ELet(x9,EBinOp(*,EVar(x0),EVar(x8),Some(SNum(1))),ELet(x10,EAssign(EVar(x1),EVar(x9),Some(SNum(1))),ELet(x11,EDeref(EVar(x1),Some(SNum(1))),EVar(x11)))))))))))),None),EVar(x12)))")
 
     val (VCode(e), _) = eval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(2)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))))
     testEval(EApp1(e, ENum(2)), "VNum(8)")
@@ -911,7 +911,7 @@ class CoreEffTest extends Base {
 
   test("fix-second-stage") {
     testEval(e11,
-      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,Some(TInt),ELet(x2,EBinOp(<=,EVar(x1),ENum(1),Some(SNum(1))),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),Some(SNum(1))),ELet(x4,EApp(EVar(f0),EVar(x3),Some(SNum(1))),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),Some(SNum(1))),EVar(x5)))),Some(SNum(1))),EVar(x6))),Some(TInt)),EVar(x7)),Some(SNum(1))),ELet(x9,EApp(EVar(x8),ENum(5),Some(SNum(1))),EVar(x9))))")
+      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,None,ELet(x2,EBinOp(<=,EVar(x1),ENum(1),Some(SNum(1))),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),Some(SNum(1))),ELet(x4,EApp(EVar(f0),EVar(x3),Some(SNum(1))),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),Some(SNum(1))),EVar(x5)))),Some(SNum(1))),EVar(x6))),None),EVar(x7)),Some(SNum(1))),ELet(x9,EApp(EVar(x8),ENum(5),Some(SNum(1))),EVar(x9))))")
 
     val (VCode(e), _) = eval(e11)
     testEval(e, "VNum(120)")
