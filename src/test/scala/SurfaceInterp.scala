@@ -809,10 +809,11 @@ trait Stream52Base extends SurfaceBase {
   }
   */
   protected val sumOfSquaresDecl: String = """
-  let sumOfSquares[s](arr: Array[Int] @ s): Int @ s =
-    let arr = map[Int, Int, s](fun(x: Int @ s) => x *@s x)(of_arr[Int, s](arr)) in
-    let res = fold[Int, Int, s](fun(acc: Int @ s) => fun(x: Int @ s) => acc +@s x)(lift[s](0))(arr) in
-    res in
+  let sumOfSquares[s]: (Array[Int] -> Int) @ s =
+    lift[s](fun(arr: Array[Int] @ s): Int @ s =>
+      let arr = map[Int, Int, s](fun(x: Int @ s) => x *@s x)(of_arr[Int, s](arr)) in
+      let res = fold[Int, Int, s](fun(acc: Int @ s) => fun(x: Int @ s) => acc +@s x)(lift[s](0))(arr) in
+      res) in
   """
 
   protected def stream52(decls: String*)(body: String): String =
@@ -894,16 +895,25 @@ class Stream52 extends Stream52Base {
     testEvalSurface(src, VNum(89))
   }
 
-  test("fold sums yielded elements") {
-    val src = stream52(pairDecl, streamShapeDecl, stStreamDecl, incrDecl, ofArrDecl, foldDecl)("""
+  test("sum of squares at stage 1") {
+    val src = stream52(
+      pairDecl,
+      streamShapeDecl,
+      stStreamDecl,
+      incrDecl,
+      ofArrDecl,
+      mapDecl,
+      foldDecl,
+      sumOfSquaresDecl,
+    )("""
       let a = alloc(4, 0) in
       let _ = set(a, 0, 1) in
       let _ = set(a, 1, 2) in
       let _ = set(a, 2, 3) in
       let _ = set(a, 3, 4) in
-      fold[Int, Int, 1](fun(acc: Int) => fun(x: Int) => acc + x)(0)(of_arr[Int, 1](a))
+      sumOfSquares[1](a)
     """)
-    testEvalSurface(src, VNum(10))
+    testEvalSurface(src, VNum(30))
   }
 
   test("stage-2 sum of squares fuses") {
@@ -917,7 +927,7 @@ class Stream52 extends Stream52Base {
       foldDecl,
       sumOfSquaresDecl,
     )("""
-      lift[2](fun(arr: Array[Int] @ 2): Int @ 2 => sumOfSquares[2](arr))
+      sumOfSquares[2]
     """)
     val (value, _) = eval(parse(src))
     val code = instar.pretty.value(value)
@@ -965,5 +975,27 @@ class Stream52 extends Stream52Base {
          |  let x18 = x17 0 in x18
          |in x19""".stripMargin
     assertEquals(code, expected)
+  }
+
+  test("stage-2 sum of squares runs on an array") {
+    val src = stream52(
+      pairDecl,
+      streamShapeDecl,
+      stStreamDecl,
+      incrDecl,
+      ofArrDecl,
+      mapDecl,
+      foldDecl,
+      sumOfSquaresDecl,
+    )("""
+      let a = alloc(4, 0) in
+      let _ = set(a, 0, 1) in
+      let _ = set(a, 1, 2) in
+      let _ = set(a, 2, 3) in
+      let _ = set(a, 3, 4) in
+      let squares = run(sumOfSquares[2]) in
+      squares(a)
+    """)
+    testEvalSurface(src, VNum(30))
   }
 }
