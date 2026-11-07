@@ -690,6 +690,55 @@ trait Stream52Base extends SurfaceBase {
     ) in
   """
 
+  // LMS:
+  //   def incr[R[+_]](r: R[IntRef]): R[Unit]
+  protected val incrDecl: String = """
+  let incr[s](r: Ref[Int] @ s): Unit @ s =
+    r :=@s (!@s r +@s lift[s](1)) in
+  """
+
+  // LMS:
+  /*
+  def of_arr[R[+_], α: Manifest](arr: R[Array[α]]): st_stream[R, α] =
+    new st_stream[R, α] {
+      type σ = (R[IntRef], R[Array[α]])
+
+      def init[ω: Manifest](k: σ => R[ω]): R[ω] = k((ref[R](0), arr))
+
+      def step[ω: Manifest](s: σ)(k: stream_shape[R[α], Unit] => R[ω]): R[ω] = {
+        val (i, a) = s
+        iff[R, ω](lt[R](read[R](i), length[R, α](a))) {
+          val el = at[R, α](a, read[R](i))
+          incr[R](i)
+          k(stream_shape.Cons(el, ()))
+        } {
+          k(stream_shape.Nil)
+        }
+      }
+    }
+  */
+  protected val ofArrDecl: String = """
+  let of_arr[A, s](arr: Array[A] @ s): StStream[A, s] =
+    let init[W](k: Pair[Ref[Int] @ s, Array[A] @ s] -> W @ s): W @ s =
+      k(Pair(ref@s(0), arr)) in
+
+    let step[W](state: Pair[Ref[Int] @ s, Array[A] @ s])
+        (k: StreamShape[A @ s, Unit] -> W @ s): W @ s =
+      match state with
+      | Pair(i, a) =>
+        if@s (!@s i <@s len@s(a)) then
+          let el = get@s(a, !@s i) in
+          let _ = incr[s](i) in
+          k(Cons(el, ()))
+        else
+          k(Nil) in
+
+    StStream(pack [
+      Pair[Ref[Int] @ s, Array[A] @ s],
+      Pair(init, step)
+    ]) in
+  """
+
   protected def stream52(decls: String*)(body: String): String =
     decls.map(_.trim).mkString("\n") + "\n" + body
 }
@@ -710,5 +759,33 @@ class Stream52 extends Stream52Base {
       | Cons(x, _) => x
     """)
     testEvalSurface(src, VNum(42))
+  }
+
+  test("of_arr yields elements in order, advances, then terminates") {
+    val src = stream52(pairDecl, streamShapeDecl, stStreamDecl, incrDecl, ofArrDecl)("""
+      let a = alloc(2, 0) in
+      let _ = set@1(a, 0, 7) in
+      let _ = set@1(a, 1, 8) in
+      let str = of_arr[Int, 1](a) in
+      match str with
+      | StStream(packed) =>
+        unpack [S, repr] = packed in
+        match repr with
+        | Pair(init, step) =>
+          init[Int](fun(s: S) =>
+            step[Int](s)(fun(shape1: StreamShape[Int, Unit]) =>
+              match shape1 with
+              | Nil => 0
+              | Cons(x, _) =>
+                step[Int](s)(fun(shape2: StreamShape[Int, Unit]) =>
+                  match shape2 with
+                  | Nil => x
+                  | Cons(y, _) =>
+                    step[Int](s)(fun(shape3: StreamShape[Int, Unit]) =>
+                      match shape3 with
+                      | Nil => x * 10 + y
+                      | Cons(_, _) => 0))))
+    """)
+    testEvalSurface(src, VNum(78))
   }
 }
