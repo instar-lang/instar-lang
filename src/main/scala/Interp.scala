@@ -78,6 +78,11 @@ object Opt:
   def disable(id: String): Unit = opt.remove(id)
   def disableAll: Unit = opt.clear
 
+// Number of `eval` calls made so far; the benchmarks in the test suite use it
+// as a deterministic stand-in for the running time.
+object EvalCounter:
+  var n: Long = 0L
+
 def evalPrim(op: String, v1: Value, v2: Value): Value =
   (op, v1, v2) match
     case ("+", VNum(i1), VNum(i2)) => VNum(i1 + i2)
@@ -314,6 +319,7 @@ def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Stor
 // Note: fst-stage side effect will break semantics-preservation,
 // but we won't be handle/prevent that in the dynamic interpreter.
 def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+  EvalCounter.n += 1
   e match
     case EUnit =>
       k(VUnit, σ, γ)
