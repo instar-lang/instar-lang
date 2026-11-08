@@ -1078,3 +1078,23 @@ class ArraySuite extends Base {
     testEval(e, "VNum(9)")
   }
 }
+
+class Floats extends Base {
+  test("float arithmetic") {
+    testEval(EFloat(1.5), "VFloat(1.5)")
+    testEval(EBinOp1("+", EFloat(1.5), EFloat(2.25)), "VFloat(3.75)")
+    testEval(EBinOp1("/", EFloat(1.0), EFloat(4.0)), "VFloat(0.25)")
+    testEval(EUnaryOp1("-", EFloat(0.5)), "VFloat(-0.5)")
+    testEval(EUnaryOp1("toFloat", ENum(3)), "VFloat(3.0)")
+    testEval(EBinOp1("<", EFloat(0.5), EFloat(0.75)), "VBool(true)")
+  }
+
+  test("floats are staged like any other value") {
+    testEval(ELift2(EFloat(2.5)), "VCode(EFloat(2.5))")
+    val product = EApp2(
+      ELift2(ELam("x", None, EBinOp2("*", EVar("x"), ELift2(EFloat(2.0))), None)),
+      ELift2(EFloat(1.25)),
+    )
+    testEval(ERun(product), "VFloat(2.5)")
+  }
+}

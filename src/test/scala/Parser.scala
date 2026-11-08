@@ -353,6 +353,19 @@ class ParserTest extends FunSuite:
     assertEquals(parse("get@2(a, i)"), EArrGet(EVar("a"), EVar("i"), Some(SNum(2))))
   }
 
+  test("parses float literals") {
+    assertEquals(parse("1.5"), EFloat(1.5))
+    assertEquals(parse("0.25"), EFloat(0.25))
+    assertEquals(parse("-2.5"), EFloat(-2.5))
+    assertEquals(parse("1.5 + 0.5"), EBinOp("+", EFloat(1.5), EFloat(0.5), None))
+    assertEquals(parse("1.5 +@2 0.5"), EBinOp("+", EFloat(1.5), EFloat(0.5), Some(SNum(2))))
+    // `Double.toString` writes small values as `1.0E-16`, so exponents parse too.
+    assertEquals(parse("1.5E-16"), EFloat(1.5e-16))
+    assertEquals(parse("2e3"), EFloat(2000.0))
+    assertEquals(parse("toFloat(1)"), EUnaryOp("toFloat", ENum(1), None))
+    assertEquals(parseType("Float"), TFloat)
+  }
+
   test("`[...]` carries both type and stage arguments, told apart by case") {
     assertEquals(parseType("Code[Int]"), TCode(TInt))
     assertEquals(parseType("Ref[Int]"), TRef(TInt))

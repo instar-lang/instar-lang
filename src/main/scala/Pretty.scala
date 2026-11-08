@@ -22,6 +22,7 @@ def value(value: Value): String =
     case VCode(t) => renderPretty(t, 0)
     case VUnit => "()"
     case VNum(i) => i.toString
+    case VFloat(d) => d.toString
     case VBool(b) => b.toString
     case VLoc(loc) => s"loc($loc)"
     case VSClo(st, _, _, _) => s"<stage-closure:$st>"
@@ -184,6 +185,9 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
         parentPrec > prec,
       )
 
+    case EUnaryOp("toFloat", e, st) =>
+      s"toFloat${renderStageValue(st)}(${renderExpr(e, 0)})"
+
     case EUnaryOp(op, e, st) =>
       maybeParens(s"$op${renderStageValue(st)} ${renderExpr(e, 6)}", parentPrec > 6)
 
@@ -216,6 +220,7 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
 
     case EUnit => "()"
     case ENum(i) => i.toString
+    case EFloat(d) => d.toString
     case EBool(true) => "true"
     case EBool(false) => "false"
     case EVar(name) => name
@@ -225,6 +230,7 @@ private def renderType(ty: Type, parentPrec: Int): String =
   ty match
     case TUnit => "Unit"
     case TInt => "Int"
+    case TFloat => "Float"
     case TBool => "Bool"
     case TRef(t) => s"Ref[${renderType(t, 0)}]"
     case TArr(t) => s"Array[${renderType(t, 0)}]"
@@ -274,13 +280,13 @@ private def renderAppArg(expr: Expr): String =
 
 private def canRenderJuxtapositionArg(expr: Expr): Boolean =
   expr match
-    case ENum(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
+    case ENum(_) | EFloat(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
     case ESApp(base, _) => canRenderJuxtapositionStageBase(base)
     case _ => false
 
 private def canRenderJuxtapositionStageBase(expr: Expr): Boolean =
   expr match
-    case ENum(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
+    case ENum(_) | EFloat(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
     case ESApp(base, _) => canRenderJuxtapositionStageBase(base)
     case _ => false
 

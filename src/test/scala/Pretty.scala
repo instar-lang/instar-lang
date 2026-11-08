@@ -44,6 +44,7 @@ class PrettyTest extends FunSuite:
       "pack [Int, 42]",
       "unpack [T, x] = pack [Int, 41] in x + 1",
       "f[s, T]",
+      "toFloat(1)",
     )
 
     srcs.foreach { src =>

@@ -11,6 +11,7 @@ object Lexer:
   enum Kind:
     case Identifier
     case IntLit
+    case FloatLit
     case LParen
     case RParen
     case LBracket
@@ -51,6 +52,7 @@ object Lexer:
     case Get
     case Set
     case Len
+    case ToFloat
     case Assign
     case IsApp
     case Forall
@@ -87,6 +89,7 @@ object Lexer:
     "get" -> Kind.Get,
     "set" -> Kind.Set,
     "len" -> Kind.Len,
+    "toFloat" -> Kind.ToFloat,
     "isApp" -> Kind.IsApp,
     "forall" -> Kind.Forall,
     "exists" -> Kind.Exists,
@@ -109,6 +112,10 @@ object Lexer:
 
     def atEnd(offset: Int = 0): Boolean =
       i + offset >= input.length
+
+    /** Like `current`, but yields NUL past the end, so look-ahead needs no `atEnd` guard. */
+    def peek(offset: Int = 0): Char =
+      if atEnd(offset) then '\u0000' else current(offset)
 
     def advance(): Char =
       val ch = input.charAt(i)
@@ -163,8 +170,22 @@ object Lexer:
 
         case ch if ch.isDigit =>
           val sb = new StringBuilder
-          while !atEnd() && current().isDigit do sb += advance()
-          add(Kind.IntLit, sb.result(), startLine, startCol)
+          def takeDigits(): Unit =
+            while peek().isDigit do sb += advance()
+          takeDigits()
+          // `1.5` is a float, but a bare `.` is not part of a number.
+          val hasFraction = peek() == '.' && peek(1).isDigit
+          if hasFraction then
+            sb += advance()
+            takeDigits()
+          // `1.5E-16` is a float too: `Double.toString` writes them that way.
+          val hasExponent = (peek() == 'e' || peek() == 'E') &&
+            (peek(1).isDigit || ((peek(1) == '+' || peek(1) == '-') && peek(2).isDigit))
+          if hasExponent then
+            sb += advance()
+            if peek() == '+' || peek() == '-' then sb += advance()
+            takeDigits()
+          add(if hasFraction || hasExponent then Kind.FloatLit else Kind.IntLit, sb.result(), startLine, startCol)
 
         case '(' => advance(); add(Kind.LParen, "(", startLine, startCol)
         case ')' => advance(); add(Kind.RParen, ")", startLine, startCol)
@@ -538,6 +559,7 @@ private case class Parser(tokens: Vector[Token]):
       advance()
       val stage = parseOptionalStageValue()
       if at(Kind.IntLit) then ENum(-advance().lexeme.toInt)
+      else if at(Kind.FloatLit) then EFloat(-advance().lexeme.toDouble)
       else EUnaryOp("-", parseUnary(), stage)
     else if at(Kind.Bang) then
       advance()
@@ -584,8 +606,8 @@ private case class Parser(tokens: Vector[Token]):
 
   private def canStartJuxtapositionArg(kind: Kind): Boolean =
     kind match
-      case Kind.IntLit | Kind.True | Kind.False | Kind.Identifier | Kind.Lift | Kind.Ref | Kind.IsApp | Kind.Run |
-          Kind.Alloc | Kind.Get | Kind.Set | Kind.Len =>
+      case Kind.IntLit | Kind.FloatLit | Kind.True | Kind.False | Kind.Identifier | Kind.Lift | Kind.Ref | Kind.IsApp | Kind.Run |
+          Kind.Alloc | Kind.Get | Kind.Set | Kind.Len | Kind.ToFloat =>
         true
       case _ => false
 
@@ -593,6 +615,8 @@ private case class Parser(tokens: Vector[Token]):
     current.kind match
       case Kind.IntLit =>
         ENum(advance().lexeme.toInt)
+      case Kind.FloatLit =>
+        EFloat(advance().lexeme.toDouble)
       case Kind.True =>
         advance()
         EBool(true)
@@ -608,6 +632,8 @@ private case class Parser(tokens: Vector[Token]):
         parseRef()
       case Kind.Alloc | Kind.Get | Kind.Set | Kind.Len =>
         parseArrayOp()
+      case Kind.ToFloat =>
+        parseFloatConversion()
       case Kind.IsApp =>
         parseIsApp()
       case Kind.Run =>
@@ -664,6 +690,13 @@ private case class Parser(tokens: Vector[Token]):
       case (Kind.Set, List(a, i, v)) => EArrSet(a, i, v, stage)
       case (Kind.Len, List(a)) => EArrLen(a, stage)
       case _ => fail(s"malformed array operation `${op.lexeme}`")
+
+  private def parseFloatConversion(): Expr =
+    expect(Kind.ToFloat, "`toFloat`")
+    expect(Kind.LParen, "`(`")
+    val expr = parseExpr()
+    expect(Kind.RParen, "`)`")
+    EUnaryOp("toFloat", expr, None)
 
   private def parseIsApp(): Expr =
     expect(Kind.IsApp, "`isApp`")
@@ -753,6 +786,7 @@ private case class Parser(tokens: Vector[Token]):
       case ("Unit", Nil) => TUnit
       case ("Int", Nil) => TInt
       case ("Bool", Nil) => TBool
+      case ("Float", Nil) => TFloat
       case ("Ref", List(t: Type)) => TRef(t)
       case ("Array", List(t: Type)) => TArr(t)
       case ("Array", _) =>

@@ -7,7 +7,7 @@ enum Stage:
   case SVar(x: String)
 
 enum Type:
-  case TUnit, TInt, TBool
+  case TUnit, TInt, TBool, TFloat
   case TFun(t1: Type, t2: Type)
   case TRef(t: Type)
   case TArr(t: Type)
@@ -29,6 +29,7 @@ enum Expr:
   def withType(t: Type): Expr = { ty = Some(t); this }
   case EUnit
   case ENum(i: Int)
+  case EFloat(d: Double)
   case EBool(b: Boolean)
   case EVar(name: String)
   case ESLam(x: String, body: Expr)
@@ -78,7 +79,7 @@ val Dyn = Stage.SNum(2)
 extension (e: Expr)
   def isPure: Boolean =
     e match
-      case EUnit | ENum(_) | EBool(_) | EVar(_) => true
+      case EUnit | ENum(_) | EFloat(_) | EBool(_) | EVar(_) => true
       case ESLam(_, _) | ELam(_, _, _, _) | EBNLam(_, _, _, _) => true
       case ETLam(_, _) => true
       case EBinOp(_, _, _, _) | EUnaryOp(_, _, _) => true
@@ -102,7 +103,7 @@ extension (e: Expr)
 
   def freeVar: Set[String] =
     e match
-      case EUnit | ENum(_) | EBool(_) => Set()
+      case EUnit | ENum(_) | EFloat(_) | EBool(_) => Set()
       case EVar(x) => Set(x)
       case ESLam(x, body) => body.freeVar
       case ESApp(e, _) => e.freeVar
@@ -139,7 +140,7 @@ extension (e: Expr)
   // and all variables after reflect are distinct, so we do not need to consider variable capture here.
   def subst(from: String, to: Expr): Expr =
     e match
-      case EUnit | ENum(_) | EBool(_) => e
+      case EUnit | ENum(_) | EFloat(_) | EBool(_) => e
       case EVar(x) => if x == from then to else e
       case ESLam(x, body) => ESLam(x, body.subst(from, to))
       case ESApp(e, st) => ESApp(e.subst(from, to), st)

@@ -28,6 +28,7 @@ import collection.mutable.HashSet
 enum Value:
   case VUnit
   case VNum(i: Int)
+  case VFloat(d: Double)
   case VBool(b: Boolean)
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
@@ -95,10 +96,22 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
     case (">", VNum(i1), VNum(i2)) => VBool(i1 > i2)
     case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
     case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
+    case ("+", VFloat(d1), VFloat(d2)) => VFloat(d1 + d2)
+    case ("-", VFloat(d1), VFloat(d2)) => VFloat(d1 - d2)
+    case ("*", VFloat(d1), VFloat(d2)) => VFloat(d1 * d2)
+    case ("/", VFloat(d1), VFloat(d2)) => VFloat(d1 / d2)
+    case ("<=", VFloat(d1), VFloat(d2)) => VBool(d1 <= d2)
+    case (">=", VFloat(d1), VFloat(d2)) => VBool(d1 >= d2)
+    case ("<", VFloat(d1), VFloat(d2)) => VBool(d1 < d2)
+    case (">", VFloat(d1), VFloat(d2)) => VBool(d1 > d2)
+    case ("==", VFloat(d1), VFloat(d2)) => VBool(d1 == d2)
+    case ("!=", VFloat(d1), VFloat(d2)) => VBool(d1 != d2)
 
 def evalPrimUnary(op: String, v: Value): Value =
   (op, v) match
     case ("-", VNum(i)) => VNum(-i)
+    case ("-", VFloat(d)) => VFloat(-d)
+    case ("toFloat", VNum(i)) => VFloat(i.toDouble)
 
 def evalStVar(s: Stage, ς: StEnv): Stage =
   s match
@@ -121,6 +134,7 @@ object StaticConst:
   def unapply(e: Expr)(using c: Cache): Option[Value] =
     e match
       case ENum(i) => Some(VNum(i))
+      case EFloat(d) => Some(VFloat(d))
       case EBool(b) => Some(VBool(b))
       case EVar(x) if c.inv.contains(x) => StaticConst.unapply(c.inv(x))
       case _ => None
@@ -135,6 +149,7 @@ def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value,
 def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EUnit => k(VCode(EUnit), σ, γ)
   case ENum(i) => k(VCode(ENum(i)), σ, γ)
+  case EFloat(d) => k(VCode(EFloat(d)), σ, γ)
   case EBool(b) => k(VCode(EBool(b)), σ, γ)
 
 def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
@@ -150,6 +165,7 @@ def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value,
   case EBinOp(op, StaticConst(v1), StaticConst(v2), _) if Opt("rewriting") =>
     evalPrim(op, v1, v2) match
       case VNum(i) => reflect(ENum(i), σ, k, γ)
+      case VFloat(d) => reflect(EFloat(d), σ, k, γ)
       case VBool(b) => reflect(EBool(b), σ, k, γ)
 
 def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
@@ -285,6 +301,7 @@ def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store
 def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
   case VUnit => reflect(EUnit, σ, k, γ)
   case VNum(i) => reflect(ENum(i), σ, k, γ)
+  case VFloat(d) => reflect(EFloat(d), σ, k, γ)
   case VBool(b) => reflect(EBool(b), σ, k, γ)
   case VLoc(l) => reflect(ELoc(l), σ, k, γ)
   case VPack(_) => throw new MatchError("cannot lift existential packages")
@@ -325,6 +342,8 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       k(VUnit, σ, γ)
     case ENum(i) =>
       k(VNum(i), σ, γ)
+    case EFloat(d) =>
+      k(VFloat(d), σ, γ)
     case EBool(b) =>
       k(VBool(b), σ, γ)
     case ELoc(l) =>
