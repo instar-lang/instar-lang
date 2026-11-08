@@ -13,7 +13,8 @@ lazy val root = project
 
     scalaVersion := scala3Version,
 
-    libraryDependencies += "org.scalameta" %% "munit" % "1.0.0" % Test
+    libraryDependencies += "org.scalameta" %% "munit" % "1.0.0" % Test,
+    libraryDependencies += "org.apache.commons" % "commons-math3" % "3.6.1" % Test
   )
 
 addCommandAlias("coverageAll", ";clean;coverage;test;coverageReport;coverageOff")
@@ -23,3 +24,6 @@ addCommandAlias(
 )
 
 Test / parallelExecution := false
+
+Test / fork := true
+Test / javaOptions += "-Xss1024m"
