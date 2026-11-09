@@ -40,7 +40,9 @@ trait SurfaceBase extends munit.FunSuite {
     v match
       case VUnit => "VUnit"
       case VNum(i) => s"VNum($i)"
+      case VFloat(f) => s"VFloat($f)"
       case VBool(b) => s"VBool($b)"
+      case VArr(elems) => elems.mkString("VArr(", ",", ")")
       case VLoc(loc) => s"VLoc($loc)"
       case VSClo(st, body, ρ, ς) => s"VSClo($st,${normalizeExpr(body)},$ρ,$ς)"
       case VClo(x, _, body, _, ρ, ς) => s"VClo($x,${normalizeExpr(body)},$ρ,$ς)"
@@ -1000,5 +1002,339 @@ class Stream52 extends Stream52Base {
       squares(a)
     """)
     testEvalSurface(src, VNum(385))
+  }
+}
+
+/** §FFT radix-2 FFT. */
+trait FFTBase extends SurfaceBase {
+  // LMS: `Array.tabulate`.
+  protected val tabulateDecl: String = """
+  let tabulate[A] = fun(n: Int) => fun(f: Int -> A) =>
+    let out = alloc(n, f(0)) in
+    let loop = fix go. fun(i: Int) =>
+      if i < n - 1 then let _ = set(out, i + 1, f(i + 1)) in go(i + 1) else out
+    in loop(0) in
+  """
+
+  // LMS: case class Complex[R[+_]](re: R[Double], im: R[Double])
+  protected val complexDecl: String =
+    "type Complex[s] = Complex(Float @ s, Float @ s) in"
+
+  // LMS: (Array[Complex[R]], Array[Complex[R]]) as split_even_odd's result.
+  protected val pairDecl: String =
+    "type Pair[A, B] = Pair(A, B) in"
+
+  // LMS:
+  //   private def series(x2: Double, d: Double, left: Int, term: Double, acc: Double): Double =
+  //     if (left < 1) acc
+  //     else {
+  //       val next = (0.0 - term * x2) / (d * (d + 1.0))
+  //       series(x2, d + 2.0, left - 1, next, acc + next)
+  //     }
+  protected val seriesDecl: String = """
+  let series = fix go. fun(x2: Float) => fun(d: Float) => fun(left: Int) => fun(term: Float) => fun(acc: Float) =>
+    if left < 1 then acc
+    else
+      let next = (0.0 - term * x2) / (d * (d + 1.0)) in
+      go(x2)(d + 2.0)(left - 1)(next)(acc + next) in
+  """
+
+  // LMS:
+  //   private def sinSeries(x: Double): Double = series(x * x, 2.0, 7, x, x)
+  //   private def cosSeries(x: Double): Double = series(x * x, 1.0, 7, 1.0, 1.0)
+  protected val sineSeriesDecl: String = """
+  let sinSeries = fun(x: Float) => series(x * x)(2.0)(7)(x)(x) in
+  let cosSeries = fun(x: Float) => series(x * x)(1.0)(7)(1.0)(1.0) in
+  """
+
+  // LMS: `val PI = 3.141592653589793`.
+  protected val piDecl: String =
+    "let pi = 3.141592653589793 in"
+
+  // LMS:
+  //   def sin(x: Double): Double =
+  //     if (x < 0.0) 0.0 - sin(0.0 - x)
+  //     else if (x > PI) 0.0 - sin(x - PI)
+  //     else if (x > PI / 2) sin(PI - x)
+  //     else if (x > PI / 4) cosSeries(PI / 2 - x)
+  //     else sinSeries(x)
+  //
+  //   def cos(x: Double): Double = sin(x + PI / 2)
+  protected val sineDecl: String = """
+  let sin = fix go. fun(x: Float) =>
+    if x < 0.0 then 0.0 - go(0.0 - x)
+    else if x > pi then 0.0 - go(x - pi)
+    else if x > pi / 2.0 then go(pi - x)
+    else if x > pi / 4.0 then cosSeries(pi / 2.0 - x)
+    else sinSeries(x) in
+
+  let cos = fun(x: Float) => sin(x + pi / 2.0) in
+  """
+
+  // LMS:
+  //   def omega[R[+_]](k: Int, n: Int): Complex[R] = {
+  //     val angle = 0.0 - 2.0 * PI * k / n
+  //     Complex(num[R](cos(angle)), num[R](sin(angle)))
+  //   }
+  protected val omegaDecl: String = """
+  let omega[s] = fun(k: Int) => fun(n: Int) =>
+    let angle = 0.0 - 2.0 * pi * toFloat(k) / toFloat(n) in
+    Complex(lift[s](cos(angle)), lift[s](sin(angle))) in
+  """
+
+  // LMS:
+  //   private def splitEvenOdd[R[+_]](xs: Array[Complex[R]]): (Array[Complex[R]], Array[Complex[R]]) =
+  //     (Array.tabulate(xs.length / 2)(i => xs(2 * i)),
+  //      Array.tabulate(xs.length / 2)(i => xs(2 * i + 1)))
+  protected val splitEvenOddDecl: String = """
+  let splitEvenOdd[s](xs: Array[Complex[s]])
+      : Pair[Array[Complex[s]], Array[Complex[s]]] =
+    Pair(tabulate[Complex[s]](len(xs) / 2)(fun(i: Int) => get(xs, 2 * i)),
+         tabulate[Complex[s]](len(xs) / 2)(fun(i: Int) => get(xs, 2 * i + 1))) in
+  """
+
+  // LMS:
+  //   private def butterfly[R[+_]](e: Array[Complex[R]], o: Array[Complex[R]], n: Int): Array[Complex[R]] = {
+  //     val out = new Array[Complex[R]](n)
+  //     def loop(k: Int): Unit =
+  //       if (k < n / 2) {
+  //         val w = omega[R](k, n)
+  //         val er = e(k).re; val ei = e(k).im
+  //         val or = o(k).re; val oi = o(k).im
+  //         val zr = sub[R](mul[R](w.re, or), mul[R](w.im, oi))
+  //         val zi = add[R](mul[R](w.re, oi), mul[R](w.im, or))
+  //         out(k) = Complex(add[R](er, zr), add[R](ei, zi))
+  //         out(k + n / 2) = Complex(sub[R](er, zr), sub[R](ei, zi))
+  //         loop(k + 1)
+  //       }
+  //     loop(0)
+  //     out
+  //   }
+  protected val butterflyDecl: String = """
+  let butterfly[s](e: Array[Complex[s]])(o: Array[Complex[s]])
+      (n: Int): Array[Complex[s]] =
+    let out = alloc(n, get(e, 0)) in
+    let loop = fix go. fun(k: Int) =>
+      if k < n / 2 then
+        match omega[s](k)(n) with
+        | Complex(wRe, wIm) =>
+          match get(e, k) with
+          | Complex(er, ei) =>
+            match get(o, k) with
+            | Complex(or, oi) =>
+              let zr = wRe *@s or -@s wIm *@s oi in
+              let zi = wRe *@s oi +@s wIm *@s or in
+              let _ = set(out, k, Complex(er +@s zr, ei +@s zi)) in
+              let _ = set(out, k + n / 2, Complex(er -@s zr, ei -@s zi)) in
+              go(k + 1)
+      else () in
+    let _ = loop(0) in
+    out in
+  """
+
+  // LMS:
+  //   def fft[R[+_]](xs: Array[Complex[R]]): Array[Complex[R]] =
+  //     if (xs.length == 1) xs
+  //     else {
+  //       val (ev, od) = splitEvenOdd[R](xs)
+  //       butterfly[R](fft[R](ev), fft[R](od), xs.length)
+  //     }
+  protected val fftSplitDecl: String = """
+  let fftSplit[s] = fix go. fun(xs: Array[Complex[s]]) =>
+    if len(xs) == 1 then xs
+    else
+      match splitEvenOdd[s](xs) with
+      | Pair(ev, od) => butterfly[s](go(ev))(go(od))(len(xs))
+    in
+  """
+
+  // LMS:
+  //   private def load[R[+_]](x: R[Array[Double]], n: Int): Array[Complex[R]] =
+  //     Array.tabulate(n)(i => Complex(get[R](x, 2 * i), get[R](x, 2 * i + 1)))
+  protected val deinterleaveDecl: String = """
+  let deinterleave[s](x: Array[Float] @ s)(n: Int): Array[Complex[s]] =
+    tabulate[Complex[s]](n)(fun(i: Int) =>
+      Complex(get@s(x, lift[s](2 * i)), get@s(x, lift[s](2 * i + 1)))) in
+  """
+
+  // LMS:
+  //   private def store[R[+_]](out: R[Array[Double]], ys: Array[Complex[R]], n: Int): Unit = {
+  //     def loop(i: Int): Unit =
+  //       if (i < n) {
+  //         set[R](out, 2 * i, ys(i).re)
+  //         set[R](out, 2 * i + 1, ys(i).im)
+  //         loop(i + 1)
+  //       }
+  //     loop(0)
+  //   }
+  protected val interleaveDecl: String = """
+  let interleave[s](out: Array[Float] @ s)(ys: Array[Complex[s]])(n: Int): Unit =
+    let loop = fix go. fun(i: Int) =>
+      if i < n then
+        match get(ys, i) with
+        | Complex(re, im) =>
+          let _ = set@s(out, lift[s](2 * i), re) in
+          let _ = set@s(out, lift[s](2 * i + 1), im) in
+          go(i + 1)
+      else ()
+    in loop(0) in
+  """
+
+  // LMS:
+  //   def fftInterleaved[R[+_]](x: R[Array[Double]], n: Int): R[Array[Double]] = {
+  //     store[R](x, fft[R](load[R](x, n)), n)
+  //     x
+  //   }
+  //   `StagedFFT2` .. `StagedFFT128`: `snippet(x) = fftInterleaved[Rep](x, n)`.
+  protected val fftDecl: String = """
+  let fft[s] = fun(n: Int) =>
+    lift[s](fun(arr: Array[Float] @ s): Array[Float] @ s =>
+      let ys = fftSplit[s](deinterleave[s](arr)(n)) in
+      let _ = interleave[s](arr)(ys)(n) in
+      arr) in
+  """
+
+  protected def fftSource(decls: String*)(body: String): String =
+    decls.map(_.trim).mkString("\n") + "\n" + body
+}
+
+class FFT extends FFTBase {
+  import org.apache.commons.math3.complex.{Complex as JComplex}
+  import org.apache.commons.math3.transform.{DftNormalization, FastFourierTransformer, TransformType}
+
+  /** Apache Commons Math's forward FFT of the interleaved ramp `0, 1, ..., 7`. */
+  private val rampFFT: Value =
+    val xs = Array.tabulate(4)(j => JComplex(2 * j, 2 * j + 1))
+    val out = FastFourierTransformer(DftNormalization.STANDARD)
+      .transform(xs, TransformType.FORWARD)
+    VArr(out.flatMap(c => Array(c.getReal, c.getImaginary)).map[Value](VFloat.apply))
+
+  test("the 4-point FFT of a ramp, unstaged") {
+    val src = fftSource(
+      complexDecl,
+      pairDecl,
+      tabulateDecl,
+      seriesDecl,
+      sineSeriesDecl,
+      piDecl,
+      sineDecl,
+      omegaDecl,
+      splitEvenOddDecl,
+      butterflyDecl,
+      fftSplitDecl,
+      deinterleaveDecl,
+      interleaveDecl,
+      fftDecl,
+    )("""
+      let a = tabulate[Float](8)(fun(i: Int) => toFloat(i)) in
+      fft[1](4)(a)
+    """)
+    testEvalSurface(src, rampFFT)
+  }
+
+  test("the 4-point FFT of a ramp, staged") {
+    val src = fftSource(
+      complexDecl,
+      pairDecl,
+      tabulateDecl,
+      seriesDecl,
+      sineSeriesDecl,
+      piDecl,
+      sineDecl,
+      omegaDecl,
+      splitEvenOddDecl,
+      butterflyDecl,
+      fftSplitDecl,
+      deinterleaveDecl,
+      interleaveDecl,
+      fftDecl,
+    )("""
+      let a = tabulate[Float](8)(fun(i: Int) => toFloat(i)) in
+      let f = run(fft[2](4)) in
+      f(a)
+    """)
+    testEvalSurface(src, rampFFT)
+  }
+
+  test("staged: the 4-point FFT is straight-line butterflies, in place") {
+    val expected =
+      """|let x57 (x0) =
+         |  let x1 = get(x0, 0) in
+         |  let x2 = get(x0, 1) in
+         |  let x3 = get(x0, 2) in
+         |  let x4 = get(x0, 3) in
+         |  let x5 = get(x0, 4) in
+         |  let x6 = get(x0, 5) in
+         |  let x7 = get(x0, 6) in
+         |  let x8 = get(x0, 7) in
+         |  let x9 = 1.0 * x5 in
+         |  let x10 = 0.0 * x6 in
+         |  let x11 = x9 - x10 in
+         |  let x12 = 1.0 * x6 in
+         |  let x13 = 0.0 * x5 in
+         |  let x14 = x12 + x13 in
+         |  let x15 = x1 + x11 in
+         |  let x16 = x2 + x14 in
+         |  let x17 = x1 - x11 in
+         |  let x18 = x2 - x14 in
+         |  let x19 = 1.0 * x7 in
+         |  let x20 = 0.0 * x8 in
+         |  let x21 = x19 - x20 in
+         |  let x22 = 1.0 * x8 in
+         |  let x23 = 0.0 * x7 in
+         |  let x24 = x22 + x23 in
+         |  let x25 = x3 + x21 in
+         |  let x26 = x4 + x24 in
+         |  let x27 = x3 - x21 in
+         |  let x28 = x4 - x24 in
+         |  let x29 = 1.0 * x25 in
+         |  let x30 = 0.0 * x26 in
+         |  let x31 = x29 - x30 in
+         |  let x32 = 1.0 * x26 in
+         |  let x33 = 0.0 * x25 in
+         |  let x34 = x32 + x33 in
+         |  let x35 = x15 + x31 in
+         |  let x36 = x16 + x34 in
+         |  let x37 = x15 - x31 in
+         |  let x38 = x16 - x34 in
+         |  let x39 = 0.0 * x27 in
+         |  let x40 = -1.0 * x28 in
+         |  let x41 = x39 - x40 in
+         |  let x42 = 0.0 * x28 in
+         |  let x43 = -1.0 * x27 in
+         |  let x44 = x42 + x43 in
+         |  let x45 = x17 + x41 in
+         |  let x46 = x18 + x44 in
+         |  let x47 = x17 - x41 in
+         |  let x48 = x18 - x44 in
+         |  let x49 = set(x0, 0, x35) in
+         |  let x50 = set(x0, 1, x36) in
+         |  let x51 = set(x0, 2, x45) in
+         |  let x52 = set(x0, 3, x46) in
+         |  let x53 = set(x0, 4, x37) in
+         |  let x54 = set(x0, 5, x38) in
+         |  let x55 = set(x0, 6, x47) in
+         |  let x56 = set(x0, 7, x48) in x0
+         |in x57""".stripMargin
+    val src = fftSource(
+      complexDecl,
+      pairDecl,
+      tabulateDecl,
+      seriesDecl,
+      sineSeriesDecl,
+      piDecl,
+      sineDecl,
+      omegaDecl,
+      splitEvenOddDecl,
+      butterflyDecl,
+      fftSplitDecl,
+      deinterleaveDecl,
+      interleaveDecl,
+      fftDecl,
+    )("""
+      fft[2](4)
+    """)
+    val (value, _) = eval(parse(src))
+    assertEquals(instar.pretty.value(value), expected)
   }
 }
