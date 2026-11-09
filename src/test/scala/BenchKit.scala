@@ -1,7 +1,7 @@
 package instar.interp
 
 import instar.parser.parse
-import org.apache.commons.math3.stat.regression.SimpleRegression
+import org.apache.commons.math3.stat.regression.{OLSMultipleLinearRegression, SimpleRegression}
 
 /** Sampling, regression and table rendering shared by the benchmarks. */
 object BenchKit {
@@ -25,6 +25,20 @@ object BenchKit {
     val reg = SimpleRegression()
     points.foreach((x, y) => reg.addData(x.toDouble, y.toDouble))
     Fit(reg.getSlope, reg.getIntercept, reg.getRSquare)
+
+  /** Least-squares fit of `cost ≈ a·n log2 n + b·n + c`. */
+  case class Model(a: Double, b: Double, c: Double, r2: Double):
+    override def toString: String =
+      f"$a%.2f n log2 n + $b%.1f n + $c%.1f (R² = $r2%.4f)"
+
+  def model(points: Seq[(Long, Long)]): Model =
+    val reg = OLSMultipleLinearRegression()
+    val xs = points.map { case (n, _) => Array(n.toDouble * log2(n), n.toDouble) }.toArray
+    reg.newSampleData(points.map(_._2.toDouble).toArray, xs)
+    val beta = reg.estimateRegressionParameters
+    Model(beta(1), beta(2), beta(0), reg.calculateRSquared)
+
+  private def log2(n: Long): Double = math.log(n) / math.log(2)
 
   /** Right-aligned table whose column widths follow the data. */
   def table(header: Seq[String], rows: Seq[Seq[String]]): String =
