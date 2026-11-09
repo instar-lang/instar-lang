@@ -667,7 +667,7 @@ class ADT extends SurfaceBase {
 trait Stream52Base extends SurfaceBase {
   // LMS: (R[IntRef], R[Array[α]]) as of_arr's state.
   protected val pairDecl: String =
-    "type Pair[A, B] = Pair(A, B) in"
+    "type Pair[A, B] = MkPair(A, B) in"
 
   // LMS:
   //   sealed trait stream_shape[+α, +ζ]
@@ -684,7 +684,7 @@ trait Stream52Base extends SurfaceBase {
   //   }
   // Instar: ∃S. init × step, with R[α] = α @ s.
   protected val stStreamDecl: String = """
-    type StStream[A, s] = StStream(
+    type StStream[A, s] = MkStStream(
       exists[S]. Pair[
         (forall[W]. (S -> W @ s) -> W @ s),
         (forall[W]. S -> (StreamShape[A @ s, Unit] -> W @ s) -> W @ s)
@@ -722,12 +722,12 @@ trait Stream52Base extends SurfaceBase {
   protected val ofArrDecl: String = """
   let of_arr[A, s](arr: Array[A] @ s): StStream[A, s] =
     let init[W](k: Pair[Ref[Int] @ s, Array[A] @ s] -> W @ s): W @ s =
-      k(Pair(ref@s(lift[s](0)), arr)) in
+      k(MkPair(ref@s(lift[s](0)), arr)) in
 
     let step[W](state: Pair[Ref[Int] @ s, Array[A] @ s])
         (k: StreamShape[A @ s, Unit] -> W @ s): W @ s =
       match state with
-      | Pair(i, a) =>
+      | MkPair(i, a) =>
         if@s (!@s i <@s len@s(a)) then
           let el = get@s(a, !@s i) in
           let _ = incr[s](i) in
@@ -735,9 +735,9 @@ trait Stream52Base extends SurfaceBase {
         else
           k(Nil) in
 
-    StStream(pack [
+    MkStStream(pack [
       Pair[Ref[Int] @ s, Array[A] @ s],
-      Pair(init, step)
+      MkPair(init, step)
     ]) in
   """
 
@@ -759,18 +759,18 @@ trait Stream52Base extends SurfaceBase {
   protected val mapDecl: String = """
   let map[A, B, s](f: A @ s -> B @ s)(str: StStream[A, s]): StStream[B, s] =
     match str with
-    | StStream(packed) =>
+    | MkStStream(packed) =>
       unpack [S, repr] = packed in
       match repr with
-      | Pair(init, step) =>
+      | MkPair(init, step) =>
         let step2[W](state: S)(k: StreamShape[B @ s, Unit] -> W @ s): W @ s =
           step[W](state)(fun(shape: StreamShape[A @ s, Unit]) =>
             match shape with
             | Nil => k(Nil)
             | Cons(a, u) => k(Cons(f(a), u))) in
-        StStream(pack [
+        MkStStream(pack [
           S,
-          Pair(init, step2)
+          MkPair(init, step2)
         ]) in
   """
 
@@ -790,10 +790,10 @@ trait Stream52Base extends SurfaceBase {
   protected val foldDecl: String = """
   let fold[A, Z, s](f: Z @ s -> A @ s -> Z @ s)(z: Z @ s)(str: StStream[A, s]): Z @ s =
     match str with
-    | StStream(packed) =>
+    | MkStStream(packed) =>
       unpack [S, repr] = packed in
       match repr with
-      | Pair(init, step) =>
+      | MkPair(init, step) =>
         init[Z](fun(state: S) =>
           let loop = fix@s go. lift[s](fun(acc: Z @ s): Z @ s =>
             step[Z](state)(fun(shape: StreamShape[A @ s, Unit]) =>
@@ -834,8 +834,8 @@ trait Stream52Base extends SurfaceBase {
 class Stream52 extends Stream52Base {
   test("Pair is the product of two values") {
     val src = stream52(pairDecl)("""
-      match Pair(1, 2) with
-      | Pair(x, y) => x + y
+      match MkPair(1, 2) with
+      | MkPair(x, y) => x + y
     """)
     testEvalSurface(src, VNum(3))
   }
@@ -856,10 +856,10 @@ class Stream52 extends Stream52Base {
       let _ = set(a, 1, 8) in
       let str = of_arr[Int, 1](a) in
       match str with
-      | StStream(packed) =>
+      | MkStStream(packed) =>
         unpack [S, repr] = packed in
         match repr with
-        | Pair(init, step) =>
+        | MkPair(init, step) =>
           init[Int](fun(s: S) =>
             step[Int](s)(fun(shape1: StreamShape[Int, Unit]) =>
               match shape1 with
@@ -885,10 +885,10 @@ class Stream52 extends Stream52Base {
       let str = of_arr[Int, 1](a) in
       let mapped = map[Int, Int, 1](fun(x: Int) => x + 1)(str) in
       match mapped with
-      | StStream(packed) =>
+      | MkStStream(packed) =>
         unpack [S, repr] = packed in
         match repr with
-        | Pair(init, step) =>
+        | MkPair(init, step) =>
           init[Int](fun(s: S) =>
             step[Int](s)(fun(shape1: StreamShape[Int, Unit]) =>
               match shape1 with
@@ -1018,11 +1018,11 @@ trait FFTBase extends SurfaceBase {
 
   // LMS: case class Complex[R[+_]](re: R[Double], im: R[Double])
   protected val complexDecl: String =
-    "type Complex[s] = Complex(Float @ s, Float @ s) in"
+    "type Complex[s] = MkComplex(Float @ s, Float @ s) in"
 
   // LMS: (Array[Complex[R]], Array[Complex[R]]) as split_even_odd's result.
   protected val pairDecl: String =
-    "type Pair[A, B] = Pair(A, B) in"
+    "type Pair[A, B] = MkPair(A, B) in"
 
   // LMS:
   //   private def series(x2: Double, d: Double, left: Int, term: Double, acc: Double): Double =
@@ -1079,7 +1079,7 @@ trait FFTBase extends SurfaceBase {
   protected val omegaDecl: String = """
   let omega[s] = fun(k: Int) => fun(n: Int) =>
     let angle = 0.0 - 2.0 * pi * toFloat(k) / toFloat(n) in
-    Complex(lift[s](cos(angle)), lift[s](sin(angle))) in
+    MkComplex(lift[s](cos(angle)), lift[s](sin(angle))) in
   """
 
   // LMS:
@@ -1089,7 +1089,7 @@ trait FFTBase extends SurfaceBase {
   protected val splitEvenOddDecl: String = """
   let splitEvenOdd[s](xs: Array[Complex[s]])
       : Pair[Array[Complex[s]], Array[Complex[s]]] =
-    Pair(tabulate[Complex[s]](len(xs) / 2)(fun(i: Int) => get(xs, 2 * i)),
+    MkPair(tabulate[Complex[s]](len(xs) / 2)(fun(i: Int) => get(xs, 2 * i)),
          tabulate[Complex[s]](len(xs) / 2)(fun(i: Int) => get(xs, 2 * i + 1))) in
   """
 
@@ -1117,15 +1117,15 @@ trait FFTBase extends SurfaceBase {
     let loop = fix go. fun(k: Int) =>
       if k < n / 2 then
         match omega[s](k)(n) with
-        | Complex(wRe, wIm) =>
+        | MkComplex(wRe, wIm) =>
           match get(e, k) with
-          | Complex(er, ei) =>
+          | MkComplex(er, ei) =>
             match get(o, k) with
-            | Complex(or, oi) =>
+            | MkComplex(or, oi) =>
               let zr = wRe *@s or -@s wIm *@s oi in
               let zi = wRe *@s oi +@s wIm *@s or in
-              let _ = set(out, k, Complex(er +@s zr, ei +@s zi)) in
-              let _ = set(out, k + n / 2, Complex(er -@s zr, ei -@s zi)) in
+              let _ = set(out, k, MkComplex(er +@s zr, ei +@s zi)) in
+              let _ = set(out, k + n / 2, MkComplex(er -@s zr, ei -@s zi)) in
               go(k + 1)
       else () in
     let _ = loop(0) in
@@ -1144,7 +1144,7 @@ trait FFTBase extends SurfaceBase {
     if len(xs) == 1 then xs
     else
       match splitEvenOdd[s](xs) with
-      | Pair(ev, od) => butterfly[s](go(ev))(go(od))(len(xs))
+      | MkPair(ev, od) => butterfly[s](go(ev))(go(od))(len(xs))
     in
   """
 
@@ -1154,7 +1154,7 @@ trait FFTBase extends SurfaceBase {
   protected val deinterleaveDecl: String = """
   let deinterleave[s](x: Array[Float] @ s)(n: Int): Array[Complex[s]] =
     tabulate[Complex[s]](n)(fun(i: Int) =>
-      Complex(get@s(x, lift[s](2 * i)), get@s(x, lift[s](2 * i + 1)))) in
+      MkComplex(get@s(x, lift[s](2 * i)), get@s(x, lift[s](2 * i + 1)))) in
   """
 
   // LMS:
@@ -1172,7 +1172,7 @@ trait FFTBase extends SurfaceBase {
     let loop = fix go. fun(i: Int) =>
       if i < n then
         match get(ys, i) with
-        | Complex(re, im) =>
+        | MkComplex(re, im) =>
           let _ = set@s(out, lift[s](2 * i), re) in
           let _ = set@s(out, lift[s](2 * i + 1), im) in
           go(i + 1)
