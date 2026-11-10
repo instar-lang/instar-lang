@@ -1338,3 +1338,264 @@ class FFT extends FFTBase {
     assertEquals(instar.pretty.value(value), expected)
   }
 }
+
+/** §Futamura's first projection: `program` is known, `input` stays dynamic. */
+trait FutamuraBase extends SurfaceBase {
+  // LMS:
+  //   sealed trait Expr
+  //   case class Lit(n: Int) | Var(index: Int) | Add | Sub | Mul
+  //   case class IfZ(cond, yes, no) | Let(rhs, body) | Call(fid: Int, arg)
+  // `Call` counts back from the defining function, like `Var` from its binder.
+  protected val exprDecl: String = """
+  type Expr = Lit(Int) | Var(Int) | Add(Expr, Expr) | Sub(Expr, Expr)
+    | Mul(Expr, Expr) | IfZ(Expr, Expr, Expr) | Let(Expr, Expr)
+    | Call(Int, Expr) in
+  """
+
+  // LMS: `env: List[R[Int]]`, a staging time list; `Var` is a de Bruijn index.
+  protected val listDecl: String =
+    "type List[A] = Nil | Cons(A, List[A]) in"
+
+  // LMS: case class Program(defs: List[Expr], entry: Int)
+  // `entry` counts back from the last definition.
+  protected val programDecl: String =
+    "type Program = MkProgram(List[Expr], Int) in"
+
+  // LMS: `case Var(i) => env(i)`; the index is in range, so no `Nil` case.
+  protected val lookupDecl: String = """
+  let lookup[A] : Int -> List[A] -> A =
+    fix go. fun(i: Int) => fun(xs: List[A]): A =>
+      match xs with
+      | Cons(x, rest) => if i == 0 then x else go(i - 1)(rest) in
+  """
+
+  // LMS:
+  //   def eval[R[+_]](expr: Expr, env: List[R[Int]], table: List[R[Int => Int]]): R[Int]
+  //   case Call(fid, arg) => table(fid)(eval[R](arg, env, table))
+  // `fid` counts back from the head of the table, the definition being built.
+  protected val evalDecl: String = """
+  let eval[s] : Expr -> List[Int @ s] -> List[(Int -> Int) @ s] -> Int @ s =
+    fix go. fun(e: Expr) => fun(env: List[Int @ s]) =>
+      fun(table: List[(Int -> Int) @ s]): Int @ s =>
+        match e with
+        | Lit(n) => lift[s](n)
+        | Var(i) => lookup[Int @ s](i)(env)
+        | Add(a, b) =>
+          let lhs = go(a)(env)(table) in
+          let rhs = go(b)(env)(table) in
+          lhs +@s rhs
+        | Sub(a, b) =>
+          let lhs = go(a)(env)(table) in
+          let rhs = go(b)(env)(table) in
+          lhs -@s rhs
+        | Mul(a, b) =>
+          let lhs = go(a)(env)(table) in
+          let rhs = go(b)(env)(table) in
+          lhs *@s rhs
+        | IfZ(c, y, n) =>
+          let cond = go(c)(env)(table) in
+          if@s (cond ==@s lift[s](0)) then go(y)(env)(table) else go(n)(env)(table)
+        | Let(rhs, rest) =>
+          let value = go(rhs)(env)(table) in
+          go(rest)(Cons(value, env))(table)
+        | Call(fid, arg) =>
+          let callee = lookup[(Int -> Int) @ s](fid)(table) in
+          let value = go(arg)(env)(table) in
+          callee(value)@s in
+  """
+
+  // LMS:
+  //   def buildFunTable[R[+_]](defs: List[Expr]): List[R[Int => Int]] = {
+  //     def loop(remaining: List[Expr], previous: List[R[Int => Int]]): ... =
+  //       remaining match {
+  //         case Nil => previous
+  //         case body :: rest =>
+  //           def self: R[Int => Int] =
+  //             lam[R, Int, Int](x => eval[R](body, List(x), self :: previous))
+  //           loop(rest, self :: previous)
+  //       }
+  //     loop(defs, Nil)
+  //   }
+  protected val buildFunTableDecl: String = """
+  let buildFunTable[s] : List[Expr] -> List[(Int -> Int) @ s] =
+    fun(defs: List[Expr]) =>
+      let loop : List[Expr] -> List[(Int -> Int) @ s] -> List[(Int -> Int) @ s] =
+        fix go. fun(remaining: List[Expr]) =>
+          fun(previous: List[(Int -> Int) @ s]) =>
+            match remaining with
+            | Nil => previous
+            | Cons(body, rest) =>
+              let f =
+                fix@s self. lift[s](fun(x: Int @ s): Int @ s =>
+                  eval[s](body)(Cons(x, Nil))(Cons(self, previous))) in
+              go(rest)(Cons(f, previous))
+      in loop(defs)(Nil) in
+  """
+
+  // LMS:
+  //   def run[R[+_]](program: Program, input: R[Int]): R[Int] =
+  //     app[R, Int, Int](buildFunTable[R](program.defs)(program.entry), input)
+  // `run` is a surface keyword, hence `evalProgram`.
+  protected val evalProgramDecl: String = """
+  let evalProgram[s] : Program -> (Int -> Int) @ s =
+    fun(program: Program) =>
+      match program with
+      | MkProgram(defs, entry) =>
+        let table = buildFunTable[s](defs) in
+        lookup[(Int -> Int) @ s](entry)(table) in
+  """
+
+  // LMS: `f0(n) = ifz n then 1 else n * f0(n - 1)`.
+  protected val factorialDecl: String = """
+  let factorial : Program =
+    MkProgram(Cons(IfZ(Var(0), Lit(1), Mul(Var(0), Call(0, Sub(Var(0), Lit(1))))), Nil), 0) in
+  """
+
+  // LMS: `f0(n) = ifz n then 0 else ifz (n - 1) then 1 else f0(n-1) + f0(n-2)`.
+  protected val fibonacciDecl: String = """
+  let fibonacci : Program =
+    MkProgram(Cons(IfZ(Var(0), Lit(0), IfZ(Sub(Var(0), Lit(1)), Lit(1),
+      Add(Call(0, Sub(Var(0), Lit(1))), Call(0, Sub(Var(0), Lit(2)))))), Nil), 0) in
+  """
+
+  protected def futamuraSource(decls: String*)(body: String): String =
+    decls.map(_.trim).mkString("\n") + "\n" + body
+}
+
+class Futamura extends FutamuraBase {
+  test("the first projection, unstaged: factorial") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      factorialDecl,
+    )("""
+      let f = evalProgram[1](factorial) in
+      f(5)
+    """)
+    testEvalSurface(src, VNum(120))
+  }
+
+  test("the first projection, unstaged: fibonacci") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      fibonacciDecl,
+    )("""
+      let f = evalProgram[1](fibonacci) in
+      f(10)
+    """)
+    testEvalSurface(src, VNum(55))
+  }
+
+  test("the first projection compiles factorial to the expected values") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      factorialDecl,
+    )("""
+      let f = run(evalProgram[2](factorial)) in
+      f(5)
+    """)
+    testEvalSurface(src, VNum(120))
+  }
+
+  test("the first projection compiles fibonacci to the expected values") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      fibonacciDecl,
+    )("""
+      let f = run(evalProgram[2](fibonacci)) in
+      f(10)
+    """)
+    testEvalSurface(src, VNum(55))
+  }
+
+  test("§Futamura: the residual factorial is the recursive function") {
+    val expected =
+      """|let x8 = fix f0.
+         |  let x7 (x1) =
+         |    let x2 = x1 == 0 in
+         |    let x6 = if x2 then
+         |      1
+         |    else
+         |      let x3 = x1 - 1 in
+         |      let x4 = f0 x3 in
+         |      let x5 = x1 * x4 in x5
+         |    in x6
+         |  in x7
+         |in x8""".stripMargin
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      factorialDecl,
+    )("""
+      evalProgram[2](factorial)
+    """)
+    val (value, _) = eval(parse(src))
+    assertEquals(instar.pretty.value(value), expected)
+  }
+
+  test("§Futamura: the residual fibonacci is the recursive function") {
+    val expected =
+      """|let x13 = fix f0.
+         |  let x12 (x1) =
+         |    let x2 = x1 == 0 in
+         |    let x11 = if x2 then
+         |      0
+         |    else
+         |      let x3 = x1 - 1 in
+         |      let x4 = x3 == 0 in
+         |      let x10 = if x4 then
+         |        1
+         |      else
+         |        let x5 = x1 - 1 in
+         |        let x6 = f0 x5 in
+         |        let x7 = x1 - 2 in
+         |        let x8 = f0 x7 in
+         |        let x9 = x6 + x8 in x9
+         |      in x10
+         |    in x11
+         |  in x12
+         |in x13""".stripMargin
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      fibonacciDecl,
+    )("""
+      evalProgram[2](fibonacci)
+    """)
+    val (value, _) = eval(parse(src))
+    assertEquals(instar.pretty.value(value), expected)
+  }
+}
