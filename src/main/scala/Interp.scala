@@ -28,6 +28,7 @@ import collection.mutable.HashSet
 enum Value:
   case VUnit
   case VNum(i: Int)
+  case VFloat(d: Double)
   case VBool(b: Boolean)
   case VLoc(loc: Loc)
   case VSClo(st: String, body: Expr, ρ: Env, ς: StEnv)
@@ -35,6 +36,11 @@ enum Value:
   case VBNClo(x: String, argTy: Option[Type], body: Expr, retTy: Option[Type], ρ: Env, ς: StEnv)
   case VCode(t: Expr) // XXX: could extend to open code value with environment?
   case VThunk(e: Expr, ρ: Env, ς: StEnv)
+  // Experimental:
+  case VTClo(body: Expr, ρ: Env, ς: StEnv)
+  case VPack(value: Value)
+  case VCon(tag: String, args: List[Value])
+  case VArr(elems: Array[Value])
 
 extension (t: Option[Type])
   // Assuming well-formedness of types
@@ -73,6 +79,11 @@ object Opt:
   def disable(id: String): Unit = opt.remove(id)
   def disableAll: Unit = opt.clear
 
+// Number of `eval` calls made so far; the benchmarks in the test suite use it
+// as a deterministic stand-in for the running time.
+object EvalCounter:
+  var n: Long = 0L
+
 def evalPrim(op: String, v1: Value, v2: Value): Value =
   (op, v1, v2) match
     case ("+", VNum(i1), VNum(i2)) => VNum(i1 + i2)
@@ -85,10 +96,22 @@ def evalPrim(op: String, v1: Value, v2: Value): Value =
     case (">", VNum(i1), VNum(i2)) => VBool(i1 > i2)
     case ("==", VNum(i1), VNum(i2)) => VBool(i1 == i2)
     case ("!=", VNum(i1), VNum(i2)) => VBool(i1 != i2)
+    case ("+", VFloat(d1), VFloat(d2)) => VFloat(d1 + d2)
+    case ("-", VFloat(d1), VFloat(d2)) => VFloat(d1 - d2)
+    case ("*", VFloat(d1), VFloat(d2)) => VFloat(d1 * d2)
+    case ("/", VFloat(d1), VFloat(d2)) => VFloat(d1 / d2)
+    case ("<=", VFloat(d1), VFloat(d2)) => VBool(d1 <= d2)
+    case (">=", VFloat(d1), VFloat(d2)) => VBool(d1 >= d2)
+    case ("<", VFloat(d1), VFloat(d2)) => VBool(d1 < d2)
+    case (">", VFloat(d1), VFloat(d2)) => VBool(d1 > d2)
+    case ("==", VFloat(d1), VFloat(d2)) => VBool(d1 == d2)
+    case ("!=", VFloat(d1), VFloat(d2)) => VBool(d1 != d2)
 
 def evalPrimUnary(op: String, v: Value): Value =
   (op, v) match
     case ("-", VNum(i)) => VNum(-i)
+    case ("-", VFloat(d)) => VFloat(-d)
+    case ("toFloat", VNum(i)) => VFloat(i.toDouble)
 
 def evalStVar(s: Stage, ς: StEnv): Stage =
   s match
@@ -111,6 +134,7 @@ object StaticConst:
   def unapply(e: Expr)(using c: Cache): Option[Value] =
     e match
       case ENum(i) => Some(VNum(i))
+      case EFloat(d) => Some(VFloat(d))
       case EBool(b) => Some(VBool(b))
       case EVar(x) if c.inv.contains(x) => StaticConst.unapply(c.inv(x))
       case _ => None
@@ -125,6 +149,7 @@ def renormalize(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value,
 def reflectAtom(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
   case EUnit => k(VCode(EUnit), σ, γ)
   case ENum(i) => k(VCode(ENum(i)), σ, γ)
+  case EFloat(d) => k(VCode(EFloat(d)), σ, γ)
   case EBool(b) => k(VCode(EBool(b)), σ, γ)
 
 def reflectLam(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
@@ -140,6 +165,7 @@ def reflectSimp(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value,
   case EBinOp(op, StaticConst(v1), StaticConst(v2), _) if Opt("rewriting") =>
     evalPrim(op, v1, v2) match
       case VNum(i) => reflect(ENum(i), σ, k, γ)
+      case VFloat(d) => reflect(EFloat(d), σ, k, γ)
       case VBool(b) => reflect(EBool(b), σ, k, γ)
 
 def reflectInline(σ: Store, k: Cont, γ: MCont)(using c: Cache): Expr ⇀ (Value, Store) =
@@ -275,9 +301,12 @@ def hoist(e: Expr, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store
 def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
   case VUnit => reflect(EUnit, σ, k, γ)
   case VNum(i) => reflect(ENum(i), σ, k, γ)
+  case VFloat(d) => reflect(EFloat(d), σ, k, γ)
   case VBool(b) => reflect(EBool(b), σ, k, γ)
   case VLoc(l) => reflect(ELoc(l), σ, k, γ)
-  case VClo(x, argTy, body, retTy, ρf, ςf) =>
+  case VPack(_) => throw new MatchError("cannot lift existential packages")
+  case VArr(_) => throw new MatchError("cannot lift array values")
+  case VClo(x, _, body, _, ρf, ςf) =>
     val l = σ.size
     val y = fresh()
     reify(body, ρf + (x -> l), ςf, σ + (l -> VCode(EVar(y))), {
@@ -285,7 +314,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
         if (Opt("lam-hoist"))
           hoist(t, σ2, { case (VCode(t1), σ3, γ1) =>
             println(s"Hoisted lambda body: $t1")
-            reflect(ELam(y, argTy.erase, t1, retTy.erase), σ3, (v, σ3, γ1) => γ1(v, σ3), γ1)
+            reflect(ELam(y, None, t1, None), σ3, (v, σ3, γ1) => γ1(v, σ3), γ1)
           }, { case (VCode(t1), σ3) =>
             println(s"Hoisted whole term: $t1")
             // now we need to renormalize the whole term, as it may contain lifted bindings,
@@ -294,7 +323,7 @@ def lift(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store
             renormalize(t1, σ3, k, γ)
           })(using BiMap((EVar(y) -> y)))
         else
-          reflect(ELam(y, argTy.erase, t, retTy.erase), σ2, k, γ)
+          reflect(ELam(y, None, t, None), σ2, k, γ)
       })
 
 def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Store) = v match
@@ -307,11 +336,14 @@ def isApp(k: Cont)(v: Value, σ: Store, γ: MCont)(using c: Cache): (Value, Stor
 // Note: fst-stage side effect will break semantics-preservation,
 // but we won't be handle/prevent that in the dynamic interpreter.
 def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Cache): (Value, Store) =
+  EvalCounter.n += 1
   e match
     case EUnit =>
       k(VUnit, σ, γ)
     case ENum(i) =>
       k(VNum(i), σ, γ)
+    case EFloat(d) =>
+      k(VFloat(d), σ, γ)
     case EBool(b) =>
       k(VBool(b), σ, γ)
     case ELoc(l) =>
@@ -372,6 +404,11 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           val l = σ1.size
           val ρf1 = ρf + (f -> l)
           val v = VSClo(x, body, ρf1, ςf)
+          eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
+        case (VTClo(body, ρf, ςf), σ1, γ1) =>
+          val l = σ1.size
+          val ρf1 = ρf + (f -> l)
+          val v = VTClo(body, ρf1, ςf)
           eval(e, ρ + (f -> l), ς, σ1 + (l -> v), k, γ1)
       }, γ)
     case ECond(e1, e2, e3, s) if evalExprStage(s, ς) == Sta =>
@@ -436,6 +473,55 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
           reflect(EAssign1(x1, x2), σ2, k, γ2)
         }, γ1)
       }, γ)
+    case EArrAlloc(n, init, s) if evalExprStage(s, ς) == Sta =>
+      eval(n, ρ, ς, σ, { case (VNum(size), σ1, γ1) =>
+        eval(init, ρ, ς, σ1, { case (v, σ2, γ2) =>
+          k(VArr(Array.fill(size)(v)), σ2, γ2)
+        }, γ1)
+      }, γ)
+    case EArrAlloc(n, init, s) if evalExprStage(s, ς) == Dyn =>
+      eval(n, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(init, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          reflect(EArrAlloc1(x1, x2), σ2, k, γ2)
+        }, γ1)
+      }, γ)
+    case EArrGet(a, i, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VNum(ix), σ2, γ2) =>
+          k(elems(ix), σ2, γ2)
+        }, γ1)
+      }, γ)
+    case EArrGet(a, i, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          reflect(EArrGet1(x1, x2), σ2, k, γ2)
+        }, γ1)
+      }, γ)
+    case EArrSet(a, i, e2, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VNum(ix), σ2, γ2) =>
+          eval(e2, ρ, ς, σ2, { case (v, σ3, γ3) =>
+            elems(ix) = v
+            k(VUnit, σ3, γ3)
+          }, γ2)
+        }, γ1)
+      }, γ)
+    case EArrSet(a, i, e2, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x1), σ1, γ1) =>
+        eval(i, ρ, ς, σ1, { case (VCode(x2), σ2, γ2) =>
+          eval(e2, ρ, ς, σ2, { case (VCode(x3), σ3, γ3) =>
+            reflect(EArrSet1(x1, x2, x3), σ3, k, γ3)
+          }, γ2)
+        }, γ1)
+      }, γ)
+    case EArrLen(a, s) if evalExprStage(s, ς) == Sta =>
+      eval(a, ρ, ς, σ, { case (VArr(elems), σ1, γ1) =>
+        k(VNum(elems.length), σ1, γ1)
+      }, γ)
+    case EArrLen(a, s) if evalExprStage(s, ς) == Dyn =>
+      eval(a, ρ, ς, σ, { case (VCode(x), σ1, γ1) =>
+        reflect(EArrLen1(x), σ1, k, γ1)
+      }, γ)
     case EAscribe(e, _) => eval(e, ρ, ς, σ, k, γ)
     case EFix(f, e, s) if evalExprStage(s, ς) == Sta =>
       eval(e, ρ, ς, σ, {
@@ -456,13 +542,55 @@ def eval(e: Expr, ρ: Env, ς: StEnv, σ: Store, k: Cont, γ: MCont)(using c: Ca
       reify(e, ρ1, ς, σ1, { case (VCode(x), σ2) =>
         reflect(EFix(g, x, Some(Sta)), σ2, k, γ)
       })
-    // Experimental features below:
+    // Experimental:
     case EIsApp(e) => eval(e, ρ, ς, σ, isApp(k), γ)
     case ECBNApp(e1, e2) =>
       eval(e1, ρ, ς, σ, { case (VClo(x, _, body, _, ρf, ςf), σ1, γ1) =>
         val v2 = VThunk(e2, ρ, ς)
         val l = σ1.size
         eval(body, ρf + (x -> l), ςf, σ1 + (l -> v2), k, γ1)
+      }, γ)
+    case ETLam(_, body) =>
+      k(VTClo(body, ρ, ς), σ, γ)
+    case ETApp(e, _) =>
+      eval(e, ρ, ς, σ, { case (VTClo(body, ρf, ςf), σ1, γ1) =>
+        eval(body, ρf, ςf, σ1, k, γ1)
+      }, γ)
+    case EPack(_, payload) =>
+      eval(payload, ρ, ς, σ, { case (v, σ1, γ1) =>
+        k(VPack(v), σ1, γ1)
+      }, γ)
+    case EUnpack(_, x, packed, body) =>
+      eval(packed, ρ, ς, σ, { case (VPack(payload), σ1, γ1) =>
+        val l = σ1.size
+        eval(body, ρ + (x -> l), ς, σ1 + (l -> payload), k, γ1)
+      }, γ)
+    // ADTs, first stage only
+    case ETypeDecl(_, _, _, body) => eval(body, ρ, ς, σ, k, γ)
+    case ECon(tag, args) =>
+      def loop(pending: List[Expr], vs: List[Value], σ1: Store, γ1: MCont): (Value, Store) =
+        pending match
+          case arg :: rest =>
+            eval(arg, ρ, ς, σ1, { case (v, σ2, γ2) =>
+              loop(rest, vs :+ v, σ2, γ2) }, γ1)
+          case Nil => k(VCon(tag, vs), σ1, γ1)
+      loop(args, Nil, σ, γ)
+    case EMatch(scrutinee, cases) =>
+      eval(scrutinee, ρ, ς, σ, { case (v, σ1, γ1) =>
+        v match
+          case VCon(tag, fields) =>
+            cases.find(_.con == tag) match
+              case Some(MatchCase(_, binders, body)) =>
+                def loop(xs: List[String], vs: List[Value], ρ1: Env, σ2: Store): (Env, Store) =
+                  (xs, vs) match
+                    case (x :: xs1, v :: vs1) =>
+                      val l = σ2.size
+                      loop(xs1, vs1, ρ1 + (x -> l), σ2 + (l -> v))
+                    case _ => (ρ1, σ2)
+                val (ρ1, σ2) = loop(binders, fields, ρ, σ1)
+                eval(body, ρ1, ς, σ2, k, γ1)
+              case None => throw new MatchError(s"no case for constructor `$tag`")
+          case other => throw new MatchError(s"cannot match on `$other`")
       }, γ)
 
 def eval(e: Expr): (Value, Store) =

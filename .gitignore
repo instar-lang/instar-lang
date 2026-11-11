@@ -1,3 +1,7 @@
+# ExternalTest build artifacts (tests/*.c and binaries)
+tests/*
+!tests/*.instar
+
 # macOS
 .DS_Store
 

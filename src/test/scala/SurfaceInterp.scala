@@ -40,7 +40,9 @@ trait SurfaceBase extends munit.FunSuite {
     v match
       case VUnit => "VUnit"
       case VNum(i) => s"VNum($i)"
+      case VFloat(f) => s"VFloat($f)"
       case VBool(b) => s"VBool($b)"
+      case VArr(elems) => elems.mkString("VArr(", ",", ")")
       case VLoc(loc) => s"VLoc($loc)"
       case VSClo(st, body, ρ, ς) => s"VSClo($st,${normalizeExpr(body)},$ρ,$ς)"
       case VClo(x, _, body, _, ρ, ς) => s"VClo($x,${normalizeExpr(body)},$ρ,$ς)"
@@ -604,5 +606,996 @@ class CoreOpt extends SurfaceBase {
             None),
           EVar("x6"))),
       Set("rewriting", "simp-cond"))
+  }
+}
+
+class ADT extends SurfaceBase {
+  test("list-length") {
+    val src = """
+      type List[A] = Nil | Cons(A, List[A]) in
+      let length = fix go. fun(xs: List[A]) =>
+        match xs with
+        | Nil => 0
+        | Cons(_, ys) => 1 + go(ys)
+      in
+      length(Cons(1, Cons(2, Cons(3, Nil))))
+    """
+    testEvalSurface(src, VNum(3))
+  }
+
+  test("tree-size") {
+    val src = """
+      type Tree[A] = Leaf | Node(Tree[A], A, Tree[A]) in
+      let size = fix go. fun(t: Tree[A]) =>
+        match t with
+        | Leaf => 0
+        | Node(l, _, r) => 1 + go(l) + go(r)
+      in
+      size(Node(Node(Leaf, 1, Leaf), 2, Leaf))
+    """
+    testEvalSurface(src, VNum(2))
+  }
+
+  test("option-get-or-else") {
+    val src = """
+      type Option[A] = None | Some(A) in
+      let getOrElse = fun(o: Option[Int]) => fun(d: Int) =>
+        match o with
+        | None => d
+        | Some(x) => x
+      in
+      getOrElse(Some(42))(0)
+    """
+    testEvalSurface(src, VNum(42))
+  }
+
+  test("list-length with a stage parameter") {
+    val src = """
+      type List[A, s] = Nil | Cons(A@s, List[A, s]) in
+      let length = fix go. fun(xs: List[A]) =>
+        match xs with
+        | Nil => 0
+        | Cons(_, ys) => 1 + go(ys)
+      in
+      length(Cons(1, Cons(2, Cons(3, Nil))))
+    """
+    testEvalSurface(src, VNum(3))
+  }
+}
+
+/** §5.2 staged streams, core data structures. */
+trait Stream52Base extends SurfaceBase {
+  // LMS: (R[IntRef], R[Array[α]]) as of_arr's state.
+  protected val pairDecl: String =
+    "type Pair[A, B] = MkPair(A, B) in"
+
+  // LMS:
+  //   sealed trait stream_shape[+α, +ζ]
+  //   case object Nil
+  //   case class Cons[α, ζ](a: α, rest: ζ)
+  protected val streamShapeDecl: String =
+    "type StreamShape[A, B] = Nil | Cons(A, B) in"
+
+  // LMS:
+  //   trait st_stream[R[+_], α] {
+  //     type σ
+  //     def init[ω](k: σ => R[ω]): R[ω]
+  //     def step[ω](s: σ)(k: stream_shape[R[α], Unit] => R[ω]): R[ω]
+  //   }
+  // Instar: ∃S. init × step, with R[α] = α @ s.
+  protected val stStreamDecl: String = """
+    type StStream[A, s] = MkStStream(
+      exists[S]. Pair[
+        (forall[W]. (S -> W @ s) -> W @ s),
+        (forall[W]. S -> (StreamShape[A @ s, Unit] -> W @ s) -> W @ s)
+      ]
+    ) in
+  """
+
+  // LMS:
+  //   def incr[R[+_]](r: R[IntRef]): R[Unit]
+  protected val incrDecl: String = """
+  let incr[s](r: Ref[Int] @ s): Unit @ s =
+    r :=@s (!@s r +@s lift[s](1)) in
+  """
+
+  // LMS:
+  /*
+  def of_arr[R[+_], α: Manifest](arr: R[Array[α]]): st_stream[R, α] =
+    new st_stream[R, α] {
+      type σ = (R[IntRef], R[Array[α]])
+
+      def init[ω: Manifest](k: σ => R[ω]): R[ω] = k((ref[R](0), arr))
+
+      def step[ω: Manifest](s: σ)(k: stream_shape[R[α], Unit] => R[ω]): R[ω] = {
+        val (i, a) = s
+        iff[R, ω](lt[R](read[R](i), length[R, α](a))) {
+          val el = at[R, α](a, read[R](i))
+          incr[R](i)
+          k(stream_shape.Cons(el, ()))
+        } {
+          k(stream_shape.Nil)
+        }
+      }
+    }
+  */
+  protected val ofArrDecl: String = """
+  let of_arr[A, s](arr: Array[A] @ s): StStream[A, s] =
+    let init[W](k: Pair[Ref[Int] @ s, Array[A] @ s] -> W @ s): W @ s =
+      k(MkPair(ref@s(lift[s](0)), arr)) in
+
+    let step[W](state: Pair[Ref[Int] @ s, Array[A] @ s])
+        (k: StreamShape[A @ s, Unit] -> W @ s): W @ s =
+      match state with
+      | MkPair(i, a) =>
+        if@s (!@s i <@s len@s(a)) then
+          let el = get@s(a, !@s i) in
+          let _ = incr[s](i) in
+          k(Cons(el, ()))
+        else
+          k(Nil) in
+
+    MkStStream(pack [
+      Pair[Ref[Int] @ s, Array[A] @ s],
+      MkPair(init, step)
+    ]) in
+  """
+
+  // LMS:
+  /*
+  def map[R[+_], α: Manifest, β: Manifest](f: R[α] => R[β])(str: st_stream[R, α]): st_stream[R, β] =
+    new st_stream[R, β] {
+      type σ = str.σ
+
+      def init[ω: Manifest](k: σ => R[ω]): R[ω] = str.init[ω](k)
+
+      def step[ω: Manifest](s: σ)(k: stream_shape[R[β], Unit] => R[ω]): R[ω] =
+        str.step[ω](s) {
+          case stream_shape.Nil        => k(stream_shape.Nil)
+          case stream_shape.Cons(a, u) => k(stream_shape.Cons(f(a), u))
+        }
+    }
+  */
+  protected val mapDecl: String = """
+  let map[A, B, s](f: A @ s -> B @ s)(str: StStream[A, s]): StStream[B, s] =
+    match str with
+    | MkStStream(packed) =>
+      unpack [S, repr] = packed in
+      match repr with
+      | MkPair(init, step) =>
+        let step2[W](state: S)(k: StreamShape[B @ s, Unit] -> W @ s): W @ s =
+          step[W](state)(fun(shape: StreamShape[A @ s, Unit]) =>
+            match shape with
+            | Nil => k(Nil)
+            | Cons(a, u) => k(Cons(f(a), u))) in
+        MkStStream(pack [
+          S,
+          MkPair(init, step2)
+        ]) in
+  """
+
+  // LMS:
+  /*
+  def fold[R[+_], α: Manifest, ζ: Manifest](f: (R[ζ], R[α]) => R[ζ], z: R[ζ])(str: st_stream[R, α]): R[ζ] =
+    str.init[ζ] { (s: str.σ) =>
+      lazy val loop: R[ζ => ζ] = fun[R, ζ, ζ] { (z: R[ζ]) =>
+        str.step[ζ](s) {
+          case stream_shape.Nil        => z
+          case stream_shape.Cons(a, _) => app[R, ζ, ζ](loop, f(z, a))
+        }
+      }
+      app[R, ζ, ζ](loop, z)
+    }
+  */
+  protected val foldDecl: String = """
+  let fold[A, Z, s](f: Z @ s -> A @ s -> Z @ s)(z: Z @ s)(str: StStream[A, s]): Z @ s =
+    match str with
+    | MkStStream(packed) =>
+      unpack [S, repr] = packed in
+      match repr with
+      | MkPair(init, step) =>
+        init[Z](fun(state: S) =>
+          let loop = fix@s go. lift[s](fun(acc: Z @ s): Z @ s =>
+            step[Z](state)(fun(shape: StreamShape[A @ s, Unit]) =>
+              match shape with
+              | Nil => acc
+              | Cons(a, _) => go(f(acc)(a))@s))
+          in loop(z)@s) in
+  """
+
+  // LMS:
+  /*
+  def sumOfSquares[R[+_]](arr: R[Array[Int]])(implicit S: Stream52Cast): R[Int] = {
+    val str = S.map[R, Int, Int]((x: R[Int]) => S.times[R](x, x))(S.of_arr[R, Int](arr))
+    S.fold[R, Int, Int]((z: R[Int], a: R[Int]) => S.plus[R](z, a), S.int[R](0))(str)
+  }
+  */
+  protected val sumOfSquaresDecl: String = """
+  let sumOfSquares[s]: (Array[Int] -> Int) @ s =
+    lift[s](fun(arr: Array[Int] @ s): Int @ s =>
+      let arr = map[Int, Int, s](fun(x: Int @ s) => x *@s x)(of_arr[Int, s](arr)) in
+      let res = fold[Int, Int, s](fun(acc: Int @ s) => fun(x: Int @ s) => acc +@s x)(lift[s](0))(arr) in
+      res) in
+  """
+
+  protected val iotaDecl: String = """
+  let iota = fun(n: Int) =>
+    let a = alloc(n, 0) in
+    let loop = fix go. fun(i: Int) =>
+      if i < n then let _ = set(a, i, i + 1) in go(i + 1) else a
+    in
+    loop(0) in
+  """
+
+  protected def stream52(decls: String*)(body: String): String =
+    decls.map(_.trim).mkString("\n") + "\n" + body
+}
+
+class Stream52 extends Stream52Base {
+  test("Pair is the product of two values") {
+    val src = stream52(pairDecl)("""
+      match MkPair(1, 2) with
+      | MkPair(x, y) => x + y
+    """)
+    testEvalSurface(src, VNum(3))
+  }
+
+  test("StreamShape is Nil | Cons of the element and the rest") {
+    val src = stream52(streamShapeDecl)("""
+      match Cons(42, ()) with
+      | Nil => 0
+      | Cons(x, _) => x
+    """)
+    testEvalSurface(src, VNum(42))
+  }
+
+  test("of_arr yields elements in order, advances, then terminates") {
+    val src = stream52(pairDecl, streamShapeDecl, stStreamDecl, incrDecl, ofArrDecl)("""
+      let a = alloc(2, 0) in
+      let _ = set(a, 0, 7) in
+      let _ = set(a, 1, 8) in
+      let str = of_arr[Int, 1](a) in
+      match str with
+      | MkStStream(packed) =>
+        unpack [S, repr] = packed in
+        match repr with
+        | MkPair(init, step) =>
+          init[Int](fun(s: S) =>
+            step[Int](s)(fun(shape1: StreamShape[Int, Unit]) =>
+              match shape1 with
+              | Nil => 0
+              | Cons(x, _) =>
+                step[Int](s)(fun(shape2: StreamShape[Int, Unit]) =>
+                  match shape2 with
+                  | Nil => x
+                  | Cons(y, _) =>
+                    step[Int](s)(fun(shape3: StreamShape[Int, Unit]) =>
+                      match shape3 with
+                      | Nil => x * 10 + y
+                      | Cons(_, _) => 0))))
+    """)
+    testEvalSurface(src, VNum(78))
+  }
+
+  test("map transforms yielded elements") {
+    val src = stream52(pairDecl, streamShapeDecl, stStreamDecl, incrDecl, ofArrDecl, mapDecl)("""
+      let a = alloc(2, 0) in
+      let _ = set(a, 0, 7) in
+      let _ = set(a, 1, 8) in
+      let str = of_arr[Int, 1](a) in
+      let mapped = map[Int, Int, 1](fun(x: Int) => x + 1)(str) in
+      match mapped with
+      | MkStStream(packed) =>
+        unpack [S, repr] = packed in
+        match repr with
+        | MkPair(init, step) =>
+          init[Int](fun(s: S) =>
+            step[Int](s)(fun(shape1: StreamShape[Int, Unit]) =>
+              match shape1 with
+              | Nil => 0
+              | Cons(x, _) =>
+                step[Int](s)(fun(shape2: StreamShape[Int, Unit]) =>
+                  match shape2 with
+                  | Nil => x
+                  | Cons(y, _) =>
+                    step[Int](s)(fun(shape3: StreamShape[Int, Unit]) =>
+                      match shape3 with
+                      | Nil => x * 10 + y
+                      | Cons(_, _) => 0))))
+    """)
+    testEvalSurface(src, VNum(89))
+  }
+
+  test("sum of squares at stage 1") {
+    val src = stream52(
+      pairDecl,
+      streamShapeDecl,
+      stStreamDecl,
+      incrDecl,
+      ofArrDecl,
+      mapDecl,
+      foldDecl,
+      sumOfSquaresDecl,
+      iotaDecl,
+    )("""
+      let a = iota(10) in
+      sumOfSquares[1](a)
+    """)
+    testEvalSurface(src, VNum(385))
+  }
+
+  test("stage-2 sum of squares fuses") {
+    val src = stream52(
+      pairDecl,
+      streamShapeDecl,
+      stStreamDecl,
+      incrDecl,
+      ofArrDecl,
+      mapDecl,
+      foldDecl,
+      sumOfSquaresDecl,
+    )("""
+      sumOfSquares[2]
+    """)
+    val (value, _) = eval(parse(src))
+    val code = instar.pretty.value(value)
+    // LMS (Stream52Suite / Stream52CastSuite, §5.2):
+    /*
+    class Snippet() extends (Array[Int] => Int) {
+      def apply(x0: Array[Int]): Int = {
+        var x1: scala.runtime.IntRef = null.asInstanceOf[scala.runtime.IntRef]
+        var x2: Function1[Int, Int] = null.asInstanceOf[Function1[Int, Int]]
+        var x3: Int = null.asInstanceOf[Int]
+        x1 = new scala.runtime.IntRef(0)
+        x2 = x4
+        x3 = x0.length
+        def x4(x5: Int): Int = if (x1.elem < x3) {
+          val x6 = x0(x1.elem)
+          x1.elem = (x1.elem + 1)
+          x2(x5 + x6 * x6)
+        } else x5
+        x4(0)
+      }
+    }
+    */
+    val expected =
+      """|let x19 (x0) =
+         |  let x1 = ref(0) in
+         |  let x17 = fix f2.
+         |    let x16 (x3) =
+         |      let x4 = ! x1 in
+         |      let x5 = len(x0) in
+         |      let x6 = x4 < x5 in
+         |      let x15 = if x6 then
+         |        let x7 = ! x1 in
+         |        let x8 = get(x0, x7) in
+         |        let x9 = ! x1 in
+         |        let x10 = x9 + 1 in
+         |        let x11 = x1 := x10 in
+         |        let x12 = x8 * x8 in
+         |        let x13 = x3 + x12 in
+         |        let x14 = f2 x13 in x14
+         |      else
+         |        x3
+         |      in x15
+         |    in x16
+         |  in
+         |  let x18 = x17 0 in x18
+         |in x19""".stripMargin
+    assertEquals(code, expected)
+  }
+
+  test("stage-2 sum of squares runs on an array") {
+    val src = stream52(
+      pairDecl,
+      streamShapeDecl,
+      stStreamDecl,
+      incrDecl,
+      ofArrDecl,
+      mapDecl,
+      foldDecl,
+      sumOfSquaresDecl,
+      iotaDecl,
+    )("""
+      let a = iota(10) in
+      let squares = run(sumOfSquares[2]) in
+      squares(a)
+    """)
+    testEvalSurface(src, VNum(385))
+  }
+}
+
+/** §FFT radix-2 FFT. */
+trait FFTBase extends SurfaceBase {
+  // LMS: `Array.tabulate`.
+  protected val tabulateDecl: String = """
+  let tabulate[A] = fun(n: Int) => fun(f: Int -> A) =>
+    let out = alloc(n, f(0)) in
+    let loop = fix go. fun(i: Int) =>
+      if i < n - 1 then let _ = set(out, i + 1, f(i + 1)) in go(i + 1) else out
+    in loop(0) in
+  """
+
+  // LMS: case class Complex[R[+_]](re: R[Double], im: R[Double])
+  protected val complexDecl: String =
+    "type Complex[s] = MkComplex(Float @ s, Float @ s) in"
+
+  // LMS: (Array[Complex[R]], Array[Complex[R]]) as split_even_odd's result.
+  protected val pairDecl: String =
+    "type Pair[A, B] = MkPair(A, B) in"
+
+  // LMS:
+  //   private def series(x2: Double, d: Double, left: Int, term: Double, acc: Double): Double =
+  //     if (left < 1) acc
+  //     else {
+  //       val next = (0.0 - term * x2) / (d * (d + 1.0))
+  //       series(x2, d + 2.0, left - 1, next, acc + next)
+  //     }
+  protected val seriesDecl: String = """
+  let series = fix go. fun(x2: Float) => fun(d: Float) => fun(left: Int) => fun(term: Float) => fun(acc: Float) =>
+    if left < 1 then acc
+    else
+      let next = (0.0 - term * x2) / (d * (d + 1.0)) in
+      go(x2)(d + 2.0)(left - 1)(next)(acc + next) in
+  """
+
+  // LMS:
+  //   private def sinSeries(x: Double): Double = series(x * x, 2.0, 7, x, x)
+  //   private def cosSeries(x: Double): Double = series(x * x, 1.0, 7, 1.0, 1.0)
+  protected val sineSeriesDecl: String = """
+  let sinSeries = fun(x: Float) => series(x * x)(2.0)(7)(x)(x) in
+  let cosSeries = fun(x: Float) => series(x * x)(1.0)(7)(1.0)(1.0) in
+  """
+
+  // LMS: `val PI = 3.141592653589793`.
+  protected val piDecl: String =
+    "let pi = 3.141592653589793 in"
+
+  // LMS:
+  //   def sin(x: Double): Double =
+  //     if (x < 0.0) 0.0 - sin(0.0 - x)
+  //     else if (x > PI) 0.0 - sin(x - PI)
+  //     else if (x > PI / 2) sin(PI - x)
+  //     else if (x > PI / 4) cosSeries(PI / 2 - x)
+  //     else sinSeries(x)
+  //
+  //   def cos(x: Double): Double = sin(x + PI / 2)
+  protected val sineDecl: String = """
+  let sin = fix go. fun(x: Float) =>
+    if x < 0.0 then 0.0 - go(0.0 - x)
+    else if x > pi then 0.0 - go(x - pi)
+    else if x > pi / 2.0 then go(pi - x)
+    else if x > pi / 4.0 then cosSeries(pi / 2.0 - x)
+    else sinSeries(x) in
+
+  let cos = fun(x: Float) => sin(x + pi / 2.0) in
+  """
+
+  // LMS:
+  //   def omega[R[+_]](k: Int, n: Int): Complex[R] = {
+  //     val angle = 0.0 - 2.0 * PI * k / n
+  //     Complex(num[R](cos(angle)), num[R](sin(angle)))
+  //   }
+  protected val omegaDecl: String = """
+  let omega[s] = fun(k: Int) => fun(n: Int) =>
+    let angle = 0.0 - 2.0 * pi * toFloat(k) / toFloat(n) in
+    MkComplex(lift[s](cos(angle)), lift[s](sin(angle))) in
+  """
+
+  // LMS:
+  //   private def splitEvenOdd[R[+_]](xs: Array[Complex[R]]): (Array[Complex[R]], Array[Complex[R]]) =
+  //     (Array.tabulate(xs.length / 2)(i => xs(2 * i)),
+  //      Array.tabulate(xs.length / 2)(i => xs(2 * i + 1)))
+  protected val splitEvenOddDecl: String = """
+  let splitEvenOdd[s](xs: Array[Complex[s]])
+      : Pair[Array[Complex[s]], Array[Complex[s]]] =
+    MkPair(tabulate[Complex[s]](len(xs) / 2)(fun(i: Int) => get(xs, 2 * i)),
+         tabulate[Complex[s]](len(xs) / 2)(fun(i: Int) => get(xs, 2 * i + 1))) in
+  """
+
+  // LMS:
+  //   private def butterfly[R[+_]](e: Array[Complex[R]], o: Array[Complex[R]], n: Int): Array[Complex[R]] = {
+  //     val out = new Array[Complex[R]](n)
+  //     def loop(k: Int): Unit =
+  //       if (k < n / 2) {
+  //         val w = omega[R](k, n)
+  //         val er = e(k).re; val ei = e(k).im
+  //         val or = o(k).re; val oi = o(k).im
+  //         val zr = sub[R](mul[R](w.re, or), mul[R](w.im, oi))
+  //         val zi = add[R](mul[R](w.re, oi), mul[R](w.im, or))
+  //         out(k) = Complex(add[R](er, zr), add[R](ei, zi))
+  //         out(k + n / 2) = Complex(sub[R](er, zr), sub[R](ei, zi))
+  //         loop(k + 1)
+  //       }
+  //     loop(0)
+  //     out
+  //   }
+  protected val butterflyDecl: String = """
+  let butterfly[s](e: Array[Complex[s]])(o: Array[Complex[s]])
+      (n: Int): Array[Complex[s]] =
+    let out = alloc(n, get(e, 0)) in
+    let loop = fix go. fun(k: Int) =>
+      if k < n / 2 then
+        match omega[s](k)(n) with
+        | MkComplex(wRe, wIm) =>
+          match get(e, k) with
+          | MkComplex(er, ei) =>
+            match get(o, k) with
+            | MkComplex(or, oi) =>
+              let zr = wRe *@s or -@s wIm *@s oi in
+              let zi = wRe *@s oi +@s wIm *@s or in
+              let _ = set(out, k, MkComplex(er +@s zr, ei +@s zi)) in
+              let _ = set(out, k + n / 2, MkComplex(er -@s zr, ei -@s zi)) in
+              go(k + 1)
+      else () in
+    let _ = loop(0) in
+    out in
+  """
+
+  // LMS:
+  //   def fft[R[+_]](xs: Array[Complex[R]]): Array[Complex[R]] =
+  //     if (xs.length == 1) xs
+  //     else {
+  //       val (ev, od) = splitEvenOdd[R](xs)
+  //       butterfly[R](fft[R](ev), fft[R](od), xs.length)
+  //     }
+  protected val fftSplitDecl: String = """
+  let fftSplit[s] = fix go. fun(xs: Array[Complex[s]]) =>
+    if len(xs) == 1 then xs
+    else
+      match splitEvenOdd[s](xs) with
+      | MkPair(ev, od) => butterfly[s](go(ev))(go(od))(len(xs))
+    in
+  """
+
+  // LMS:
+  //   private def load[R[+_]](x: R[Array[Double]], n: Int): Array[Complex[R]] =
+  //     Array.tabulate(n)(i => Complex(get[R](x, 2 * i), get[R](x, 2 * i + 1)))
+  protected val deinterleaveDecl: String = """
+  let deinterleave[s](x: Array[Float] @ s)(n: Int): Array[Complex[s]] =
+    tabulate[Complex[s]](n)(fun(i: Int) =>
+      MkComplex(get@s(x, lift[s](2 * i)), get@s(x, lift[s](2 * i + 1)))) in
+  """
+
+  // LMS:
+  //   private def store[R[+_]](out: R[Array[Double]], ys: Array[Complex[R]], n: Int): Unit = {
+  //     def loop(i: Int): Unit =
+  //       if (i < n) {
+  //         set[R](out, 2 * i, ys(i).re)
+  //         set[R](out, 2 * i + 1, ys(i).im)
+  //         loop(i + 1)
+  //       }
+  //     loop(0)
+  //   }
+  protected val interleaveDecl: String = """
+  let interleave[s](out: Array[Float] @ s)(ys: Array[Complex[s]])(n: Int): Unit =
+    let loop = fix go. fun(i: Int) =>
+      if i < n then
+        match get(ys, i) with
+        | MkComplex(re, im) =>
+          let _ = set@s(out, lift[s](2 * i), re) in
+          let _ = set@s(out, lift[s](2 * i + 1), im) in
+          go(i + 1)
+      else ()
+    in loop(0) in
+  """
+
+  // LMS:
+  //   def fftInterleaved[R[+_]](x: R[Array[Double]], n: Int): R[Array[Double]] = {
+  //     store[R](x, fft[R](load[R](x, n)), n)
+  //     x
+  //   }
+  //   `StagedFFT2` .. `StagedFFT128`: `snippet(x) = fftInterleaved[Rep](x, n)`.
+  protected val fftDecl: String = """
+  let fft[s] = fun(n: Int) =>
+    lift[s](fun(arr: Array[Float] @ s): Array[Float] @ s =>
+      let ys = fftSplit[s](deinterleave[s](arr)(n)) in
+      let _ = interleave[s](arr)(ys)(n) in
+      arr) in
+  """
+
+  protected def fftSource(decls: String*)(body: String): String =
+    decls.map(_.trim).mkString("\n") + "\n" + body
+}
+
+class FFT extends FFTBase {
+  import org.apache.commons.math3.complex.{Complex as JComplex}
+  import org.apache.commons.math3.transform.{DftNormalization, FastFourierTransformer, TransformType}
+
+  /** Apache Commons Math's forward FFT of the interleaved ramp `0, 1, ..., 7`. */
+  private val rampFFT: Value =
+    val xs = Array.tabulate(4)(j => JComplex(2 * j, 2 * j + 1))
+    val out = FastFourierTransformer(DftNormalization.STANDARD)
+      .transform(xs, TransformType.FORWARD)
+    VArr(out.flatMap(c => Array(c.getReal, c.getImaginary)).map[Value](VFloat.apply))
+
+  test("the 4-point FFT of a ramp, unstaged") {
+    val src = fftSource(
+      complexDecl,
+      pairDecl,
+      tabulateDecl,
+      seriesDecl,
+      sineSeriesDecl,
+      piDecl,
+      sineDecl,
+      omegaDecl,
+      splitEvenOddDecl,
+      butterflyDecl,
+      fftSplitDecl,
+      deinterleaveDecl,
+      interleaveDecl,
+      fftDecl,
+    )("""
+      let a = tabulate[Float](8)(fun(i: Int) => toFloat(i)) in
+      fft[1](4)(a)
+    """)
+    testEvalSurface(src, rampFFT)
+  }
+
+  test("the 4-point FFT of a ramp, staged") {
+    val src = fftSource(
+      complexDecl,
+      pairDecl,
+      tabulateDecl,
+      seriesDecl,
+      sineSeriesDecl,
+      piDecl,
+      sineDecl,
+      omegaDecl,
+      splitEvenOddDecl,
+      butterflyDecl,
+      fftSplitDecl,
+      deinterleaveDecl,
+      interleaveDecl,
+      fftDecl,
+    )("""
+      let a = tabulate[Float](8)(fun(i: Int) => toFloat(i)) in
+      let f = run(fft[2](4)) in
+      f(a)
+    """)
+    testEvalSurface(src, rampFFT)
+  }
+
+  test("staged: the 4-point FFT is straight-line butterflies, in place") {
+    val expected =
+      """|let x57 (x0) =
+         |  let x1 = get(x0, 0) in
+         |  let x2 = get(x0, 1) in
+         |  let x3 = get(x0, 2) in
+         |  let x4 = get(x0, 3) in
+         |  let x5 = get(x0, 4) in
+         |  let x6 = get(x0, 5) in
+         |  let x7 = get(x0, 6) in
+         |  let x8 = get(x0, 7) in
+         |  let x9 = 1.0 * x5 in
+         |  let x10 = 0.0 * x6 in
+         |  let x11 = x9 - x10 in
+         |  let x12 = 1.0 * x6 in
+         |  let x13 = 0.0 * x5 in
+         |  let x14 = x12 + x13 in
+         |  let x15 = x1 + x11 in
+         |  let x16 = x2 + x14 in
+         |  let x17 = x1 - x11 in
+         |  let x18 = x2 - x14 in
+         |  let x19 = 1.0 * x7 in
+         |  let x20 = 0.0 * x8 in
+         |  let x21 = x19 - x20 in
+         |  let x22 = 1.0 * x8 in
+         |  let x23 = 0.0 * x7 in
+         |  let x24 = x22 + x23 in
+         |  let x25 = x3 + x21 in
+         |  let x26 = x4 + x24 in
+         |  let x27 = x3 - x21 in
+         |  let x28 = x4 - x24 in
+         |  let x29 = 1.0 * x25 in
+         |  let x30 = 0.0 * x26 in
+         |  let x31 = x29 - x30 in
+         |  let x32 = 1.0 * x26 in
+         |  let x33 = 0.0 * x25 in
+         |  let x34 = x32 + x33 in
+         |  let x35 = x15 + x31 in
+         |  let x36 = x16 + x34 in
+         |  let x37 = x15 - x31 in
+         |  let x38 = x16 - x34 in
+         |  let x39 = 0.0 * x27 in
+         |  let x40 = -1.0 * x28 in
+         |  let x41 = x39 - x40 in
+         |  let x42 = 0.0 * x28 in
+         |  let x43 = -1.0 * x27 in
+         |  let x44 = x42 + x43 in
+         |  let x45 = x17 + x41 in
+         |  let x46 = x18 + x44 in
+         |  let x47 = x17 - x41 in
+         |  let x48 = x18 - x44 in
+         |  let x49 = set(x0, 0, x35) in
+         |  let x50 = set(x0, 1, x36) in
+         |  let x51 = set(x0, 2, x45) in
+         |  let x52 = set(x0, 3, x46) in
+         |  let x53 = set(x0, 4, x37) in
+         |  let x54 = set(x0, 5, x38) in
+         |  let x55 = set(x0, 6, x47) in
+         |  let x56 = set(x0, 7, x48) in x0
+         |in x57""".stripMargin
+    val src = fftSource(
+      complexDecl,
+      pairDecl,
+      tabulateDecl,
+      seriesDecl,
+      sineSeriesDecl,
+      piDecl,
+      sineDecl,
+      omegaDecl,
+      splitEvenOddDecl,
+      butterflyDecl,
+      fftSplitDecl,
+      deinterleaveDecl,
+      interleaveDecl,
+      fftDecl,
+    )("""
+      fft[2](4)
+    """)
+    val (value, _) = eval(parse(src))
+    assertEquals(instar.pretty.value(value), expected)
+  }
+}
+
+/** §Futamura's first projection: `program` is known, `input` stays dynamic. */
+trait FutamuraBase extends SurfaceBase {
+  // LMS:
+  //   sealed trait Expr
+  //   case class Lit(n: Int) | Var(index: Int) | Add | Sub | Mul
+  //   case class IfZ(cond, yes, no) | Let(rhs, body) | Call(fid: Int, arg)
+  // `Call` counts back from the defining function, like `Var` from its binder.
+  protected val exprDecl: String = """
+  type Expr = Lit(Int) | Var(Int) | Add(Expr, Expr) | Sub(Expr, Expr)
+    | Mul(Expr, Expr) | IfZ(Expr, Expr, Expr) | Let(Expr, Expr)
+    | Call(Int, Expr) in
+  """
+
+  // LMS: `env: List[R[Int]]`, a staging time list; `Var` is a de Bruijn index.
+  protected val listDecl: String =
+    "type List[A] = Nil | Cons(A, List[A]) in"
+
+  // LMS: case class Program(defs: List[Expr], entry: Int)
+  // `entry` counts back from the last definition.
+  protected val programDecl: String =
+    "type Program = MkProgram(List[Expr], Int) in"
+
+  // LMS: `case Var(i) => env(i)`; the index is in range, so no `Nil` case.
+  protected val lookupDecl: String = """
+  let lookup[A] : Int -> List[A] -> A =
+    fix go. fun(i: Int) => fun(xs: List[A]): A =>
+      match xs with
+      | Cons(x, rest) => if i == 0 then x else go(i - 1)(rest) in
+  """
+
+  // LMS:
+  //   def eval[R[+_]](expr: Expr, env: List[R[Int]], table: List[R[Int => Int]]): R[Int]
+  //   case Call(fid, arg) => table(fid)(eval[R](arg, env, table))
+  // `fid` counts back from the head of the table, the definition being built.
+  protected val evalDecl: String = """
+  let eval[s] : Expr -> List[Int @ s] -> List[(Int -> Int) @ s] -> Int @ s =
+    fix go. fun(e: Expr) => fun(env: List[Int @ s]) =>
+      fun(table: List[(Int -> Int) @ s]): Int @ s =>
+        match e with
+        | Lit(n) => lift[s](n)
+        | Var(i) => lookup[Int @ s](i)(env)
+        | Add(a, b) =>
+          let lhs = go(a)(env)(table) in
+          let rhs = go(b)(env)(table) in
+          lhs +@s rhs
+        | Sub(a, b) =>
+          let lhs = go(a)(env)(table) in
+          let rhs = go(b)(env)(table) in
+          lhs -@s rhs
+        | Mul(a, b) =>
+          let lhs = go(a)(env)(table) in
+          let rhs = go(b)(env)(table) in
+          lhs *@s rhs
+        | IfZ(c, y, n) =>
+          let cond = go(c)(env)(table) in
+          if@s (cond ==@s lift[s](0)) then go(y)(env)(table) else go(n)(env)(table)
+        | Let(rhs, rest) =>
+          let value = go(rhs)(env)(table) in
+          go(rest)(Cons(value, env))(table)
+        | Call(fid, arg) =>
+          let callee = lookup[(Int -> Int) @ s](fid)(table) in
+          let value = go(arg)(env)(table) in
+          callee(value)@s in
+  """
+
+  // LMS:
+  //   def buildFunTable[R[+_]](defs: List[Expr]): List[R[Int => Int]] = {
+  //     def loop(remaining: List[Expr], previous: List[R[Int => Int]]): ... =
+  //       remaining match {
+  //         case Nil => previous
+  //         case body :: rest =>
+  //           def self: R[Int => Int] =
+  //             lam[R, Int, Int](x => eval[R](body, List(x), self :: previous))
+  //           loop(rest, self :: previous)
+  //       }
+  //     loop(defs, Nil)
+  //   }
+  protected val buildFunTableDecl: String = """
+  let buildFunTable[s] : List[Expr] -> List[(Int -> Int) @ s] =
+    fun(defs: List[Expr]) =>
+      let loop : List[Expr] -> List[(Int -> Int) @ s] -> List[(Int -> Int) @ s] =
+        fix go. fun(remaining: List[Expr]) =>
+          fun(previous: List[(Int -> Int) @ s]) =>
+            match remaining with
+            | Nil => previous
+            | Cons(body, rest) =>
+              let f =
+                fix@s self. lift[s](fun(x: Int @ s): Int @ s =>
+                  eval[s](body)(Cons(x, Nil))(Cons(self, previous))) in
+              go(rest)(Cons(f, previous))
+      in loop(defs)(Nil) in
+  """
+
+  // LMS:
+  //   def run[R[+_]](program: Program, input: R[Int]): R[Int] =
+  //     app[R, Int, Int](buildFunTable[R](program.defs)(program.entry), input)
+  // `run` is a surface keyword, hence `evalProgram`.
+  protected val evalProgramDecl: String = """
+  let evalProgram[s] : Program -> (Int -> Int) @ s =
+    fun(program: Program) =>
+      match program with
+      | MkProgram(defs, entry) =>
+        let table = buildFunTable[s](defs) in
+        lookup[(Int -> Int) @ s](entry)(table) in
+  """
+
+  // LMS: `f0(n) = ifz n then 1 else n * f0(n - 1)`.
+  protected val factorialDecl: String = """
+  let factorial : Program =
+    MkProgram(Cons(IfZ(Var(0), Lit(1), Mul(Var(0), Call(0, Sub(Var(0), Lit(1))))), Nil), 0) in
+  """
+
+  // LMS: `f0(n) = ifz n then 0 else ifz (n - 1) then 1 else f0(n-1) + f0(n-2)`.
+  protected val fibonacciDecl: String = """
+  let fibonacci : Program =
+    MkProgram(Cons(IfZ(Var(0), Lit(0), IfZ(Sub(Var(0), Lit(1)), Lit(1),
+      Add(Call(0, Sub(Var(0), Lit(1))), Call(0, Sub(Var(0), Lit(2)))))), Nil), 0) in
+  """
+
+  protected def futamuraSource(decls: String*)(body: String): String =
+    decls.map(_.trim).mkString("\n") + "\n" + body
+}
+
+class Futamura extends FutamuraBase {
+  test("the first projection, unstaged: factorial") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      factorialDecl,
+    )("""
+      let f = evalProgram[1](factorial) in
+      f(5)
+    """)
+    testEvalSurface(src, VNum(120))
+  }
+
+  test("the first projection, unstaged: fibonacci") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      fibonacciDecl,
+    )("""
+      let f = evalProgram[1](fibonacci) in
+      f(10)
+    """)
+    testEvalSurface(src, VNum(55))
+  }
+
+  test("the first projection compiles factorial to the expected values") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      factorialDecl,
+    )("""
+      let f = run(evalProgram[2](factorial)) in
+      f(5)
+    """)
+    testEvalSurface(src, VNum(120))
+  }
+
+  test("the first projection compiles fibonacci to the expected values") {
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      fibonacciDecl,
+    )("""
+      let f = run(evalProgram[2](fibonacci)) in
+      f(10)
+    """)
+    testEvalSurface(src, VNum(55))
+  }
+
+  test("§Futamura: the residual factorial is the recursive function") {
+    val expected =
+      """|let x8 = fix f0.
+         |  let x7 (x1) =
+         |    let x2 = x1 == 0 in
+         |    let x6 = if x2 then
+         |      1
+         |    else
+         |      let x3 = x1 - 1 in
+         |      let x4 = f0 x3 in
+         |      let x5 = x1 * x4 in x5
+         |    in x6
+         |  in x7
+         |in x8""".stripMargin
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      factorialDecl,
+    )("""
+      evalProgram[2](factorial)
+    """)
+    val (value, _) = eval(parse(src))
+    assertEquals(instar.pretty.value(value), expected)
+  }
+
+  test("§Futamura: the residual fibonacci is the recursive function") {
+    val expected =
+      """|let x13 = fix f0.
+         |  let x12 (x1) =
+         |    let x2 = x1 == 0 in
+         |    let x11 = if x2 then
+         |      0
+         |    else
+         |      let x3 = x1 - 1 in
+         |      let x4 = x3 == 0 in
+         |      let x10 = if x4 then
+         |        1
+         |      else
+         |        let x5 = x1 - 1 in
+         |        let x6 = f0 x5 in
+         |        let x7 = x1 - 2 in
+         |        let x8 = f0 x7 in
+         |        let x9 = x6 + x8 in x9
+         |      in x10
+         |    in x11
+         |  in x12
+         |in x13""".stripMargin
+    val src = futamuraSource(
+      exprDecl,
+      listDecl,
+      programDecl,
+      lookupDecl,
+      evalDecl,
+      buildFunTableDecl,
+      evalProgramDecl,
+      fibonacciDecl,
+    )("""
+      evalProgram[2](fibonacci)
+    """)
+    val (value, _) = eval(parse(src))
+    assertEquals(instar.pretty.value(value), expected)
   }
 }

@@ -11,6 +11,7 @@ import Type.*
 
 private enum HeaderBinder:
   case Stage(name: String)
+  case TypeParam(name: String)
   case Term(name: String, ty: Option[Type])
 
 def expr(expr: Expr): String =
@@ -18,15 +19,66 @@ def expr(expr: Expr): String =
 
 def value(value: Value): String =
   value match
-    case VCode(t) => expr(t)
+    case VCode(t) => renderPretty(t, 0)
     case VUnit => "()"
     case VNum(i) => i.toString
+    case VFloat(d) => d.toString
     case VBool(b) => b.toString
     case VLoc(loc) => s"loc($loc)"
     case VSClo(st, _, _, _) => s"<stage-closure:$st>"
+    case VTClo(_, _, _) => "<type-closure>"
+    case VPack(_) => "<existential-package>"
     case VClo(x, _, _, _, _, _) => s"<closure:$x>"
     case VBNClo(x, _, _, _, _, _) => s"<cbn-closure:$x>"
     case VThunk(_, _, _) => "<thunk>"
+
+private def pad(indent: Int): String = "  " * indent
+
+/** Multi-line rendering used for generated code; `expr` stays the compact
+  * canonical form used for round-trips.
+  */
+private def renderPretty(expr: Expr, indent: Int): String =
+  expr match
+    case ELet(x, rhs, body) =>
+      renderPrettyLet(s"let $x", rhs, body, indent)
+    case ELetRec(f, rhs, body) =>
+      renderPrettyLet(s"letrec $f", rhs, body, indent)
+    case EFix(f, e, st) =>
+      s"fix${renderStageValue(st)} $f.\n${pad(indent + 1)}${renderPretty(e, indent + 1)}"
+    case ECond(c, t, e, st) =>
+      s"if${renderStageValue(st)} ${renderExpr(c, 0)} then\n" +
+        s"${pad(indent + 1)}${renderPretty(t, indent + 1)}\n" +
+        s"${pad(indent)}else\n" +
+        s"${pad(indent + 1)}${renderPretty(e, indent + 1)}"
+    case _ => renderExpr(expr, 0)
+
+private def renderPrettyLet(head: String, rhs: Expr, body: Expr, indent: Int): String =
+  extractHeader(rhs) match
+    case Some((binders, retTy, coreBody)) =>
+      val header = s"$head${renderHeader(binders)}${renderReturn(retTy)} ="
+      s"$header\n${pad(indent + 1)}${renderPretty(coreBody, indent + 1)}" +
+        s"\n${pad(indent)}in${renderPrettyBody(body, indent)}"
+    case None =>
+      val rhsIsMultiline = isMultilineExpr(rhs)
+      val rhsText =
+        if rhsIsMultiline then s" ${renderPretty(rhs, indent)}"
+        else s" ${renderExpr(rhs, 0)}"
+      val inText = if rhsIsMultiline then s"\n${pad(indent)}in" else " in"
+      s"$head =$rhsText$inText${renderPrettyBody(body, indent)}"
+
+private def renderPrettyBody(body: Expr, indent: Int): String =
+  if isLetExpr(body) then s"\n${pad(indent)}${renderPretty(body, indent)}"
+  else s" ${renderExpr(body, 0)}"
+
+private def isLetExpr(expr: Expr): Boolean =
+  expr match
+    case ELet(_, _, _) | ELetRec(_, _, _) => true
+    case _ => false
+
+private def isMultilineExpr(expr: Expr): Boolean =
+  expr match
+    case ELet(_, _, _) | ELetRec(_, _, _) | EFix(_, _, _) | ECond(_, _, _, _) => true
+    case _ => false
 
 private def renderExpr(expr: Expr, parentPrec: Int): String =
   expr match
@@ -71,11 +123,33 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
         parentPrec > 0,
       )
 
-    case ESApp(_, _) =>
-      val (base, stages) = collectStageApps(expr)
+    case ESApp(_, _) | ETApp(_, _) =>
+      val (base, args) = collectBracketApps(expr)
+      val rendered = args
+        .map {
+          case st: Stage => renderStage(st)
+          case ty: Type => renderType(ty, 0)
+        }
+        .mkString(", ")
+      maybeParens(s"${renderExpr(base, 9)}[$rendered]", parentPrec > 8)
+
+    case ETLam(_, _) =>
+      val (base, tyVars) = collectTypeLambdas(expr)
       maybeParens(
-        s"${renderExpr(base, 9)}[${stages.map(renderStage).mkString(", ")}]",
-        parentPrec > 8,
+        s"tfun[${tyVars.mkString(", ")}] => ${renderExpr(base, 0)}",
+        parentPrec > 0,
+      )
+
+    case EPack(witness, e) =>
+      maybeParens(
+        s"pack [${renderType(witness, 0)}, ${renderExpr(e, 0)}]",
+        parentPrec > 0,
+      )
+
+    case EUnpack(tyName, x, packed, body) =>
+      maybeParens(
+        s"unpack [$tyName, $x] = ${renderExpr(packed, 0)} in ${renderExpr(body, 0)}",
+        parentPrec > 0,
       )
 
     case ELift(lam @ ELam(_, _, _, _), st) if st != Sta =>
@@ -111,6 +185,9 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
         parentPrec > prec,
       )
 
+    case EUnaryOp("toFloat", e, st) =>
+      s"toFloat${renderStageValue(st)}(${renderExpr(e, 0)})"
+
     case EUnaryOp(op, e, st) =>
       maybeParens(s"$op${renderStageValue(st)} ${renderExpr(e, 6)}", parentPrec > 6)
 
@@ -119,6 +196,18 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
 
     case EDeref(e, st) =>
       maybeParens(s"!${renderStageValue(st)} ${renderExpr(e, 6)}", parentPrec > 6)
+
+    case EArrAlloc(n, init, st) =>
+      s"alloc${renderStageValue(st)}(${renderExpr(n, 0)}, ${renderExpr(init, 0)})"
+
+    case EArrGet(a, i, st) =>
+      s"get${renderStageValue(st)}(${renderExpr(a, 0)}, ${renderExpr(i, 0)})"
+
+    case EArrSet(a, i, v, st) =>
+      s"set${renderStageValue(st)}(${renderExpr(a, 0)}, ${renderExpr(i, 0)}, ${renderExpr(v, 0)})"
+
+    case EArrLen(a, st) =>
+      s"len${renderStageValue(st)}(${renderExpr(a, 0)})"
 
     case EAscribe(e, asTy) =>
       maybeParens(s"${renderExpr(e, 0)} : ${renderType(asTy, 0)}", true)
@@ -131,6 +220,7 @@ private def renderExpr(expr: Expr, parentPrec: Int): String =
 
     case EUnit => "()"
     case ENum(i) => i.toString
+    case EFloat(d) => d.toString
     case EBool(true) => "true"
     case EBool(false) => "false"
     case EVar(name) => name
@@ -140,13 +230,21 @@ private def renderType(ty: Type, parentPrec: Int): String =
   ty match
     case TUnit => "Unit"
     case TInt => "Int"
+    case TFloat => "Float"
     case TBool => "Bool"
     case TRef(t) => s"Ref[${renderType(t, 0)}]"
+    case TArr(t) => s"Array[${renderType(t, 0)}]"
     case TCode(t) => s"Code[${renderType(t, 0)}]"
     case TForallSt(s, t) =>
       maybeParens(s"forall[$s]. ${renderType(t, 0)}", parentPrec > 0)
+    case TForallTy(x, t) =>
+      maybeParens(s"forall[$x]. ${renderType(t, 0)}", parentPrec > 0)
+    case TExistsTy(x, t) =>
+      maybeParens(s"exists[$x]. ${renderType(t, 0)}", parentPrec > 0)
+    case TVar(x) => x
     case TFun(t1, t2) =>
       maybeParens(s"${renderType(t1, 1)} -> ${renderType(t2, 0)}", parentPrec > 0)
+    case TAt(t, SNum(1)) => renderType(t, parentPrec)
     case TAt(t, s) =>
       maybeParens(s"${renderType(t, 2)} @ ${renderStage(s)}", parentPrec > 1)
 
@@ -157,6 +255,7 @@ private def renderStage(stage: Stage): String =
 
 private def renderStageValue(stage: Option[Stage]): String =
   stage match
+    case Some(SNum(1)) => ""
     case Some(st) => s"@${renderStage(st)}"
     case None => ""
 
@@ -181,13 +280,13 @@ private def renderAppArg(expr: Expr): String =
 
 private def canRenderJuxtapositionArg(expr: Expr): Boolean =
   expr match
-    case ENum(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
+    case ENum(_) | EFloat(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
     case ESApp(base, _) => canRenderJuxtapositionStageBase(base)
     case _ => false
 
 private def canRenderJuxtapositionStageBase(expr: Expr): Boolean =
   expr match
-    case ENum(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
+    case ENum(_) | EFloat(_) | EBool(_) | EVar(_) | ELift(_, _) | ERun(_) | EAlloc(_, _) | EIsApp(_) => true
     case ESApp(base, _) => canRenderJuxtapositionStageBase(base)
     case _ => false
 
@@ -217,6 +316,9 @@ private def extractHeader(expr: Expr): Option[(List[HeaderBinder], Option[Type],
       case ESLam(s, body) =>
         binders += HeaderBinder.Stage(s)
         current = body
+      case ETLam(t, body) =>
+        binders += HeaderBinder.TypeParam(t)
+        current = body
       case ELam(x, argTy, body, lamRetTy) =>
         binders += HeaderBinder.Term(x, argTy)
         retTy = retTy.orElse(lamRetTy)
@@ -241,6 +343,14 @@ private def renderHeader(binders: List[HeaderBinder]): String =
             case _ => ()
           rest = rest.tail
         out.append(s"[${stages.mkString(", ")}]")
+      case HeaderBinder.TypeParam(_) :: _ =>
+        val tyVars = ArrayBuffer.empty[String]
+        while rest.nonEmpty && rest.head.isInstanceOf[HeaderBinder.TypeParam] do
+          rest.head match
+            case HeaderBinder.TypeParam(name) => tyVars += name
+            case _ => ()
+          rest = rest.tail
+        out.append(s"[${tyVars.mkString(", ")}]")
       case HeaderBinder.Term(name, Some(ty)) :: tail =>
         out.append(s" ($name: ${renderType(ty, 0)})")
         rest = tail
@@ -263,15 +373,26 @@ private def collectStageLambdas(expr: Expr): (Expr, List[String]) =
         keepGoing = false
   (current, stages.toList)
 
-private def collectStageApps(expr: Expr): (Expr, List[Stage]) =
-  val stages = ArrayBuffer.empty[Stage]
+private def collectBracketApps(expr: Expr): (Expr, List[Stage | Type]) =
+  expr match
+    case ESApp(e, st) =>
+      val (base, args) = collectBracketApps(e)
+      (base, args :+ st)
+    case ETApp(e, argTy) =>
+      val (base, args) = collectBracketApps(e)
+      (base, args :+ argTy)
+    case _ => (expr, Nil)
+
+private def collectTypeLambdas(expr: Expr): (Expr, List[String]) =
+  val tyVars = ArrayBuffer.empty[String]
   var current = expr
   var keepGoing = true
   while keepGoing do
     current match
-      case ESApp(e, st) =>
-        stages.prepend(st)
-        current = e
+      case ETLam(t, body) =>
+        tyVars += t
+        current = body
       case _ =>
         keepGoing = false
-  (current, stages.toList)
+  (current, tyVars.toList)
+

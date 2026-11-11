@@ -572,7 +572,7 @@ class CoreEffOpt extends Base {
       None))
     testEval(e1, "VCode(ELet(x7,ELam(x0,None,ELet(x6,EBinOp(+,ENum(4),EVar(x0),Some(SNum(1))),EVar(x6)),None),EVar(x7)))", Set("ps", "dce"))
 
-    // λf. λx. let y = 1 + x in let z = x + 1 in f @[2] y + f @[2] z
+    // λf. λx. let y = 1 + x in let z = x + 1 in f[2] y + f[2] z
     val e1_5 = ELift2(ELam("x", None,
       ELift2(ELam("f", None,
         ELet("y", EBinOp2("+", ENum2(1), EVar("x")),
@@ -843,6 +843,35 @@ class CoreEffTest extends Base {
     testEval(e, "VNum(6)")
   }
 
+  test("type-poly") {
+    // tfun[T] => fun(x: T) => x
+    val id = ETLam("T", ELam("x", Some(TVar("T")), EVar("x"), None))
+
+    testEval(EApp1(ETApp(id, TInt), ENum(42)), "VNum(42)")
+    testEval(EApp1(ETApp(id, TBool), EBool(true)), "VBool(true)")
+    testEval(EApp1(ETApp(id, TCode(TInt)), ENum(5)), "VNum(5)")
+
+    val id2 = ETLam("T", ETLam("U", ELam("x", Some(TVar("T")), EVar("x"), None)))
+    testEval(EApp1(ETApp(ETApp(id2, TInt), TBool), ENum(5)), "VNum(5)")
+
+    // tfun[T] => sfun[s] => lift[s](1)
+    val mixed = ETLam("T", ESLam("s", ELift(ENum(1), SVar("s"))))
+    testEval(ESApp(ETApp(mixed, TInt), SNum(2)), "VCode(ENum(1))")
+
+    testEval(ELetRec("id", id, EApp1(ETApp(EVar("id"), TInt), ENum(7))), "VNum(7)")
+  }
+
+  test("exist") {
+    testEval(EPack(TInt, EBinOp1("+", ENum(20), ENum(22))), "VPack(VNum(42))")
+    testEval(EUnpack("T", "x", EPack(TInt, ENum(41)), EBinOp1("+", EVar("x"), ENum(1))), "VNum(42)")
+  }
+
+  test("exist-code") {
+    val e = EUnpack("T", "x", EPack(TCode(TInt), ENum2(42)), EVar("x"))
+    testEval(e, "VCode(ENum(42))")
+    testEval(ERun(e), "VNum(42)")
+  }
+
   test("rec") {
     testEval(e6, "VNum(120)")
     testEval(e7, "VNum(1024)")
@@ -852,7 +881,7 @@ class CoreEffTest extends Base {
     testEval(e8(EApp1(EApp1(ESApp(EVar("power"), SNum(1)), ENum(2)), ENum(3))), "VNum(8)")
 
     testEval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(2)), EVar("x")), ENum(3)), Some(TCode(TInt))))),
-      "VCode(ELet(x4,ELam(x0,Some(TInt),ELet(x1,EBinOp(*,EVar(x0),ENum(1),Some(SNum(1))),ELet(x2,EBinOp(*,EVar(x0),EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),EVar(x3)))),Some(TInt)),EVar(x4)))")
+      "VCode(ELet(x4,ELam(x0,None,ELet(x1,EBinOp(*,EVar(x0),ENum(1),Some(SNum(1))),ELet(x2,EBinOp(*,EVar(x0),EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),EVar(x3)))),None),EVar(x4)))")
 
     val (VCode(e), _) = eval(e8(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(ESApp(EVar("power"), SNum(2)), EVar("x")), ENum(3)), Some(TCode(TInt))))))
     testEval(EApp1(e, ENum(2)), "VNum(8)")
@@ -862,7 +891,7 @@ class CoreEffTest extends Base {
     testEval(e9(EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(1)), ENum(2)), ENum(3)), EAlloc1(ENum(1)))), "VNum(8)")
 
     testEval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(2)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))),
-      "VCode(ELet(x12,ELam(x0,Some(TInt),ELet(x1,EAlloc(ENum(1),Some(SNum(1))),ELet(x2,EDeref(EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),ELet(x4,EAssign(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x5,EDeref(EVar(x1),Some(SNum(1))),ELet(x6,EBinOp(*,EVar(x0),EVar(x5),Some(SNum(1))),ELet(x7,EAssign(EVar(x1),EVar(x6),Some(SNum(1))),ELet(x8,EDeref(EVar(x1),Some(SNum(1))),ELet(x9,EBinOp(*,EVar(x0),EVar(x8),Some(SNum(1))),ELet(x10,EAssign(EVar(x1),EVar(x9),Some(SNum(1))),ELet(x11,EDeref(EVar(x1),Some(SNum(1))),EVar(x11)))))))))))),Some(TInt)),EVar(x12)))")
+      "VCode(ELet(x12,ELam(x0,None,ELet(x1,EAlloc(ENum(1),Some(SNum(1))),ELet(x2,EDeref(EVar(x1),Some(SNum(1))),ELet(x3,EBinOp(*,EVar(x0),EVar(x2),Some(SNum(1))),ELet(x4,EAssign(EVar(x1),EVar(x3),Some(SNum(1))),ELet(x5,EDeref(EVar(x1),Some(SNum(1))),ELet(x6,EBinOp(*,EVar(x0),EVar(x5),Some(SNum(1))),ELet(x7,EAssign(EVar(x1),EVar(x6),Some(SNum(1))),ELet(x8,EDeref(EVar(x1),Some(SNum(1))),ELet(x9,EBinOp(*,EVar(x0),EVar(x8),Some(SNum(1))),ELet(x10,EAssign(EVar(x1),EVar(x9),Some(SNum(1))),ELet(x11,EDeref(EVar(x1),Some(SNum(1))),EVar(x11)))))))))))),None),EVar(x12)))")
 
     val (VCode(e), _) = eval(e9(ELift2(ELam("x", Some(TCode(TInt)), EApp1(EApp1(EApp1(ESApp(EVar("impPower"), SNum(2)), EVar("x")), ENum(3)), EAlloc2(ELift2(ENum(1)))), Some(TCode(TInt))))))
     testEval(EApp1(e, ENum(2)), "VNum(8)")
@@ -882,7 +911,7 @@ class CoreEffTest extends Base {
 
   test("fix-second-stage") {
     testEval(e11,
-      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,Some(TInt),ELet(x2,EBinOp(<=,EVar(x1),ENum(1),Some(SNum(1))),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),Some(SNum(1))),ELet(x4,EApp(EVar(f0),EVar(x3),Some(SNum(1))),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),Some(SNum(1))),EVar(x5)))),Some(SNum(1))),EVar(x6))),Some(TInt)),EVar(x7)),Some(SNum(1))),ELet(x9,EApp(EVar(x8),ENum(5),Some(SNum(1))),EVar(x9))))")
+      "VCode(ELet(x8,EFix(f0,ELet(x7,ELam(x1,None,ELet(x2,EBinOp(<=,EVar(x1),ENum(1),Some(SNum(1))),ELet(x6,ECond(EVar(x2),ENum(1),ELet(x3,EBinOp(-,EVar(x1),ENum(1),Some(SNum(1))),ELet(x4,EApp(EVar(f0),EVar(x3),Some(SNum(1))),ELet(x5,EBinOp(*,EVar(x1),EVar(x4),Some(SNum(1))),EVar(x5)))),Some(SNum(1))),EVar(x6))),None),EVar(x7)),Some(SNum(1))),ELet(x9,EApp(EVar(x8),ENum(5),Some(SNum(1))),EVar(x9))))")
 
     val (VCode(e), _) = eval(e11)
     testEval(e, "VNum(120)")
@@ -947,5 +976,125 @@ class CoreEffTest extends Base {
       e3,
       "VNum(1)"
     )
+  }
+}
+
+class ADTSuite extends Base {
+  private val nil = ECon("Nil", Nil)
+
+  private def cons(x: Int, xs: Expr): Expr = ECon("Cons", List(ENum(x), xs))
+
+  test("construct, match and recurse on a list ADT") {
+    val lengthFn = ELetRec(
+      "length",
+      ELam(
+        "xs",
+        None,
+        EMatch(
+          EVar("xs"),
+          List(
+            MatchCase("Nil", Nil, ENum(0)),
+            MatchCase("Cons", List("_", "ys"), EBinOp1("+", ENum(1), EApp1(EVar("length"), EVar("ys")))),
+          ),
+        ),
+        None,
+      ),
+      EApp1(EVar("length"), cons(1, cons(2, cons(3, nil)))),
+    )
+
+    testEval(
+      ETypeDecl(
+        "List",
+        List("A"),
+        List(Constructor("Nil", Nil), Constructor("Cons", List(TVar("A"), TCon("List", List(TVar("A")))))),
+        lengthFn,
+      ),
+      "VNum(3)",
+    )
+  }
+
+  test("erases stage parameters of ADTs") {
+    val e = ETypeDecl(
+      "Option",
+      List("A", "s"),
+      List(Constructor("None", Nil), Constructor("Some", List(TAt(TVar("A"), SVar("s"))))),
+      EMatch(
+        ECon("Some", List(ENum(42))),
+        List(MatchCase("None", Nil, ENum(0)), MatchCase("Some", List("x"), EVar("x"))),
+      ),
+    )
+
+    testEval(e, "VNum(42)")
+  }
+}
+
+class ArraySuite extends Base {
+  test("allocate, read and write") {
+    val e = ELet(
+      "a",
+      EArrAlloc1(ENum(3), ENum(1)),
+      ELet(
+        "_",
+        EArrSet1(EVar("a"), ENum(1), ENum(4)),
+        EBinOp1(
+          "+",
+          EArrGet1(EVar("a"), ENum(0)),
+          EBinOp1("+", EArrGet1(EVar("a"), ENum(1)), EBinOp1("+", EArrGet1(EVar("a"), ENum(2)), EArrLen1(EVar("a")))),
+        ),
+      ),
+    )
+    testEval(e, "VNum(9)") // 1 + 4 + 1 + 3
+  }
+
+  test("writes stay out of the store") {
+    val e = ELet(
+      "a",
+      EArrAlloc1(ENum(2), ENum(0)),
+      ELet(
+        "x",
+        EArrSet1(EVar("a"), ENum(0), ENum(7)),
+        ELet(
+          "y",
+          EArrSet1(EVar("a"), ENum(1), ENum(8)),
+          EBinOp1("+", EArrGet1(EVar("a"), ENum(0)), EArrGet1(EVar("a"), ENum(1))),
+        ),
+      ),
+    )
+    val (v, σ) = eval(e)
+    assertEquals(v.toString, "VNum(15)")
+    assertEquals(σ.size, 3) // a, x, y; writes do not allocate
+  }
+
+  test("elements share the initial value") {
+    val e = ELet(
+      "a",
+      EArrAlloc1(ENum(2), EArrAlloc1(ENum(1), ENum(0))),
+      ELet(
+        "_",
+        EArrSet1(EArrGet1(EVar("a"), ENum(0)), ENum(0), ENum(9)),
+        EArrGet1(EArrGet1(EVar("a"), ENum(1)), ENum(0)),
+      ),
+    )
+    testEval(e, "VNum(9)")
+  }
+}
+
+class Floats extends Base {
+  test("float arithmetic") {
+    testEval(EFloat(1.5), "VFloat(1.5)")
+    testEval(EBinOp1("+", EFloat(1.5), EFloat(2.25)), "VFloat(3.75)")
+    testEval(EBinOp1("/", EFloat(1.0), EFloat(4.0)), "VFloat(0.25)")
+    testEval(EUnaryOp1("-", EFloat(0.5)), "VFloat(-0.5)")
+    testEval(EUnaryOp1("toFloat", ENum(3)), "VFloat(3.0)")
+    testEval(EBinOp1("<", EFloat(0.5), EFloat(0.75)), "VBool(true)")
+  }
+
+  test("floats are staged like any other value") {
+    testEval(ELift2(EFloat(2.5)), "VCode(EFloat(2.5))")
+    val product = EApp2(
+      ELift2(ELam("x", None, EBinOp2("*", EVar("x"), ELift2(EFloat(2.0))), None)),
+      ELift2(EFloat(1.25)),
+    )
+    testEval(ERun(product), "VFloat(2.5)")
   }
 }
